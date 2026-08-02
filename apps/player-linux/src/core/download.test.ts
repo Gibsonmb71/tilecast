@@ -147,4 +147,26 @@ describe("downloadVerified", () => {
     );
     expect(called).toBe(false);
   });
+
+  it("redownloads a same-size corrupted promoted file", async () => {
+    const destination = tempDest();
+    await fs.writeFile(destination, Buffer.alloc(BODY.length, 0x78));
+    let called = false;
+    const fetchImpl = (async (url: unknown, init?: RequestInit) => {
+      called = true;
+      return fakeFetch()(url as string, init);
+    }) as typeof fetch;
+    await downloadVerified(
+      {
+        url: "https://server/x",
+        headers: {},
+        destination,
+        expectedSha256: SHA,
+        expectedSizeBytes: BODY.length,
+      },
+      fetchImpl,
+    );
+    expect(called).toBe(true);
+    expect(readFileSync(destination)).toEqual(BODY);
+  });
 });

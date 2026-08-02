@@ -52,6 +52,8 @@ import org.tilecast.player.network.ManifestAsset
 import org.tilecast.player.network.ManifestItem
 import org.tilecast.player.network.ManifestWidget
 import org.tilecast.player.network.ManifestWebsite
+import org.tilecast.player.network.PlayerPlaybackDefaults
+import org.tilecast.player.network.PlayerWebsitePolicy
 import org.tilecast.player.network.WebsiteSourceConfig
 import org.tilecast.player.network.YouTubeSourceConfig
 import org.tilecast.player.ui.theme.SignalBackground
@@ -67,7 +69,50 @@ data class PlaybackSession(
     val initialOffsetMs: Long = 0,
     val startedAtElapsedRealtimeMs: Long = SystemClock.elapsedRealtime(),
     val startedAtWallClock: Instant = Instant.now(),
+    val playbackDefaults: PlayerPlaybackDefaults? = null,
+    val websitePolicy: PlayerWebsitePolicy? = null,
 )
+
+/**
+ * Apply the player defaults only where a manifest item does not carry a
+ * usable value. Author-provided item values remain authoritative. The
+ * server's current manifest normally contains all fields; these guards keep
+ * older or hand-authored manifests deterministic while a player configuration
+ * is being rolled out.
+ */
+internal fun ManifestItem.withPlaybackDefaults(defaults: PlayerPlaybackDefaults?): ManifestItem {
+    if (defaults == null) return this
+    val fit = if (usePlayerDefaults) {
+        defaults.defaultFitMode
+    } else {
+        fitMode.takeIf { it in setOf("contain", "cover", "stretch") }
+            ?: defaults.defaultFitMode
+    }
+    val transitionValue = if (usePlayerDefaults) {
+        defaults.defaultTransition
+    } else {
+        transition.takeIf { it in setOf("none", "fade", "crossfade") }
+            ?: defaults.defaultTransition
+    }
+    val duration = if (usePlayerDefaults && assetType == "image") {
+        defaults.defaultImageDurationSeconds.coerceAtLeast(1).toLong() * 1_000L
+    } else durationMs ?: if (assetType == "image") {
+        defaults.defaultImageDurationSeconds.coerceAtLeast(1).toLong() * 1_000L
+    } else null
+    val volumeValue = if (usePlayerDefaults) {
+        defaults.defaultVolume.toFloat().coerceIn(0f, 1f)
+    } else {
+        volume.takeIf { it.isFinite() && it in 0f..1f }
+            ?: defaults.defaultVolume.toFloat().coerceIn(0f, 1f)
+    }
+    return copy(
+        durationMs = duration,
+        fitMode = fit,
+        transition = transitionValue,
+        audioEnabled = if (usePlayerDefaults) defaults.defaultAudioEnabled else audioEnabled,
+        volume = volumeValue,
+    )
+}
 
 @Composable
 fun FullscreenPlayback(
@@ -79,7 +124,7 @@ fun FullscreenPlayback(
     onProgress: () -> Unit = {},
 ) {
     val takeoverDecision = TakeoverController.evaluate(
-        Instant.now(),
+        session.content.serverNow(),
         session.content.manifest.effectiveTakeover,
         true,
     )
@@ -129,7 +174,8 @@ fun FullscreenPlayback(
     }
 
     val item = playlist.items[cursor.index.coerceIn(0, playlist.items.lastIndex)]
-    val website = session.content.manifest.websites.firstOrNull { it.assetId == item.assetId }
+        .withPlaybackDefaults(session.playbackDefaults)
+    val website = session.content.manifest.websites.firstOrNull { it.assetId == item.assetId }?.withPolicy(session.websitePolicy)
     val widget = session.content.manifest.widgets.firstOrNull { it.assetId == item.assetId }
     val layout = item.layoutId?.let { id -> session.content.manifest.layouts.firstOrNull { it.id == id } }
     val asset = item.variantId?.let { variant -> session.content.manifest.assets.firstOrNull { it.variantId == variant } }
@@ -175,8 +221,9 @@ fun FullscreenPlayback(
             animateFor = { shouldAnimateTransition(playlist.items[it.index.coerceIn(0, playlist.items.lastIndex)].transition) },
         ) { entryCursor, isActive, onFirstFrame ->
             val renderedItem = playlist.items[entryCursor.index.coerceIn(0, playlist.items.lastIndex)]
+                .withPlaybackDefaults(session.playbackDefaults)
             val renderedAsset = renderedItem.variantId?.let { variant -> session.content.manifest.assets.firstOrNull { it.variantId == variant } }
-            val renderedWebsite = session.content.manifest.websites.firstOrNull { it.assetId == renderedItem.assetId }
+            val renderedWebsite = session.content.manifest.websites.firstOrNull { it.assetId == renderedItem.assetId }?.withPolicy(session.websitePolicy)
             val renderedWidget = session.content.manifest.widgets.firstOrNull { it.assetId == renderedItem.assetId }
             // An entry always mounts as the current item, so its start offset is
             // whatever the timeline says at mount time.
@@ -209,6 +256,35 @@ fun FullscreenPlayback(
         }
     }
 }
+
+/**
+ * Resolve the server-authoritative website policy at the last point before a
+ * WebView is created. The organization defaults are used while authoring a
+ * site, but the player policy is an operational guardrail and therefore wins
+ * over a stale manifest for timeout and cookie handling.
+ */
+internal fun resolveWebsitePolicy(site: ManifestWebsite, policy: PlayerWebsitePolicy?): ManifestWebsite {
+    if (policy == null) return site
+    val cookiePolicy = policy.cookiePolicy
+        .takeIf { it in setOf("disabled", "first_party", "first_and_third_party") }
+        ?: site.cookiePolicy.ifBlank { policy.defaultCookiePolicy }
+    val timeoutSeconds = policy.timeoutSeconds.takeIf { it in 1..120 }
+        ?: site.loadTimeoutSeconds.takeIf { it in 1..120 }
+        ?: policy.defaultTimeoutSeconds
+    return site.copy(
+        javascriptEnabled = site.javascriptEnabled,
+        domStorageEnabled = site.domStorageEnabled,
+        cookiePolicy = cookiePolicy,
+        reloadPolicy = site.reloadPolicy.ifBlank { policy.defaultReloadPolicy },
+        refreshIntervalSeconds = site.refreshIntervalSeconds?.takeIf { it >= policy.minimumRefreshSeconds },
+        loadTimeoutSeconds = timeoutSeconds,
+        zoomPercent = site.zoomPercent.takeIf { it in 50..200 } ?: policy.defaultZoomPercent,
+        failureBehavior = site.failureBehavior.ifBlank { policy.defaultFailureBehavior },
+    )
+}
+
+private fun ManifestWebsite.withPolicy(policy: PlayerWebsitePolicy?): ManifestWebsite =
+    resolveWebsitePolicy(this, policy)
 
 @Composable
 internal fun RenderedItem(

@@ -16,6 +16,10 @@ func (s *server) activityRoutes(next http.Handler) http.Handler {
 			s.requireDevice(http.HandlerFunc(s.playerHeartbeatWithActivity)).ServeHTTP(w, r)
 			return
 		}
+		if r.Method == http.MethodPost && r.URL.Path == "/api/v1/player/liveness" {
+			s.requireDevice(http.HandlerFunc(s.playerLivenessWithActivity)).ServeHTTP(w, r)
+			return
+		}
 		if r.Method == http.MethodPost && r.URL.Path == "/api/v1/player/telemetry" {
 			s.requireDevice(http.HandlerFunc(s.ingestTelemetry)).ServeHTTP(w, r)
 			return

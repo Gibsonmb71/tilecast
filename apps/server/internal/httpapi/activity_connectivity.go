@@ -57,6 +57,20 @@ func (s *server) playerHeartbeatWithActivity(w http.ResponseWriter, r *http.Requ
 	s.recordHeartbeatActivity(r, principal.ScreenID, snapshot, time.Now().UTC())
 }
 
+func (s *server) playerLivenessWithActivity(w http.ResponseWriter, r *http.Request) {
+	principal := r.Context().Value(deviceContextKey).(devices.DevicePrincipal)
+	snapshot := s.captureHeartbeatActivity(r.Context(), principal.ScreenID)
+	wrapped := &auditStatusWriter{ResponseWriter: w}
+	s.playerLiveness(wrapped, r)
+	status := wrapped.status
+	if status == 0 {
+		status = http.StatusOK
+	}
+	if status < 300 {
+		s.recordHeartbeatActivity(r, principal.ScreenID, snapshot, time.Now().UTC())
+	}
+}
+
 func (s *server) captureHeartbeatActivity(ctx context.Context, screenID uuid.UUID) heartbeatActivitySnapshot {
 	var snapshot heartbeatActivitySnapshot
 	_ = s.db.QueryRow(ctx, `SELECT last_heartbeat_at FROM screens WHERE id=$1`, screenID).Scan(&snapshot.previousHeartbeat)
@@ -65,31 +79,47 @@ func (s *server) captureHeartbeatActivity(ctx context.Context, screenID uuid.UUI
 }
 
 func (s *server) recordHeartbeatActivity(r *http.Request, screenID uuid.UUID, snapshot heartbeatActivitySnapshot, now time.Time) {
-	after, _ := s.readHeartbeatActivityState(activityContextWithoutCancel(r.Context()), screenID)
-	tx, err := s.db.Begin(activityContextWithoutCancel(r.Context()))
+	ctx := activityContextWithoutCancel(r.Context())
+	tx, err := s.db.Begin(ctx)
 	if err != nil {
 		return
 	}
-	defer tx.Rollback(activityContextWithoutCancel(r.Context())) //nolint:errcheck
+	defer tx.Rollback(ctx) //nolint:errcheck
+	if err := lockActivityScreen(ctx, tx, screenID); err != nil {
+		s.logger.Error("activity screen lock failed", "screen_id", screenID, "error", err)
+		return
+	}
+	// Read the post-heartbeat status only after taking the per-screen lock. A
+	// HTTP heartbeat and a WebSocket status can update the same row concurrently;
+	// reading it before the lock lets the second request derive the first
+	// request's transition a second time.
+	after, _ := readHeartbeatActivityStateTx(ctx, tx, screenID)
 
 	if snapshot.previousHeartbeat == nil {
-		s.recordServerTransition(r, tx, screenID, playerActivityEventInput{
-			ID: uuid.New(), EventType: "player.connected", Category: "connectivity", Severity: "info",
-			OccurredAt: now, PlayerTimezone: "UTC", Result: "success", Priority: 8,
-		})
+		var openUpInterval bool
+		if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM screen_state_intervals WHERE screen_id=$1 AND ended_at IS NULL AND state IN('online','healthy'))`, screenID).Scan(&openUpInterval); err == nil && !openUpInterval {
+			s.recordServerTransition(r, tx, screenID, playerActivityEventInput{
+				ID: uuid.New(), EventType: "player.connected", Category: "connectivity", Severity: "info",
+				OccurredAt: now, PlayerTimezone: "UTC", Result: "success", Priority: 8,
+			})
+		}
 	} else if gap := now.Sub(snapshot.previousHeartbeat.UTC()); gap > 3*time.Minute {
-		s.recordServerTransition(r, tx, screenID, playerActivityEventInput{
-			ID: uuid.New(), EventType: "heartbeat.gap_detected", Category: "connectivity", Severity: "warning",
-			OccurredAt: snapshot.previousHeartbeat.UTC().Add(3 * time.Minute), PlayerTimezone: "UTC", Result: "unknown",
-			DurationMS: durationPointer(gap.Milliseconds()), FailureCode: "heartbeat_gap",
-			FailureMessage: "Player stopped reporting within the expected heartbeat window.", Priority: 9,
-			Metadata: map[string]any{"lastHeartbeatAt": snapshot.previousHeartbeat.UTC(), "restoredAt": now},
-		})
-		s.recordServerTransition(r, tx, screenID, playerActivityEventInput{
-			ID: uuid.New(), EventType: "connection.restored", Category: "connectivity", Severity: "info",
-			OccurredAt: now, PlayerTimezone: "UTC", Result: "recovered", DurationMS: durationPointer(gap.Milliseconds()), Priority: 8,
-		})
-		_, _ = tx.Exec(r.Context(), `UPDATE playback_sessions SET ended_at=$2,result='unknown',actual_duration_ms=GREATEST(0,EXTRACT(EPOCH FROM ($2-started_at))*1000)::bigint,metadata=metadata||'{"closedReason":"heartbeat_gap"}'::jsonb,updated_at=now() WHERE screen_id=$1 AND ended_at IS NULL AND started_at<$3`, screenID, snapshot.previousHeartbeat.UTC(), now)
+		gapAt := snapshot.previousHeartbeat.UTC().Add(3 * time.Minute)
+		var gapAlreadyRecorded bool
+		if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM player_activity_events WHERE screen_id=$1 AND event_type='heartbeat.gap_detected' AND occurred_at=$2)`, screenID, gapAt).Scan(&gapAlreadyRecorded); err == nil && !gapAlreadyRecorded {
+			s.recordServerTransition(r, tx, screenID, playerActivityEventInput{
+				ID: uuid.New(), EventType: "heartbeat.gap_detected", Category: "connectivity", Severity: "warning",
+				OccurredAt: gapAt, PlayerTimezone: "UTC", Result: "unknown",
+				DurationMS: durationPointer(gap.Milliseconds()), FailureCode: "heartbeat_gap",
+				FailureMessage: "Player stopped reporting within the expected heartbeat window.", Priority: 9,
+				Metadata: map[string]any{"lastHeartbeatAt": snapshot.previousHeartbeat.UTC(), "restoredAt": now},
+			})
+			s.recordServerTransition(r, tx, screenID, playerActivityEventInput{
+				ID: uuid.New(), EventType: "connection.restored", Category: "connectivity", Severity: "info",
+				OccurredAt: now, PlayerTimezone: "UTC", Result: "recovered", DurationMS: durationPointer(gap.Milliseconds()), Priority: 8,
+			})
+			_, _ = tx.Exec(ctx, `UPDATE playback_sessions SET ended_at=$2,result='unknown',actual_duration_ms=GREATEST(0,EXTRACT(EPOCH FROM ($2-started_at))*1000)::bigint,metadata=metadata||'{"closedReason":"heartbeat_gap"}'::jsonb,updated_at=now() WHERE screen_id=$1 AND ended_at IS NULL AND started_at<$3`, screenID, snapshot.previousHeartbeat.UTC(), now)
+		}
 	}
 
 	s.recordHeartbeatStateTransitions(r, tx, screenID, snapshot.state, after, now)
@@ -97,8 +127,22 @@ func (s *server) recordHeartbeatActivity(r *http.Request, screenID uuid.UUID, sn
 	// The expectation is materialized at the moment the selection becomes
 	// effective, so compliance is always measured against the plan that was in
 	// force at the time rather than whatever is configured today.
-	_ = s.syncExpectedWindowFromStatus(r, tx, screenID, after, now)
-	_ = tx.Commit(activityContextWithoutCancel(r.Context()))
+	if err := s.syncExpectedWindowFromStatus(r, tx, screenID, after, now); err != nil {
+		s.logger.Error("activity expectation sync failed", "screen_id", screenID, "error", err)
+		return
+	}
+	if err := tx.Commit(ctx); err != nil {
+		s.logger.Error("activity heartbeat transition commit failed", "screen_id", screenID, "error", err)
+	}
+}
+
+// Every path that derives a state interval for one screen takes the same
+// transaction-scoped advisory lock. A heartbeat and a WebSocket status/event
+// can arrive at the same instant; serializing the derivation prevents both
+// requests from observing an empty open interval and creating duplicates.
+func lockActivityScreen(ctx context.Context, tx pgx.Tx, screenID uuid.UUID) error {
+	_, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended('tilecast.activity.screen.' || $1::text, 0))`, screenID)
+	return err
 }
 
 // anchorHeartbeatStateInterval keeps the screen state timeline usable for every
@@ -153,6 +197,27 @@ func heartbeatConfirmsHealthy(status heartbeatActivityState) bool {
 func (s *server) readHeartbeatActivityState(ctx context.Context, screenID uuid.UUID) (heartbeatActivityState, error) {
 	var value heartbeatActivityState
 	err := s.db.QueryRow(ctx, `
+		SELECT active_manifest_version,current_schedule_id,COALESCE(selection_source,''),
+		       last_command_id,COALESCE(last_command_state,''),active_takeover_id,COALESCE(takeover_state,''),
+		       current_update_deployment_id,COALESCE(update_state,''),safe_mode,COALESCE(last_watchdog_failure,''),last_watchdog_recovery_at,
+		       COALESCE(foreground_state,''),COALESCE(last_sleep_request_result,''),COALESCE(last_wake_result,''),
+		       COALESCE(playback_state,''),current_item_id,current_asset_id,COALESCE(last_playback_error,''),cache_used_bytes,cache_limit_bytes
+		FROM screen_player_status WHERE screen_id=$1`, screenID).Scan(
+		&value.ManifestVersion, &value.ScheduleID, &value.SelectionSource,
+		&value.CommandID, &value.CommandState, &value.TakeoverID, &value.TakeoverState,
+		&value.UpdateDeploymentID, &value.UpdateState, &value.SafeMode, &value.WatchdogFailure, &value.WatchdogRecoveryAt,
+		&value.ForegroundState, &value.SleepResult, &value.WakeResult,
+		&value.PlaybackState, &value.CurrentItemID, &value.CurrentAssetID, &value.PlaybackError, &value.CacheUsedBytes, &value.CacheLimitBytes,
+	)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return heartbeatActivityState{}, nil
+	}
+	return value, err
+}
+
+func readHeartbeatActivityStateTx(ctx context.Context, tx pgx.Tx, screenID uuid.UUID) (heartbeatActivityState, error) {
+	var value heartbeatActivityState
+	err := tx.QueryRow(ctx, `
 		SELECT active_manifest_version,current_schedule_id,COALESCE(selection_source,''),
 		       last_command_id,COALESCE(last_command_state,''),active_takeover_id,COALESCE(takeover_state,''),
 		       current_update_deployment_id,COALESCE(update_state,''),safe_mode,COALESCE(last_watchdog_failure,''),last_watchdog_recovery_at,

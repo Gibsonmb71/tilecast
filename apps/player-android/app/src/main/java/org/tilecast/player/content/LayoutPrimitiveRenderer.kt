@@ -51,9 +51,10 @@ fun LayoutPrimitiveCanvas(
     placementIds: Set<String>? = null,
     drawBackground: Boolean = true,
     viewport: ManifestViewport? = null,
+    nowProvider: () -> Instant = { Instant.now() },
 ) {
-    var now by remember { mutableStateOf(Instant.now()) }
-    LaunchedEffect(structuredSources) { while (true) { now = Instant.now(); kotlinx.coroutines.delay(30_000) } }
+    var now by remember { mutableStateOf(nowProvider()) }
+    LaunchedEffect(structuredSources) { while (true) { now = nowProvider(); kotlinx.coroutines.delay(30_000) } }
     BoxWithConstraints(modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         val sourceWidth = viewport?.width ?: document.canvas.width
         val sourceHeight = viewport?.height ?: document.canvas.height

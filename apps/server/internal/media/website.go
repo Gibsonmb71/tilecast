@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net"
 	"net/netip"
 	"net/url"
@@ -15,6 +16,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/tilecast/tilecast/apps/server/internal/manifestchanges"
 )
 
 type WebsitePolicy struct {
@@ -41,6 +43,82 @@ func (in *WebsiteInput) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+type websiteAuthoringDefaults struct {
+	javascriptEnabled     bool
+	domStorageEnabled     bool
+	timeoutSeconds        int
+	cookiePolicy          string
+	reloadPolicy          string
+	minimumRefreshSeconds int
+	failureBehavior       string
+	zoomPercent           int
+	fallbackImageAssetID  *uuid.UUID
+}
+
+// websiteDefaults reads the same organization-scoped registry values that are
+// sent in PlayerConfig. Keeping the authoring defaults here means a website
+// created by an API client that omits an optional field and a website rendered
+// by a player use one contract. A missing runtime-settings row is treated as a
+// fresh installation and uses the documented registry defaults.
+func (s *Service) websiteDefaults(ctx context.Context) (websiteAuthoringDefaults, error) {
+	defaults := websiteAuthoringDefaults{
+		javascriptEnabled:     true,
+		domStorageEnabled:     true,
+		timeoutSeconds:        s.cfg.Website.DefaultTimeoutSeconds,
+		cookiePolicy:          "first_party",
+		reloadPolicy:          "on_each_activation",
+		minimumRefreshSeconds: s.cfg.Website.MinRefreshSeconds,
+		failureBehavior:       "placeholder",
+		zoomPercent:           100,
+	}
+	if s.db == nil {
+		return defaults, nil
+	}
+	var raw []byte
+	if err := s.db.QueryRow(ctx, `SELECT settings FROM organization_runtime_settings LIMIT 1`).Scan(&raw); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return defaults, nil
+		}
+		return defaults, err
+	}
+	var values map[string]any
+	if err := json.Unmarshal(raw, &values); err != nil {
+		return defaults, err
+	}
+	if value, ok := values["website.default_javascript"].(bool); ok {
+		defaults.javascriptEnabled = value
+	}
+	if value, ok := values["website.default_dom_storage"].(bool); ok {
+		defaults.domStorageEnabled = value
+	}
+	if value, ok := values["website.default_timeout_seconds"].(float64); ok && value >= 1 {
+		defaults.timeoutSeconds = int(value)
+	}
+	if value, ok := values["website.default_cookie_policy"].(string); ok && value != "" {
+		defaults.cookiePolicy = value
+	}
+	if value, ok := values["website.default_reload_policy"].(string); ok && value != "" {
+		defaults.reloadPolicy = value
+	}
+	if value, ok := values["website.minimum_refresh_seconds"].(float64); ok && value >= 1 {
+		defaults.minimumRefreshSeconds = int(value)
+	}
+	if value, ok := values["website.default_failure_behavior"].(string); ok && value != "" {
+		defaults.failureBehavior = value
+	}
+	if value, ok := values["website.default_zoom_percent"].(float64); ok && value >= 1 {
+		defaults.zoomPercent = int(value)
+	}
+	if value, ok := values["website.default_fallback_image_id"].(string); ok && strings.TrimSpace(value) != "" {
+		id, err := uuid.Parse(strings.TrimSpace(value))
+		if err != nil {
+			return defaults, errors.New("website default fallback image id is invalid")
+		}
+		defaults.fallbackImageAssetID = &id
+	}
+	return defaults, nil
+}
+
 func validWebsiteHost(host string) bool {
 	if ip := net.ParseIP(host); ip != nil {
 		return true
@@ -49,6 +127,10 @@ func validWebsiteHost(host string) bool {
 }
 
 func (s *Service) normalizeWebsite(ctx context.Context, in WebsiteInput) (WebsiteInput, error) {
+	defaults, err := s.websiteDefaults(ctx)
+	if err != nil {
+		return in, err
+	}
 	in.Name = strings.TrimSpace(in.Name)
 	in.Description = strings.TrimSpace(in.Description)
 	in.URL = strings.TrimSpace(in.URL)
@@ -98,13 +180,13 @@ func (s *Service) normalizeWebsite(ctx context.Context, in WebsiteInput) (Websit
 	}
 	sort.Strings(in.AllowedHosts)
 	if in.LoadTimeoutSeconds == 0 {
-		in.LoadTimeoutSeconds = s.cfg.Website.DefaultTimeoutSeconds
+		in.LoadTimeoutSeconds = defaults.timeoutSeconds
 	}
 	if in.LoadTimeoutSeconds < 1 || in.LoadTimeoutSeconds > s.cfg.Website.MaxTimeoutSeconds {
 		return in, errors.New("load timeout is outside the configured range")
 	}
 	if in.ZoomPercent == 0 {
-		in.ZoomPercent = 100
+		in.ZoomPercent = defaults.zoomPercent
 	}
 	if in.ZoomPercent < 50 || in.ZoomPercent > 200 {
 		return in, errors.New("zoom must be between 50 and 200 percent")
@@ -121,26 +203,26 @@ func (s *Service) normalizeWebsite(ctx context.Context, in WebsiteInput) (Websit
 		}
 	}
 	if in.CookiePolicy == "" {
-		in.CookiePolicy = "first_party"
+		in.CookiePolicy = defaults.cookiePolicy
 	}
 	if in.CookiePolicy != "disabled" && in.CookiePolicy != "first_party" && in.CookiePolicy != "first_and_third_party" {
 		return in, errors.New("cookie policy is invalid")
 	}
 	if in.ReloadPolicy == "" {
-		in.ReloadPolicy = "on_each_activation"
+		in.ReloadPolicy = defaults.reloadPolicy
 	}
 	if in.ReloadPolicy != "load_once" && in.ReloadPolicy != "on_each_activation" && in.ReloadPolicy != "interval" {
 		return in, errors.New("reload policy is invalid")
 	}
 	if in.ReloadPolicy == "interval" {
-		if in.RefreshIntervalSeconds == nil || *in.RefreshIntervalSeconds < s.cfg.Website.MinRefreshSeconds || *in.RefreshIntervalSeconds > 86400 {
+		if in.RefreshIntervalSeconds == nil || *in.RefreshIntervalSeconds < defaults.minimumRefreshSeconds || *in.RefreshIntervalSeconds > 86400 {
 			return in, errors.New("refresh interval is outside the configured range")
 		}
 	} else {
 		in.RefreshIntervalSeconds = nil
 	}
 	if in.FailureBehavior == "" {
-		in.FailureBehavior = "placeholder"
+		in.FailureBehavior = defaults.failureBehavior
 	}
 	if in.FailureBehavior != "last_success" && in.FailureBehavior != "placeholder" && in.FailureBehavior != "fallback_image" && in.FailureBehavior != "skip" {
 		return in, errors.New("failure behavior is invalid")
@@ -150,6 +232,9 @@ func (s *Service) normalizeWebsite(ctx context.Context, in WebsiteInput) (Websit
 	}
 	if !colorPattern.MatchString(in.BackgroundColor) {
 		return in, errors.New("background color must be a six-digit hex color")
+	}
+	if in.FallbackImageAssetID == nil && defaults.fallbackImageAssetID != nil {
+		in.FallbackImageAssetID = defaults.fallbackImageAssetID
 	}
 	if in.FallbackImageAssetID != nil {
 		var ok bool
@@ -166,10 +251,10 @@ func (s *Service) normalizeWebsite(ctx context.Context, in WebsiteInput) (Websit
 	in.DisplayURL = u.String()
 	in.URL = u.String()
 	if !in.javascriptSet && !in.JavaScriptEnabled {
-		in.JavaScriptEnabled = true
+		in.JavaScriptEnabled = defaults.javascriptEnabled
 	}
 	if !in.domStorageSet && !in.DOMStorageEnabled {
-		in.DOMStorageEnabled = true
+		in.DOMStorageEnabled = defaults.domStorageEnabled
 	}
 	return in, nil
 }
@@ -257,11 +342,24 @@ func (s *Service) UpdateWebsite(ctx context.Context, id, user uuid.UUID, in Webs
 	if err != nil {
 		return Asset{}, err
 	}
+	var changes []manifestchanges.Change
+	transactionalUsed := false
+	if transactional, ok := s.invalidator.(TransactionalAssetInvalidator); ok {
+		transactionalUsed = true
+		changes, err = transactional.AssetChangedInTx(ctx, tx, id, "website.updated")
+		if err != nil {
+			return Asset{}, fmt.Errorf("invalidate website manifest: %w", err)
+		}
+	}
 	if err = tx.Commit(ctx); err != nil {
 		return Asset{}, err
 	}
-	if s.invalidator != nil {
-		_ = s.invalidator.AssetChanged(ctx, id, "website.updated")
+	if transactionalUsed {
+		s.invalidator.(TransactionalAssetInvalidator).NotifyManifestChanges(changes)
+	} else if s.invalidator != nil {
+		if err := s.invalidator.AssetChanged(ctx, id, "website.updated"); err != nil {
+			return Asset{}, fmt.Errorf("invalidate website manifest: %w", err)
+		}
 	}
 	return s.GetAsset(ctx, id)
 }

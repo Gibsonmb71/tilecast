@@ -2,6 +2,8 @@
 
 Version: **2**. Both the Android and the Linux Player emit this vocabulary. The server accepts version 1 names during the transition and maps them onto version 2 before deriving anything, so a fleet can be upgraded one player at a time.
 
+Connectivity interval transitions are atomic per screen. Heartbeat, liveness, and WebSocket status requests take the same transaction-scoped screen lock before deriving events and intervals, and the database guard permits only one open interval. A background liveness request records contact only; it must not overwrite the Player's current manifest, item, playback state, cache policy, or version snapshot.
+
 Before version 2 the two players described the same conditions differently. Android reported `playlist_item.completed`. Linux reported `content.completed` with no matching start, so its playback never became a proof-of-play session at all. Linux said `connection.recovered` where Android said `connection.restored`, and `reliability.safe_mode` where Android said `safe_mode.entered`. The same outage derived a different screen-state timeline depending on the platform. The contract exists so it cannot.
 
 ## Envelope

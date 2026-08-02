@@ -31,7 +31,7 @@ func (s *server) activityOverview(w http.ResponseWriter, r *http.Request) {
 	// states a connectivity gap actually produces. The previous count also
 	// included renderer and storage impairment, which the drill-down could not
 	// show and the fleet-health section reports as impaired instead.
-	_ = s.db.QueryRow(r.Context(), `SELECT count(DISTINCT screen_id) FROM screen_state_intervals WHERE started_at<$2 AND COALESCE(ended_at,$2)>$1 AND (state IN('offline','unknown') OR (state='degraded' AND COALESCE(reason_code,'')='heartbeat_gap'))`, window.From, window.To).Scan(&data.Cards.ScreensWithReportingGaps)
+	_ = s.db.QueryRow(r.Context(), `SELECT count(DISTINCT i.screen_id) FROM screen_state_intervals i JOIN screens s ON s.id=i.screen_id WHERE s.enabled=TRUE AND s.deleted_at IS NULL AND s.archived_at IS NULL AND i.started_at<$2 AND COALESCE(i.ended_at,$2)>$1 AND (i.state IN('offline','unknown') OR (i.state='degraded' AND COALESCE(i.reason_code,'')='heartbeat_gap'))`, window.From, window.To).Scan(&data.Cards.ScreensWithReportingGaps)
 	durations, err := s.playbackDurations(r.Context(), window.From, window.To)
 	if err != nil {
 		s.internalError(w, r, err)
@@ -43,18 +43,18 @@ func (s *server) activityOverview(w http.ResponseWriter, r *http.Request) {
 	_ = s.db.QueryRow(r.Context(), `
 		SELECT count(*) FILTER(WHERE result='failed'),
 		       count(*) FILTER(WHERE terminal_reason = ANY($3))
-		FROM playback_sessions WHERE started_at>=$1 AND started_at<$2`,
+		FROM playback_sessions p JOIN screens s ON s.id=p.screen_id WHERE s.enabled=TRUE AND s.deleted_at IS NULL AND s.archived_at IS NULL AND p.started_at>=$1 AND p.started_at<$2`,
 		window.From, window.To, interruptedTerminalReasons()).Scan(&data.Cards.PlaybackFailures, &data.Cards.InterruptedPlays)
-	_ = s.db.QueryRow(r.Context(), `SELECT count(*) FROM player_activity_events WHERE occurred_at>=$1 AND occurred_at<$2 AND event_type='takeover.active'`, window.From, window.To).Scan(&data.Cards.TakeoverActivations)
-	_ = s.db.QueryRow(r.Context(), `SELECT count(*) FROM player_activity_events WHERE occurred_at>=$1 AND occurred_at<$2 AND category='updates' AND result='failed'`, window.From, window.To).Scan(&data.Cards.FailedPlayerUpdates)
+	_ = s.db.QueryRow(r.Context(), `SELECT count(*) FROM player_activity_events e JOIN screens s ON s.id=e.screen_id WHERE s.enabled=TRUE AND s.deleted_at IS NULL AND s.archived_at IS NULL AND e.occurred_at>=$1 AND e.occurred_at<$2 AND e.event_type='takeover.active'`, window.From, window.To).Scan(&data.Cards.TakeoverActivations)
+	_ = s.db.QueryRow(r.Context(), `SELECT count(*) FROM player_activity_events e JOIN screens s ON s.id=e.screen_id WHERE s.enabled=TRUE AND s.deleted_at IS NULL AND s.archived_at IS NULL AND e.occurred_at>=$1 AND e.occurred_at<$2 AND e.category='updates' AND e.result='failed'`, window.From, window.To).Scan(&data.Cards.FailedPlayerUpdates)
 	_ = s.db.QueryRow(r.Context(), `SELECT count(*) FROM audit_logs WHERE created_at>=$1 AND created_at<$2 AND result='success'`, window.From, window.To).Scan(&data.Cards.RecentAdminChanges)
 
 	timelineRows, err := s.db.Query(r.Context(), `
-		SELECT id::text,occurred_at,'screen',severity,
-		       CASE WHEN content_id IS NOT NULL THEN replace(event_type,'.',' ')||' · '||content_id ELSE replace(event_type,'.',' ') END,
-		       screen_id,presentation_id
-		FROM player_activity_events
-		WHERE occurred_at>=$1 AND occurred_at<$2 AND (severity IN('warning','error','critical') OR event_type IN('presentation.started','presentation.recovered','schedule.became_active','takeover.active','update.installation_failed'))
+		SELECT e.id::text,e.occurred_at,'screen',e.severity,
+		       CASE WHEN e.content_id IS NOT NULL THEN replace(e.event_type,'.',' ')||' · '||e.content_id ELSE replace(e.event_type,'.',' ') END,
+		       e.screen_id,e.presentation_id
+		FROM player_activity_events e JOIN screens s ON s.id=e.screen_id
+		WHERE s.enabled=TRUE AND s.deleted_at IS NULL AND s.archived_at IS NULL AND e.occurred_at>=$1 AND e.occurred_at<$2 AND (e.severity IN('warning','error','critical') OR e.event_type IN('presentation.started','presentation.recovered','schedule.became_active','takeover.active','update.installation_failed'))
 		UNION ALL
 		SELECT id::text,created_at,'audit',CASE WHEN result='failure' THEN 'error' ELSE 'info' END,
 		       COALESCE(NULLIF(summary,''),replace(action,'.',' ')),NULL,resource_id
@@ -78,12 +78,21 @@ func (s *server) screenActivity(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "screen_not_found", "Screen was not found.")
 		return
 	}
+	var operational bool
+	if err := s.db.QueryRow(r.Context(), `SELECT EXISTS(SELECT 1 FROM screens WHERE id=$1 AND enabled=TRUE AND deleted_at IS NULL AND archived_at IS NULL)`, screenID).Scan(&operational); err != nil {
+		s.internalError(w, r, err)
+		return
+	}
+	if !operational {
+		writeError(w, http.StatusNotFound, "screen_not_found", "Screen was not found.")
+		return
+	}
 	data := screenActivityData{ScreenID: screenID, RecentProof: []proofOfPlayRecord{}, RecentEvents: []screenEventRecord{}}
-	row := s.db.QueryRow(r.Context(), proofSelectSQL+` WHERE p.screen_id=$1 AND p.ended_at IS NULL ORDER BY p.started_at DESC LIMIT 1`, screenID)
+	row := s.db.QueryRow(r.Context(), proofSelectSQL+` WHERE s.enabled=TRUE AND s.deleted_at IS NULL AND s.archived_at IS NULL AND p.screen_id=$1 AND p.ended_at IS NULL ORDER BY p.started_at DESC LIMIT 1`, screenID)
 	if item, err := scanProof(row.Scan, activitySession(r).User.Role); err == nil {
 		data.CurrentPresentation = &item
 	}
-	rows, err := s.db.Query(r.Context(), proofSelectSQL+` WHERE p.screen_id=$1 ORDER BY p.started_at DESC LIMIT 10`, screenID)
+	rows, err := s.db.Query(r.Context(), proofSelectSQL+` WHERE s.enabled=TRUE AND s.deleted_at IS NULL AND s.archived_at IS NULL AND p.screen_id=$1 ORDER BY p.started_at DESC LIMIT 10`, screenID)
 	if err == nil {
 		defer rows.Close()
 		for rows.Next() {
@@ -97,7 +106,7 @@ func (s *server) screenActivity(w http.ResponseWriter, r *http.Request) {
 			SELECT e.id,e.occurred_at,e.received_at,e.screen_id,s.name,NULL::uuid,'',e.sequence,e.event_type,e.category,e.severity,e.result,e.manifest_version,
 			       COALESCE(e.presentation_type,''),COALESCE(e.presentation_id,''),COALESCE(e.content_type,''),COALESCE(e.content_id,''),
 			       COALESCE(e.failure_code,''),COALESCE(e.failure_message,''),e.metadata
-			FROM player_activity_events e JOIN screens s ON s.id=e.screen_id WHERE e.screen_id=$1 ORDER BY e.occurred_at DESC,e.sequence DESC LIMIT 10`, screenID)
+			FROM player_activity_events e JOIN screens s ON s.id=e.screen_id WHERE s.enabled=TRUE AND s.deleted_at IS NULL AND s.archived_at IS NULL AND e.screen_id=$1 ORDER BY e.occurred_at DESC,e.sequence DESC LIMIT 10`, screenID)
 		if err == nil {
 			defer eventRows.Close()
 			for eventRows.Next() {

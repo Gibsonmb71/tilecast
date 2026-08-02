@@ -26,6 +26,7 @@
 
 - **Readiness reports media infrastructure unavailable:** confirm `/data/media` is writable by the Tilecast runtime user and that the configured FFmpeg and FFprobe paths are executable.
 - **Upload offset mismatch:** use `HEAD /api/v1/uploads/{id}` and resume from the returned `Upload-Offset`; do not restart from a client-cached offset.
+- **Upload remains finalizing:** finalization is journaled. Leave the temporary/media volume and database row intact; the reconciliation worker retries storage movement and registration idempotently. A moved object with a failed database commit is recovered by its recorded asset/variant identity, and an abandoned source is failed and cleaned after the recovery window.
 - **Insufficient storage:** free space or reduce the upload. Tilecast reserves `TILECAST_MEDIA_RESERVED_FREE_BYTES` after accounting for the declared upload size.
 - **Processing failed:** inspect server logs using the request/job identifier. Studio receives only a safe error message, never raw FFmpeg output. Use Retry after correcting missing executables or storage permissions.
 - **Variant unavailable:** the asset must be ready, the variant must be player-compatible, and the underlying file must still exist. Restore both database and media volume from the same backup point.
@@ -34,13 +35,15 @@
 
 - **Manifest remains out of date:** confirm the socket is connected, then allow the five-minute reconciliation fallback.
 - **Insufficient player storage:** Automatic videos fall back to streaming, but explicit Download items prevent activation when the cache limit or free-space reserve is exceeded. The previous manifest keeps playing.
-- **Download restarts:** the ETag, size, or hash changed; Tilecast safely discards the incompatible partial file.
+- **Download restarts or a cache is quarantined:** Tilecast verifies SHA-256 and size before accepting, serving offline, or promoting an update. Same-size corruption is rejected and redownloaded; keep the media directory writable so the invalid file can be quarantined or removed.
+- **Cached content disappears after pairing/server changes:** cached manifests, configuration, downloads, and playback checkpoints are bound to installation ID, screen ID, and normalized server URL. A confirmed replacement or reassignment clears incompatible state rather than applying another screen's content.
 - **Content is online-only:** Stream items require the server. Use Download, or Automatic for images and suitably sized videos.
 - **No playable content:** every item failed or was unavailable. Tilecast waits before retrying instead of remaining black or entering a tight loop.
+- **No content screen appears:** fallback precedence is active assigned playback, disabled, active-hours sleep, assigned-content-unavailable, offline, then known no-content. A transient network failure leaves a valid cached assigned presentation active. The unavailable surface is used when an assigned playlist/Layout has no currently renderable path; the no-content surface is used only when the server confirms there is no assignment. Organization logo, colors, message, and footer come from the effective player configuration.
 
 ## A schedule changes at the wrong time
 
-Check the schedule's IANA timezone and the player clock warning in screen details. Tilecast Player intentionally uses its device clock while offline; it reports server-time skew but does not silently shift evaluation. Confirm automatic date/time and timezone are enabled on the TV. Around daylight-saving changes, nonexistent local times advance to the first valid time after the gap, while repeated times use the earlier start occurrence and later end occurrence.
+Check the schedule's IANA timezone and the player clock warning in screen details. Tilecast Player uses one persisted server-corrected clock for schedules, availability, takeovers, overrides, and offline playback. Confirm a recent manifest sync and automatic date/time on the TV; a malformed fresh timestamp leaves the last valid offset in force. Around daylight-saving changes, nonexistent local times advance to the first valid time after the gap, while repeated times use the earlier start occurrence and later end occurrence.
 
 If a future one-time event was created after the player lost connectivity, it cannot activate until the player receives a new manifest. Weekly rules already present in the active manifest continue recurring offline when their Download-policy assets remain cached.
 

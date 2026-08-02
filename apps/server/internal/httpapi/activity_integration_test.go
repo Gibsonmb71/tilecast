@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -130,6 +131,82 @@ func TestSocketHeartbeatRecordsLivenessAndUptimeWhenMetadataCannotDecode(t *test
 				t.Fatalf("socket contact was not recorded: lastHeartbeat=%v openIntervals=%d", lastHeartbeat, openIntervals)
 			}
 			time.Sleep(10 * time.Millisecond)
+		}
+	})
+}
+
+func TestBackgroundLivenessDoesNotOverwriteForegroundPlaybackState(t *testing.T) {
+	withActivityDatabase(t, func(env activityTestEnvironment) {
+		ctx := context.Background()
+		manifestVersion := int64(42)
+		cacheLimit := int64(987654321)
+		itemID, assetID := uuid.New(), uuid.New()
+		if _, err := env.pool.Exec(ctx, `INSERT INTO screen_player_status(screen_id,active_manifest_version,current_item_id,current_asset_id,playback_state,cache_limit_bytes) VALUES($1,$2,$3,$4,'playing',$5)`, env.screenID, manifestVersion, itemID, assetID, cacheLimit); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := env.pool.Exec(ctx, `UPDATE screens SET player_version='2.9.0' WHERE id=$1`, env.screenID); err != nil {
+			t.Fatal(err)
+		}
+		principal := devices.DevicePrincipal{ScreenID: env.screenID, ScreenName: "Cafeteria TV", Enabled: true}
+		request := httptest.NewRequest(http.MethodPost, "/api/v1/player/liveness", strings.NewReader(`{}`)).WithContext(context.WithValue(context.Background(), deviceContextKey, principal))
+		response := httptest.NewRecorder()
+
+		env.server.playerLivenessWithActivity(response, request)
+		if response.Code != http.StatusOK {
+			t.Fatalf("liveness status=%d body=%s", response.Code, response.Body.String())
+		}
+
+		var gotManifest *int64
+		var gotItem, gotAsset uuid.UUID
+		var gotState, gotVersion string
+		var gotCache *int64
+		if err := env.pool.QueryRow(ctx, `SELECT active_manifest_version,current_item_id,current_asset_id,playback_state,cache_limit_bytes FROM screen_player_status WHERE screen_id=$1`, env.screenID).Scan(&gotManifest, &gotItem, &gotAsset, &gotState, &gotCache); err != nil {
+			t.Fatal(err)
+		}
+		if err := env.pool.QueryRow(ctx, `SELECT player_version FROM screens WHERE id=$1`, env.screenID).Scan(&gotVersion); err != nil {
+			t.Fatal(err)
+		}
+		if gotManifest == nil || *gotManifest != manifestVersion || gotItem != itemID || gotAsset != assetID || gotState != "playing" || gotVersion != "2.9.0" || gotCache == nil || *gotCache != cacheLimit {
+			t.Fatalf("background liveness changed foreground snapshot: manifest=%v item=%q asset=%q state=%q version=%q cache=%v", gotManifest, gotItem, gotAsset, gotState, gotVersion, gotCache)
+		}
+	})
+}
+
+func TestConcurrentHTTPAndWebSocketHeartbeatTransitionsStayAtomic(t *testing.T) {
+	withActivityDatabase(t, func(env activityTestEnvironment) {
+		principal := devices.DevicePrincipal{ScreenID: env.screenID, ScreenName: "Cafeteria TV", Enabled: true}
+		start := make(chan struct{})
+		var group sync.WaitGroup
+		group.Add(2)
+
+		go func() {
+			defer group.Done()
+			<-start
+			request := httptest.NewRequest(http.MethodPost, "/api/v1/player/heartbeat", strings.NewReader(`{"screenWidth":1920,"screenHeight":1080,"playerVersion":"0.2.2","playbackState":"playing"}`))
+			request = request.WithContext(context.WithValue(request.Context(), deviceContextKey, principal))
+			env.server.playerHeartbeatWithActivity(httptest.NewRecorder(), request)
+		}()
+		go func() {
+			defer group.Done()
+			<-start
+			request := httptest.NewRequest(http.MethodGet, "/api/v1/player/socket", nil)
+			env.server.handleSocketStatus(request, context.Background(), principal, json.RawMessage(`{"screenWidth":1920,"screenHeight":1080,"playerVersion":"0.2.2","playbackState":"playing"}`))
+		}()
+		close(start)
+		group.Wait()
+
+		var connected, openIntervals, allOpen int
+		if err := env.pool.QueryRow(context.Background(), `SELECT count(*) FROM player_activity_events WHERE screen_id=$1 AND event_type='player.connected'`, env.screenID).Scan(&connected); err != nil {
+			t.Fatal(err)
+		}
+		if err := env.pool.QueryRow(context.Background(), `SELECT count(*) FROM screen_state_intervals WHERE screen_id=$1 AND ended_at IS NULL AND state IN('online','healthy')`, env.screenID).Scan(&openIntervals); err != nil {
+			t.Fatal(err)
+		}
+		if err := env.pool.QueryRow(context.Background(), `SELECT count(*) FROM screen_state_intervals WHERE screen_id=$1 AND ended_at IS NULL`, env.screenID).Scan(&allOpen); err != nil {
+			t.Fatal(err)
+		}
+		if connected != 1 || openIntervals != 1 || allOpen != 1 {
+			t.Fatalf("connected=%d openUp=%d allOpen=%d", connected, openIntervals, allOpen)
 		}
 	})
 }
@@ -606,6 +683,51 @@ func TestFleetHealthMeasuresOnlyTheOperationalFleet(t *testing.T) {
 		}
 		if health.Healthy != 0 || health.Impaired != 1 || health.Online != 1 {
 			t.Fatalf("safe mode should be impaired but online: %+v", health)
+		}
+	})
+}
+
+func TestArchivedScreensAreExcludedFromActivityEventsAndTimeline(t *testing.T) {
+	withActivityDatabase(t, func(env activityTestEnvironment) {
+		now := time.Now().UTC()
+		postActivityBatch(t, env, playerActivityBatchInput{Events: []playerActivityEventInput{
+			{ID: uuid.New(), Sequence: 1, EventType: "presentation.started", OccurredAt: now, PlayerTimezone: "UTC", Result: "playing"},
+		}}, http.StatusAccepted)
+		if _, err := env.pool.Exec(context.Background(), `UPDATE screens SET archived_at=now() WHERE id=$1`, env.screenID); err != nil {
+			t.Fatal(err)
+		}
+
+		eventsRequest := httptest.NewRequest(http.MethodGet, "/api/v1/activity/events?range=24h&screen="+env.screenID.String(), nil)
+		eventsRequest = eventsRequest.WithContext(context.WithValue(eventsRequest.Context(), sessionContextKey, env.owner))
+		eventsResponse := httptest.NewRecorder()
+		env.server.listScreenEvents(eventsResponse, eventsRequest)
+		if eventsResponse.Code != http.StatusOK {
+			t.Fatalf("events status=%d body=%s", eventsResponse.Code, eventsResponse.Body.String())
+		}
+		var eventsEnvelope struct {
+			Data screenEventPage `json:"data"`
+		}
+		if err := json.Unmarshal(eventsResponse.Body.Bytes(), &eventsEnvelope); err != nil {
+			t.Fatal(err)
+		}
+		if len(eventsEnvelope.Data.Items) != 0 {
+			t.Fatalf("archived screen leaked %d activity events", len(eventsEnvelope.Data.Items))
+		}
+
+		timelineRequest := httptest.NewRequest(http.MethodGet, "/api/v1/activity/screens/"+env.screenID.String()+"/timeline?range=24h", nil)
+		timelineRequest = timelineRequest.WithContext(context.WithValue(timelineRequest.Context(), sessionContextKey, env.owner))
+		timelineResponse := httptest.NewRecorder()
+		env.server.screenTimeline(timelineResponse, timelineRequest)
+		if timelineResponse.Code != http.StatusNotFound {
+			t.Fatalf("archived screen timeline status=%d body=%s, want 404", timelineResponse.Code, timelineResponse.Body.String())
+		}
+
+		screenRequest := httptest.NewRequest(http.MethodGet, "/api/v1/activity/screens/"+env.screenID.String(), nil)
+		screenRequest = screenRequest.WithContext(context.WithValue(screenRequest.Context(), sessionContextKey, env.owner))
+		screenResponse := httptest.NewRecorder()
+		env.server.screenActivity(screenResponse, screenRequest)
+		if screenResponse.Code != http.StatusNotFound {
+			t.Fatalf("archived screen activity status=%d body=%s, want 404", screenResponse.Code, screenResponse.Body.String())
 		}
 	})
 }

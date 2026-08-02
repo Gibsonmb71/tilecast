@@ -7,6 +7,7 @@ import {
   onPlaybackIdle,
   onRenderProgress,
   recordAssessment,
+  renderProgressConfigFor,
   type PresentedItem,
   type RenderProgressState,
 } from "./render-progress";
@@ -123,6 +124,18 @@ describe("video", () => {
 });
 
 describe("websites", () => {
+  it("uses the authoritative webview stall threshold", () => {
+    const state = present({ itemId: "dashboard", expectation: "website" });
+    const config = renderProgressConfigFor({ webviewStallSeconds: 45 });
+
+    expect(assessRenderProgress(state, T0 + 44_000, config).progressing).toBe(
+      true,
+    );
+    expect(assessRenderProgress(state, T0 + 46_000, config).stallReason).toBe(
+      "website_never_rendered",
+    );
+  });
+
   it("waits for a first meaningful render, then stops demanding motion", () => {
     const state = present({ itemId: "dashboard", expectation: "website" });
 

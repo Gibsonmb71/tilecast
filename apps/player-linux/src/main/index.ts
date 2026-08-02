@@ -18,6 +18,7 @@ import {
   protocol,
   screen,
   session,
+  type Session,
 } from "electron";
 import type { NativeImage } from "electron";
 import { promises as fs } from "fs";
@@ -80,6 +81,7 @@ let quitting = false;
 let shutdownPromise: Promise<void> | null = null;
 let activeLinuxKioskPolicy = linuxKioskPolicy(null);
 let displaySleepBlockerId: number | null = null;
+const configuredWebsiteSessions = new WeakSet<Session>();
 
 function stopRuntime(): Promise<void> {
   if (!shutdownPromise) {
@@ -96,6 +98,64 @@ function exitAfterRuntimeStop(code: number, relaunch: boolean): void {
   quitting = true;
   if (relaunch) app.relaunch();
   void stopRuntime().finally(() => app.exit(code));
+}
+
+function websiteHost(value: string): string | null {
+  try {
+    return new URL(value).hostname.toLowerCase();
+  } catch {
+    return null;
+  }
+}
+
+function crossSiteRequest(url: string, referer: string | undefined): boolean {
+  const sourceHost = referer ? websiteHost(referer) : null;
+  const targetHost = websiteHost(url);
+  return (
+    sourceHost !== null && targetHost !== null && sourceHost !== targetHost
+  );
+}
+
+function configureWebsiteSession(
+  websiteSession: Session,
+  policy: "disabled" | "first_party" | "first_and_third_party",
+): void {
+  if (configuredWebsiteSessions.has(websiteSession)) return;
+  configuredWebsiteSessions.add(websiteSession);
+  const stripsThirdParty = policy === "first_party";
+  websiteSession.webRequest.onBeforeSendHeaders(
+    { urls: ["*://*/*"] },
+    (details, callback) => {
+      const headers = { ...details.requestHeaders };
+      if (
+        policy === "disabled" ||
+        (stripsThirdParty && crossSiteRequest(details.url, details.referrer))
+      ) {
+        for (const key of Object.keys(headers)) {
+          if (key.toLowerCase() === "cookie") delete headers[key];
+        }
+      }
+      callback({ requestHeaders: headers });
+    },
+  );
+  websiteSession.webRequest.onHeadersReceived(
+    { urls: ["*://*/*"] },
+    (details, callback) => {
+      const responseHeaders = details.responseHeaders
+        ? { ...details.responseHeaders }
+        : undefined;
+      if (
+        responseHeaders &&
+        (policy === "disabled" ||
+          (stripsThirdParty && crossSiteRequest(details.url, details.referrer)))
+      ) {
+        for (const key of Object.keys(responseHeaders)) {
+          if (key.toLowerCase() === "set-cookie") delete responseHeaders[key];
+        }
+      }
+      callback({ responseHeaders });
+    },
+  );
 }
 
 function argValue(flag: string): string | null {
@@ -373,6 +433,27 @@ function guardWebContents(): void {
     // Website items render in <webview>; nothing may open new windows or
     // navigate the shell away from the player.
     contents.setWindowOpenHandler(() => ({ action: "deny" }));
+    contents.on("will-attach-webview", (event, webPreferences, params) => {
+      const partition = String(params.partition ?? "");
+      const policy = partition.includes("disabled")
+        ? "disabled"
+        : partition.includes("all")
+          ? "first_and_third_party"
+          : partition.includes("first-party")
+            ? "first_party"
+            : null;
+      if (!policy) {
+        event.preventDefault();
+        return;
+      }
+      webPreferences.nodeIntegration = false;
+      webPreferences.contextIsolation = true;
+      webPreferences.sandbox = true;
+      configureWebsiteSession(
+        session.fromPartition(partition, { cache: true }),
+        policy,
+      );
+    });
     if (contents.getType() === "webview") {
       contents.on("will-navigate", (event, targetUrl) => {
         if (!/^https?:/.test(targetUrl)) {
@@ -416,10 +497,22 @@ async function startRuntime(serverUrl: string): Promise<void> {
         exitAfterRuntimeStop(0, false);
       },
       clearWebsiteData: async () => {
-        await session
-          .fromPartition("persist:websites")
-          .clearStorageData()
-          .catch(() => {});
+        // Website playback uses one persistent partition per cookie policy.
+        // Clear every persistent website partition, including the legacy
+        // name from pre-policy builds, so clearOnRestart actually reaches the
+        // data that the renderer uses.
+        await Promise.all(
+          [
+            "persist:tilecast-websites-first-party",
+            "persist:tilecast-websites-all",
+            "persist:websites",
+          ].map((partition) =>
+            session
+              .fromPartition(partition)
+              .clearStorageData()
+              .catch(() => {}),
+          ),
+        );
       },
       retryCurrentItem: () => window?.webContents.send("retry-item"),
       skipCurrentItem: () => window?.webContents.send("skip-item"),

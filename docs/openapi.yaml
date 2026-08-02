@@ -477,6 +477,26 @@ paths:
         "400": { description: Heartbeat body rejected }
         "401": { description: Credential invalid or revoked }
         "403": { description: Screen disabled }
+  /api/v1/player/liveness:
+    post:
+      operationId: playerLiveness
+      security: [{ deviceBearer: [] }]
+      description: >-
+        Records authenticated Player contact for background liveness. This
+        endpoint intentionally accepts no playback snapshot and cannot change
+        the current manifest, content, version, cache policy, or playback
+        state.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+      responses:
+        "200": { description: Liveness contact accepted }
+        "401": { description: Credential invalid or revoked }
+        "403": { description: Screen disabled }
   /api/v1/player/socket:
     get:
       operationId: playerSocket
@@ -2791,6 +2811,12 @@ components:
             enum: [download, stream, automatic],
             default: download,
           }
+        usePlayerDefaults:
+          type: boolean
+          default: false
+          description: >-
+            Resolve playback defaults from the effective Player configuration
+            on Android and Linux at runtime.
     PresentationReference:
       type: object
       additionalProperties: false

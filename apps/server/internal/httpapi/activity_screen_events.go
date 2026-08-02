@@ -18,7 +18,11 @@ func (s *server) listScreenEvents(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnprocessableEntity, "activity_page_invalid", err.Error())
 		return
 	}
-	clauses := []string{"e.occurred_at >= $1", "e.occurred_at < $2"}
+	// Activity uses the same operational screen scope as fleet health and
+	// uptime. Historical rows remain available in the database for audit, but
+	// archived, deleted, or disabled screens must not re-enter live activity
+	// views through a direct event query.
+	clauses := []string{"s.enabled = TRUE", "s.deleted_at IS NULL", "s.archived_at IS NULL", "e.occurred_at >= $1", "e.occurred_at < $2"}
 	args := []any{window.From, window.To}
 	if err := appendActivityUUIDFilter(&clauses, &args, "e.screen_id = $%d", queryValue(r, "screen")); err != nil {
 		writeError(w, http.StatusUnprocessableEntity, "activity_screen_invalid", err.Error())

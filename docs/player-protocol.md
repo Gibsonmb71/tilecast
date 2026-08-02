@@ -70,11 +70,11 @@ Delivery is deterministic: Download always caches; Stream requires connectivity;
 
 ## Scheduled playback and offline limits
 
-Manifest schema v2 is activated atomically only after all Download-policy content for the direct fallback and included schedules is verified. Selection uses `[start, end)` intervals. The player evaluates with its device clock, wakes at the next transition, and restores the direct assignment whenever no schedule is active. Weekly schedules continue offline indefinitely while their definitions and assets remain cached. A future one-time schedule that was not received before disconnection cannot activate. Stream-policy media still requires connectivity and is not guaranteed offline.
+Manifest schema v2 is activated atomically only after all Download-policy content for the direct fallback and included schedules is verified. Selection uses `[start, end)` intervals. The player evaluates with one server-corrected clock shared by schedules, availability windows, takeovers, Presentation Overrides, transitions, plugins, and cached playback. The measured offset is persisted/reconstructed before cached selection after restart. Weekly schedules continue offline indefinitely while their definitions and assets remain cached. A future one-time schedule that was not received before disconnection cannot activate. Stream-policy media still requires connectivity and is not guaranteed offline.
 
 Manifest schema v10 adds published Layout presentations. The Player validates the Layout document and its dependency references, prepares every required media file with size and SHA-256 checks, and activates the complete presentation atomically. Playlist zones advance independently, Apps use native provider renderers, and structured bindings reevaluate cached Source data at local date and clock transitions. A failed secondary placement is isolated; an invalid root Layout leaves the previous verified presentation active.
 
-Clock changes, timezone changes, app foregrounding, startup, manifest activation, and transition wake-ups cause reevaluation. The manifest server timestamp is used only to report approximate skew; it never silently replaces the device clock for offline scheduling.
+Clock changes, timezone changes, app foregrounding, startup, manifest activation, availability transitions, and transition wake-ups cause reevaluation. A malformed server timestamp leaves the last valid offset in force; players never silently replace the shared policy clock with an unrelated compile-time default.
 
 ## Website playback
 

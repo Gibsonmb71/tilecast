@@ -48,6 +48,7 @@ func snapshotRevision(ctx context.Context, tx pgx.Tx, playlistID uuid.UUID, user
 		                   'position', i.position, 'durationMs', i.duration_ms,
 		                   'fitMode', i.fit_mode, 'transition', i.transition,
 		                   'audioEnabled', i.audio_enabled, 'volume', i.volume,
+		                   'usePlayerDefaults', i.use_player_defaults,
 		                   'videoStartOffsetMs', i.video_start_offset_ms,
 		                   'videoEndOffsetMs', i.video_end_offset_ms,
 		                   'deliveryPolicy', i.delivery_policy) AS item
@@ -213,6 +214,7 @@ func (s *Service) RestoreRevision(ctx context.Context, playlistID uuid.UUID, rev
 		VideoStartOffsetMS *int64     `json:"videoStartOffsetMs"`
 		VideoEndOffsetMS   *int64     `json:"videoEndOffsetMs"`
 		DeliveryPolicy     string     `json:"deliveryPolicy"`
+		UsePlayerDefaults  bool       `json:"usePlayerDefaults"`
 	}
 	if err := json.Unmarshal(raw, &items); err != nil {
 		return RestoreResult{}, err
@@ -252,11 +254,11 @@ func (s *Service) RestoreRevision(ctx context.Context, playlistID uuid.UUID, rev
 			INSERT INTO playlist_items(
 				id,playlist_id,asset_id,layout_id,position,duration_ms,fit_mode,
 				transition,audio_enabled,volume,video_start_offset_ms,
-				video_end_offset_ms,delivery_policy)
-			VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
+				video_end_offset_ms,delivery_policy,use_player_defaults)
+			VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
 			uuid.New(), playlistID, item.AssetID, item.LayoutID, position, item.DurationMS,
 			item.FitMode, item.Transition, item.AudioEnabled, item.Volume,
-			item.VideoStartOffsetMS, item.VideoEndOffsetMS, item.DeliveryPolicy); err != nil {
+			item.VideoStartOffsetMS, item.VideoEndOffsetMS, item.DeliveryPolicy, item.UsePlayerDefaults); err != nil {
 			return RestoreResult{}, err
 		}
 		position++

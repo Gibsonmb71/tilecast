@@ -9,6 +9,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/tilecast/tilecast/apps/server/internal/manifestchanges"
 )
 
 func cleanOrganizationName(name string, max int) (string, error) {
@@ -304,11 +305,26 @@ func (s *Service) BulkOrganize(ctx context.Context, userID uuid.UUID, in BulkOrg
 	if err != nil {
 		return err
 	}
+	var changes []manifestchanges.Change
+	transactionalUsed := false
+	if len(in.AddTagIDs) > 0 || len(in.RemoveTagIDs) > 0 {
+		if transactional, ok := s.invalidator.(TransactionalAssetInvalidator); ok {
+			transactionalUsed = true
+			changes, err = transactional.TagAssignmentsChangedInTx(ctx, tx, append(append([]uuid.UUID{}, in.AddTagIDs...), in.RemoveTagIDs...), "media.tags_updated")
+			if err != nil {
+				return err
+			}
+		}
+	}
 	if err = tx.Commit(ctx); err != nil {
 		return err
 	}
-	if s.invalidator != nil && (len(in.AddTagIDs) > 0 || len(in.RemoveTagIDs) > 0) {
-		_ = s.invalidator.TagAssignmentsChanged(ctx, append(append([]uuid.UUID{}, in.AddTagIDs...), in.RemoveTagIDs...), "media.tags_updated")
+	if transactionalUsed {
+		s.invalidator.(TransactionalAssetInvalidator).NotifyManifestChanges(changes)
+	} else if s.invalidator != nil && (len(in.AddTagIDs) > 0 || len(in.RemoveTagIDs) > 0) {
+		if err := s.invalidator.TagAssignmentsChanged(ctx, append(append([]uuid.UUID{}, in.AddTagIDs...), in.RemoveTagIDs...), "media.tags_updated"); err != nil {
+			return err
+		}
 	}
 	return nil
 }

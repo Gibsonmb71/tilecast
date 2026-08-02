@@ -77,6 +77,29 @@ Everything after the initial pairing is remote or automatic:
   wakes it at the next window with no operator action. An emergency always
   overrides off-hours sleep.
 
+Player configuration is authoritative on Linux as well as Android. Cache
+limits and free-space reserve, download concurrency and thresholds, sync
+intervals, website timeout/cookie/reload policy, the website first-render and
+playback stall thresholds, reliability and safe-mode limits, playback
+defaults, branding, power/display policy, and location reporting are applied
+from the validated revision. Timers and supervisor behavior are reconciled
+when a revision changes; `clearOnRestart` clears website partitions only during
+actual process startup. Linux reports Display-control capabilities explicitly,
+and supports display-control schedules only when the host providers are
+available.
+
+Every cached manifest, configuration, download, and playback checkpoint is
+bound to the installation ID, screen ID, and normalized server URL. Files are
+accepted only after SHA-256 and size verification; same-size corruption is
+rejected. The player applies exact layout variant references and the same
+server-corrected clock to availability, schedules, takeovers, overrides,
+transitions, plugins, and offline playback. A known empty assignment renders
+the configured branded fallback; a transient sync failure keeps the last
+valid assigned presentation active. If an assignment exists but every item is
+outside its availability window or fails readiness, the Player shows an
+explicit “Content unavailable” branded surface; “No content assigned” is
+reserved for a confirmed empty assignment.
+
 ## Content rendering
 
 All widget, Layout, and declarative-presentation logic — data binding, typed

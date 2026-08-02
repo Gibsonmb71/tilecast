@@ -13,17 +13,22 @@ import java.io.File
 import java.io.FileOutputStream
 import java.security.MessageDigest
 
+interface BackgroundLivenessApi {
+    suspend fun identity(serverUrl: String): ServerIdentity
+    suspend fun liveness(serverUrl: String, credential: String)
+}
+
 class TilecastApi(
     // pingInterval makes OkHttp probe the socket and surface a silently dead TCP connection
     // (Wi-Fi drop, NAT timeout) as onFailure, which drives the reconnect path. Without it a
     // dead socket looks connected indefinitely and the player stops receiving pushes.
     private val client: OkHttpClient = OkHttpClient.Builder().connectTimeout(10, TimeUnit.SECONDS).readTimeout(15, TimeUnit.SECONDS).pingInterval(30, TimeUnit.SECONDS).build(),
     private val json: Json = Json { ignoreUnknownKeys = true; encodeDefaults = true },
-) {
+) : BackgroundLivenessApi {
     private val mediaType = "application/json".toMediaType()
     private val jpegMediaType = "image/jpeg".toMediaType()
 
-    suspend fun identity(serverUrl: String): ServerIdentity = get(serverUrl, "/api/v1/system/identity")
+    override suspend fun identity(serverUrl: String): ServerIdentity = get(serverUrl, "/api/v1/system/identity")
 
     suspend fun createPairing(serverUrl: String, installationId: String, metadata: DeviceMetadata): PairingSession =
         post(serverUrl, "/api/v1/player/pairing-sessions", json.encodeToString(PairingCreateRequest.serializer(), PairingCreateRequest(installationId, metadata)))
@@ -36,6 +41,11 @@ class TilecastApi(
 
     suspend fun heartbeat(serverUrl: String, credential: String, heartbeat: HeartbeatRequest) {
         post<kotlinx.serialization.json.JsonObject>(serverUrl, "/api/v1/player/heartbeat", json.encodeToString(HeartbeatRequest.serializer(), heartbeat), "Bearer $credential")
+    }
+
+    /** Background liveness must never be represented as a partial status snapshot. */
+    override suspend fun liveness(serverUrl: String, credential: String) {
+        post<kotlinx.serialization.json.JsonObject>(serverUrl, "/api/v1/player/liveness", "{}", "Bearer $credential")
     }
 
     suspend fun previewSession(serverUrl: String, credential: String): PreviewSession =

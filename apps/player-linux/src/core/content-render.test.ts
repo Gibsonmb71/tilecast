@@ -334,6 +334,44 @@ describe("renderWidget", () => {
 });
 
 describe("renderPresentation (v13 declarative)", () => {
+  it("does not render an exact asset variant outside its availability window", () => {
+    const asset = {
+      assetId: "a1",
+      variantId: "v1",
+      mimeType: "image/png",
+      sha256: "hash",
+      fileSize: 10,
+      downloadPath: "/api/v1/player/assets/a1/variants/v1",
+      availableFrom: "2026-07-16T00:00:00Z",
+      expiresAt: "2026-07-20T00:00:00Z",
+    };
+    const node: PresentationNode = {
+      type: "asset_image",
+      props: { assetId: "a1", variantId: "v1" },
+    };
+    expect(
+      renderPresentation(node, {
+        datasets: new Map(),
+        assets: [asset],
+        at,
+      }),
+    ).toBeNull();
+    expect(
+      renderPresentation(node, {
+        datasets: new Map(),
+        assets: [{ ...asset, availableFrom: "2026-07-01T00:00:00Z" }],
+        at,
+      }),
+    ).toMatchObject({ t: "image", src: "tcmedia://variant/a1/v1" });
+    expect(
+      renderPresentation(node, {
+        datasets: new Map(),
+        assets: [{ ...asset, expiresAt: "2026-07-15T00:00:00Z" }],
+        at,
+      }),
+    ).toBeNull();
+  });
+
   it("projects a v2 countdown binding as a self-updating countdown node", () => {
     const tree = renderPresentation(
       {
@@ -626,6 +664,14 @@ describe("renderLayout", () => {
         fileSize: 10,
         downloadPath: "/api/v1/player/assets/a1/variants/v1",
       },
+      {
+        assetId: "a1",
+        variantId: "v2",
+        mimeType: "image/png",
+        sha256: "y",
+        fileSize: 12,
+        downloadPath: "/api/v1/player/assets/a1/variants/v2",
+      },
     ],
     playlists: [],
     websites: [],
@@ -655,6 +701,7 @@ describe("renderLayout", () => {
           visible: true,
           locked: false,
           assetId: "a1",
+          variantId: "v1",
         },
         {
           id: "22222222-2222-2222-2222-222222222222",
@@ -685,6 +732,7 @@ describe("renderLayout", () => {
     })!;
     expect(payload.zones).toHaveLength(2);
     expect(payload.zones[0]!.image?.src).toContain("tcmedia://variant/a1/v1");
+    expect(payload.zones[0]!.image?.src).not.toContain("v2");
     expect(JSON.stringify(payload.zones[1]!.render)).toContain("Welcome");
 
     // Wrong schema version → null (keeps previous presentation active).
@@ -698,6 +746,199 @@ describe("renderLayout", () => {
           at,
         },
       ),
+    ).toBeNull();
+  });
+
+  it("applies player defaults to playlist zones and skips unavailable items", () => {
+    const playlistManifest = {
+      ...manifest,
+      playlists: [
+        {
+          id: "p1",
+          revision: 1,
+          name: "Zone playlist",
+          items: [
+            {
+              id: "future",
+              assetId: "a1",
+              variantId: "v1",
+              assetType: "image",
+              fitMode: "contain",
+              transition: "none",
+              audioEnabled: true,
+              volume: 1,
+              deliveryPolicy: "download",
+              usePlayerDefaults: true,
+              availableFrom: "2026-07-16T00:00:00Z",
+            },
+            {
+              id: "current",
+              assetId: "a1",
+              variantId: "v2",
+              assetType: "image",
+              fitMode: "contain",
+              transition: "none",
+              audioEnabled: true,
+              volume: 1,
+              deliveryPolicy: "download",
+              usePlayerDefaults: true,
+            },
+          ],
+        },
+      ],
+    } as unknown as Manifest;
+    const payload = renderLayout(
+      {
+        schemaVersion: 2,
+        canvas: {
+          width: 100,
+          height: 100,
+          orientation: "landscape",
+          backgroundColor: "#000000",
+        },
+        placements: [
+          {
+            id: "zone",
+            type: "playlistZone",
+            name: "zone",
+            x: 0,
+            y: 0,
+            width: 100,
+            height: 100,
+            layer: 0,
+            opacity: 1,
+            visible: true,
+            locked: false,
+            playlistId: "p1",
+          },
+        ],
+      },
+      {
+        manifest: playlistManifest,
+        widgets: new Map(),
+        dataSources: new Map(),
+        playback: {
+          defaultFitMode: "cover",
+          defaultImageDurationSeconds: 7,
+          defaultVolume: 0.25,
+          defaultAudioEnabled: false,
+        },
+        at,
+      },
+    )!;
+    expect(payload.zones[0]!.playlistItems).toMatchObject([
+      {
+        id: "current",
+        durationMs: 7_000,
+        fit: "cover",
+        muted: true,
+        volume: 0.25,
+      },
+    ]);
+  });
+
+  it("does not produce a blank layout when every visible zone is unavailable", () => {
+    const unavailableManifest = {
+      ...manifest,
+      assets: [
+        {
+          ...manifest.assets[0],
+          availableFrom: "2026-07-16T00:00:00Z",
+        },
+      ],
+      playlists: [
+        {
+          id: "p1",
+          revision: 1,
+          name: "Zone playlist",
+          items: [
+            {
+              id: "future",
+              assetId: "a1",
+              variantId: "v1",
+              assetType: "image",
+              fitMode: "contain",
+              transition: "none",
+              audioEnabled: false,
+              volume: 0,
+              deliveryPolicy: "download",
+            },
+          ],
+        },
+      ],
+    } as unknown as Manifest;
+    const payload = renderLayout(
+      {
+        schemaVersion: 2,
+        canvas: {
+          width: 100,
+          height: 100,
+          orientation: "landscape",
+          backgroundColor: "#000000",
+        },
+        placements: [
+          {
+            id: "zone",
+            type: "playlistZone",
+            name: "zone",
+            x: 0,
+            y: 0,
+            width: 100,
+            height: 100,
+            layer: 0,
+            opacity: 1,
+            visible: true,
+            locked: false,
+            playlistId: "p1",
+          },
+        ],
+      },
+      {
+        manifest: unavailableManifest,
+        widgets: new Map(),
+        dataSources: new Map(),
+        at,
+      },
+    );
+
+    expect(payload).toBeNull();
+  });
+
+  it("does not guess a layout variant when an asset has several variants", () => {
+    const document: LayoutDocument = {
+      schemaVersion: 2,
+      canvas: {
+        width: 100,
+        height: 100,
+        orientation: "landscape",
+        backgroundColor: "#000000",
+      },
+      placements: [
+        {
+          id: "ambiguous",
+          type: "asset",
+          name: "ambiguous",
+          x: 0,
+          y: 0,
+          width: 100,
+          height: 100,
+          layer: 0,
+          opacity: 1,
+          visible: true,
+          locked: false,
+          assetId: "a1",
+          variantId: null,
+        },
+      ],
+    };
+
+    expect(
+      renderLayout(document, {
+        manifest,
+        widgets: new Map(),
+        dataSources: new Map(),
+        at,
+      }),
     ).toBeNull();
   });
 

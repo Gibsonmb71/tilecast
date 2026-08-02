@@ -12,9 +12,13 @@ import (
 	"github.com/tilecast/tilecast/apps/server/internal/database"
 )
 
-type testNotifier struct{ notes int }
+type testNotifier struct {
+	notes           int
+	manifestChanges int
+}
 
-func (n *testNotifier) ConfigChanged(uuid.UUID, int64) { n.notes++ }
+func (n *testNotifier) ConfigChanged(uuid.UUID, int64)   { n.notes++ }
+func (n *testNotifier) ManifestChanged(uuid.UUID, int64) { n.manifestChanges++ }
 func TestSettingsPolicyInheritanceAndRevision(t *testing.T) {
 	url := os.Getenv("TEST_DATABASE_URL")
 	if url == "" {
@@ -99,6 +103,13 @@ func TestSettingsPolicyInheritanceAndRevision(t *testing.T) {
 	}
 	if defaultTimezone != "America/New_York" {
 		t.Fatalf("schedule default timezone=%q", defaultTimezone)
+	}
+	var manifestVersion int64
+	if err = pool.QueryRow(ctx, `SELECT manifest_version FROM screen_manifest_state WHERE screen_id=$1`, screen).Scan(&manifestVersion); err != nil {
+		t.Fatalf("organization settings did not create manifest state: %v", err)
+	}
+	if manifestVersion != 2 || notifier.manifestChanges != 1 {
+		t.Fatalf("manifest invalidation version=%d notifications=%d", manifestVersion, notifier.manifestChanges)
 	}
 	if document.Values["power.active_hours_end"] != "16:00" {
 		t.Fatalf("active hours end=%#v", document.Values["power.active_hours_end"])

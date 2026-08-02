@@ -20,6 +20,7 @@ import {
   renderPresentation,
 } from "./presentation-render";
 import type { ManifestDataSource, ManifestWidget } from "./content-types";
+import type { ManifestAsset } from "./types";
 import type { RenderNode, WidgetRenderPayload } from "./render-tree";
 
 const DEFAULT_FG = "#F5F7FA";
@@ -27,6 +28,7 @@ const DEFAULT_BG = "#0E141B";
 
 export interface WidgetRenderContext {
   dataSources: Map<string, ManifestDataSource>;
+  assets?: readonly ManifestAsset[];
   at: Date;
   /** Pixel height available, used to scale font sizes sensibly. */
   zoneHeight?: number;
@@ -91,6 +93,7 @@ export function renderWidget(
     const root = renderPresentation(widget.presentation.native.root, {
       datasets,
       at: ctx.at,
+      assets: ctx.assets,
     });
     // The surface carries the author's background, so the payload reports it rather than
     // letting the default show through wherever the payload background is used.

@@ -205,6 +205,13 @@ export function createContentPlacement(
   position?: { x: number; y: number },
 ): LayoutPlacement {
   const isApp = asset.type === "widget";
+  const variantId = isApp
+    ? undefined
+    : asset.variants
+        ?.filter((variant) => variant.playerCompatible)
+        .sort((a, b) =>
+          a.kind === "playback" ? -1 : b.kind === "playback" ? 1 : 0,
+        )[0]?.id;
   return {
     id: crypto.randomUUID(),
     type: isApp ? "widget" : "asset",
@@ -216,6 +223,7 @@ export function createContentPlacement(
     locked: false,
     widgetId: isApp ? asset.id : undefined,
     assetId: isApp ? undefined : asset.id,
+    variantId,
     overrides: isApp
       ? {
           fit: "contain",

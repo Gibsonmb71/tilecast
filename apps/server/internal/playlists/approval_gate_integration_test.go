@@ -43,6 +43,7 @@ func TestApprovalGateIsAtomicWithTheAssignment(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create playlist: %v", err)
 	}
+	f.addReadyImageToPlaylist(t, playlist.ID)
 
 	// Unreviewed content is refused, which is the gate working at all.
 	if _, err := f.service.Assign(f.ctx, f.screen, playlist.ID, f.user); !errors.Is(err, approvals.ErrNotApproved) {
@@ -98,6 +99,7 @@ func TestSyncGroupAssignmentPassesTheApprovalGate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create playlist: %v", err)
 	}
+	f.addReadyImageToPlaylist(t, playlist.ID)
 	group := uuid.New()
 	if _, err := f.pool.Exec(f.ctx, `INSERT INTO screen_groups(id,organization_id,name,created_by)VALUES($1,$2,'East Wing',$3)`, group, f.org, f.user); err != nil {
 		t.Fatal(err)

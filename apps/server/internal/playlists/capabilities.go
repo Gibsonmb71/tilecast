@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -38,6 +39,13 @@ type presentationQuery interface {
 func (s *Service) ValidatePresentationTargets(ctx context.Context, playlistID, layoutID *uuid.UUID, screenIDs, groupIDs []uuid.UUID) error {
 	if (playlistID == nil) == (layoutID == nil) {
 		return errors.New("presentation requires exactly one playlist or Layout")
+	}
+	contentType, contentID := "layout", layoutID
+	if playlistID != nil {
+		contentType, contentID = "playlist", playlistID
+	}
+	if err := s.ValidatePresentation(ctx, contentType, *contentID, time.Now().UTC()); err != nil {
+		return err
 	}
 	rows, err := s.db.Query(ctx, `
 		SELECT DISTINCT sc.id

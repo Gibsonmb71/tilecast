@@ -101,13 +101,16 @@ internal class SynchronizedPlaybackTimeline private constructor(
             assets: List<ManifestAsset>,
             anchor: Instant,
             serverClockOffsetSeconds: Long?,
+            serverClockOffsetMillis: Long? = null,
             startedAtElapsedRealtimeMs: Long,
             startedAtWallClock: Instant,
         ): SynchronizedPlaybackTimeline? {
             if (playlist.items.isEmpty()) return null
             val durations = playlist.items.map { effectiveDurationMs(it, assets) }.toLongArray()
             val cycleDuration = durations.sum().coerceAtLeast(1)
-            val correctedStart = startedAtWallClock.plusSeconds(serverClockOffsetSeconds ?: 0)
+            val correctedStart = startedAtWallClock.plusMillis(
+                serverClockOffsetMillis ?: (serverClockOffsetSeconds ?: 0) * 1_000L,
+            )
             val elapsedFromAnchor = if (correctedStart.isAfter(anchor)) {
                 Duration.between(anchor, correctedStart).toMillis().coerceAtLeast(0)
             } else {

@@ -35,6 +35,13 @@ A complete backup requires:
 
 The database holds every enrolled authenticator secret. Unlike a password or a device credential, a TOTP secret cannot be hashed, so anyone who can read a database backup can generate codes for any enrolled account. Protect backup archives accordingly. Passkeys store only a public key and do not carry this risk.
 
+Upload finalization is journaled in PostgreSQL. Keep both the database and
+media volume available during upgrades so the reconciliation worker can finish
+a storage move or recover a move whose database commit was interrupted. The
+recovery operation is idempotent; it does not create a second asset/variant,
+and abandoned temporary data is cleaned only after its recovery window. Do not
+manually delete rows in `finalizing` while recovery is running.
+
 Take database and media snapshots from a consistent maintenance window. Restoring only PostgreSQL produces missing-file errors. Restoring only media produces unreferenced files. Pin released Tilecast image tags rather than `latest`, back up both volumes before upgrades, and review migration notes. Automated backup/restore tooling remains a Milestone 9 deliverable.
 Scheduling limits are configured with `TILECAST_MAX_SCHEDULES` (1000), `TILECAST_MAX_SCHEDULE_TARGETS` (250), `TILECAST_MAX_GROUPS_PER_SCREEN` (50), `TILECAST_SCHEDULE_PREFETCH_DAYS` (14), `TILECAST_SCHEDULE_ACTIVATION_GRACE_SECONDS` (30), and `TILECAST_CLOCK_SKEW_WARNING_SECONDS` (300). Players need reasonably accurate clocks and current timezone data. Studio surfaces reported skew rather than changing offline evaluation time.
 Website defaults are `TILECAST_WEBSITE_ALLOW_PRIVATE_HTTP=false`, `TILECAST_WEBSITE_DEFAULT_TIMEOUT_SECONDS=20`, `TILECAST_WEBSITE_MAX_TIMEOUT_SECONDS=120`, `TILECAST_WEBSITE_MIN_REFRESH_SECONDS=30`, `TILECAST_WEBSITE_MAX_ALLOWED_HOSTS=25`, and `TILECAST_WEBSITE_MAX_ASSETS=500`. Enabling private HTTP is appropriate only for trusted LAN destinations. It does not permit public HTTP or nonstandard ports.

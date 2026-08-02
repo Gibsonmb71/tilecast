@@ -53,8 +53,6 @@ export const descriptions: Record<string, string> = {
   "player.download.automatic_threshold_bytes":
     "Largest item Automatic delivery will download instead of stream.",
   "power.active_hours_days": "Days when this player should operate normally.",
-  "power.cec_assist_enabled":
-    "Requests Android sleep and wake; compatible firmware may relay HDMI-CEC.",
   "power.outside_active_hours_display":
     "What remains visible when the player is outside active hours and the television does not sleep.",
   "power.outside_active_hours_text":
@@ -88,7 +86,7 @@ export const subsectionOrder: Record<
     { title: "Synchronization", prefix: ["player.sync."] },
     {
       title: "Identification and diagnostics",
-      prefix: ["player.identify.", "player.diagnostics."],
+      prefix: ["player.identify."],
     },
   ],
   reliability: [
@@ -149,12 +147,6 @@ export const subsectionOrder: Record<
         "power.outside_active_hours_display",
         "power.outside_active_hours_text",
       ],
-    },
-    {
-      title: "Power Assist",
-      description:
-        "Tilecast requests Android sleep and wake behavior. This is not direct HDMI-CEC control and results depend on device and TV firmware.",
-      keys: ["power.cec_assist_enabled"],
     },
   ],
   accessibility: [

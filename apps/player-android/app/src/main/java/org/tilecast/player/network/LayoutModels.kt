@@ -7,7 +7,7 @@ import kotlinx.serialization.json.JsonObject
 data class LayoutDocument(val schemaVersion: Int, val canvas: LayoutCanvas, val placements: List<LayoutPlacement> = emptyList())
 
 @Serializable
-data class LayoutCanvas(val width: Int, val height: Int, val orientation: String, val backgroundColor: String, val backgroundAssetId: String? = null, val safeAreaPercent: Float = 5f)
+data class LayoutCanvas(val width: Int, val height: Int, val orientation: String, val backgroundColor: String, val backgroundAssetId: String? = null, val safeAreaPercent: Float = 5f, val backgroundVariantId: String? = null)
 
 @Serializable
 data class LayoutPlacement(
@@ -29,6 +29,7 @@ data class LayoutPlacement(
     val overrides: JsonObject? = null,
     val primitive: LayoutPrimitive? = null,
     val playback: LayoutPlayback? = null,
+    val variantId: String? = null,
 )
 
 @Serializable

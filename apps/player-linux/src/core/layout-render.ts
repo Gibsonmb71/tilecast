@@ -11,6 +11,7 @@
 
 import { safeColor } from "./format";
 import { normalizeSource } from "./datasource";
+import { isAvailableAt } from "./content-availability";
 import { renderWidget } from "./widget-render";
 import type {
   LayoutDocument,
@@ -31,6 +32,7 @@ import type {
   LayoutZone,
   RenderNode,
 } from "./render-tree";
+import { resolvePlaybackItemSettings } from "./playback-defaults";
 
 const FONT_WHITELIST = new Set([
   "Inter",
@@ -44,13 +46,22 @@ export interface LayoutRenderContext {
   widgets: Map<string, ManifestWidget>;
   dataSources: Map<string, ManifestDataSource>;
   at: Date;
+  playback?: Record<string, unknown>;
 }
 
 function assetVariant(
   manifest: Manifest,
   assetId: string,
+  variantId?: string | null,
+  at?: Date,
 ): ManifestAsset | undefined {
-  return manifest.assets.find((a) => a.assetId === assetId);
+  return manifest.assets.find(
+    (a) =>
+      a.assetId === assetId &&
+      variantId != null &&
+      a.variantId === variantId &&
+      isAvailableAt(a, at ?? new Date()),
+  );
 }
 
 function mediaSrc(asset: ManifestAsset): string {
@@ -71,6 +82,7 @@ export function renderLayout(
   }
 
   const zones: LayoutZone[] = [];
+  let hasVisiblePlacement = false;
   const ordered = [...document.placements].sort((a, b) => a.layer - b.layer);
   for (const placement of ordered) {
     if (!placement.visible) {
@@ -83,6 +95,7 @@ export function renderLayout(
     ) {
       continue;
     }
+    hasVisiblePlacement = true;
     const zone = renderPlacement(placement, ctx);
     if (zone) {
       const projected = viewport ? clipZone(zone, viewport) : zone;
@@ -94,10 +107,24 @@ export function renderLayout(
 
   let backgroundImage: string | undefined;
   if (canvas.backgroundAssetId) {
-    const asset = assetVariant(ctx.manifest, canvas.backgroundAssetId);
+    const asset = assetVariant(
+      ctx.manifest,
+      canvas.backgroundAssetId,
+      canvas.backgroundVariantId,
+      ctx.at,
+    );
     if (asset) {
       backgroundImage = mediaSrc(asset);
     }
+  }
+
+  // A layout placement whose asset/window/fallback is no longer renderable
+  // must not turn into a successful but blank presentation. The caller can
+  // then apply the screen's branded no-content/fallback policy. An explicitly
+  // empty layout remains valid, and a valid background remains a renderable
+  // canvas even when it has no zones.
+  if (hasVisiblePlacement && zones.length === 0 && !backgroundImage) {
+    return null;
   }
 
   return {
@@ -160,6 +187,7 @@ function renderPlacement(
       }
       const payload = renderWidget(widget, {
         dataSources: ctx.dataSources,
+        assets: ctx.manifest.assets,
         at: ctx.at,
         zoneHeight: placement.height,
       });
@@ -170,7 +198,12 @@ function renderPlacement(
     }
     case "asset": {
       const asset = placement.assetId
-        ? assetVariant(ctx.manifest, placement.assetId)
+        ? assetVariant(
+            ctx.manifest,
+            placement.assetId,
+            placement.variantId,
+            ctx.at,
+          )
         : undefined;
       if (!asset) {
         return null;
@@ -187,6 +220,7 @@ function renderPlacement(
               durationMs: null,
               fit,
               muted: placement.playback?.muted ?? true,
+              volume: 1,
               loop: placement.playback?.loop ?? true,
             },
           ],
@@ -199,7 +233,13 @@ function renderPlacement(
       if (!playlist) {
         return null;
       }
-      const items = buildZoneItems(playlist, ctx.manifest, placement);
+      const items = buildZoneItems(
+        playlist,
+        ctx.manifest,
+        placement,
+        ctx.at,
+        ctx.playback,
+      );
       if (items.length === 0) {
         return null;
       }
@@ -228,9 +268,14 @@ function buildZoneItems(
   playlist: ManifestPlaylist,
   manifest: Manifest,
   placement: LayoutPlacement,
+  at: Date,
+  playback: Record<string, unknown> | undefined,
 ): LayoutPlaylistItem[] {
   const items: LayoutPlaylistItem[] = [];
   for (const item of playlist.items) {
+    if (!isAvailableAt(item, at)) {
+      continue;
+    }
     if (item.layoutId || item.assetType === "website") {
       continue; // nested layouts / websites not supported inside a zone
     }
@@ -238,6 +283,9 @@ function buildZoneItems(
       (a) => a.assetId === item.assetId && a.variantId === item.variantId,
     );
     if (!asset) {
+      continue;
+    }
+    if (!isAvailableAt(asset, at)) {
       continue;
     }
     const kind = asset.mimeType.startsWith("video/")
@@ -248,13 +296,24 @@ function buildZoneItems(
     if (!kind) {
       continue;
     }
+    const settings = resolvePlaybackItemSettings(
+      item,
+      playback,
+      kind === "image"
+        ? Number.isFinite(Number(playback?.defaultImageDurationSeconds)) &&
+          Number(playback?.defaultImageDurationSeconds) > 0
+          ? Number(playback?.defaultImageDurationSeconds) * 1_000
+          : 10_000
+        : 30_000,
+    );
     items.push({
       id: item.id,
       kind,
       src: `tcmedia://variant/${asset.assetId}/${asset.variantId}`,
-      durationMs: item.durationMs ?? (kind === "image" ? 10_000 : null),
-      fit: item.fitMode || placement.playback?.fit || "contain",
-      muted: !item.audioEnabled,
+      durationMs: settings.durationMs,
+      fit: placement.playback?.fit || settings.fitMode,
+      muted: placement.playback?.muted ?? !settings.audioEnabled,
+      volume: settings.volume,
       loop: playlist.items.length === 1,
     });
   }

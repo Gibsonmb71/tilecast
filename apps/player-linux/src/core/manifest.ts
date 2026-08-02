@@ -20,24 +20,31 @@ import { ApiError, NetworkError, type ApiClient } from "./api";
 import {
   downloadVerified,
   DownloadError,
+  verifyFileIntegrity,
   type DownloadObserver,
 } from "./download";
 import { logger } from "./log";
 import type { StateStore } from "./storage";
 import type { Manifest, ManifestAsset } from "./types";
+import { ServerClock } from "./clock";
+import { cacheIdentityMatches, type CacheIdentity } from "./cache-identity";
 
 const log = logger("manifest");
 
 const ACTIVE_FILE = "manifest-active.json";
 export const RECONCILE_INTERVAL_MS = 5 * 60_000;
-const MAX_CONCURRENT_DOWNLOADS = 2;
+const DEFAULT_MAX_CONCURRENT_DOWNLOADS = 2;
 /** "automatic" policy downloads video up to this size, else streams. */
-const AUTOMATIC_VIDEO_LIMIT_BYTES = 256 * 1024 * 1024;
+const DEFAULT_AUTOMATIC_VIDEO_LIMIT_BYTES = 256 * 1024 * 1024;
 
 export interface StoredManifest {
   manifest: Manifest;
   etag: string | null;
   storedAt: string;
+  clockOffsetMs?: number;
+  installationId?: string;
+  screenId?: string;
+  normalizedServerUrl?: string;
 }
 
 export interface ManifestSyncEvents {
@@ -52,7 +59,10 @@ export function mediaFileName(asset: ManifestAsset): string {
 }
 
 /** Variants that must be fully cached before the manifest may activate. */
-export function requiredDownloads(manifest: Manifest): ManifestAsset[] {
+export function requiredDownloads(
+  manifest: Manifest,
+  automaticVideoLimitBytes = DEFAULT_AUTOMATIC_VIDEO_LIMIT_BYTES,
+): ManifestAsset[] {
   const byAsset = new Map<string, ManifestAsset>();
   for (const asset of manifest.assets) {
     byAsset.set(`${asset.assetId}:${asset.variantId}`, asset);
@@ -61,13 +71,9 @@ export function requiredDownloads(manifest: Manifest): ManifestAsset[] {
   const wanted = new Map<string, ManifestAsset>();
   const addAsset = (assetId: string, variantId: string | null | undefined) => {
     if (!variantId) {
-      // Without a variant reference, fall back to any variant rows for the
-      // asset (e.g. website fallback images referenced by asset only).
-      for (const asset of manifest.assets) {
-        if (asset.assetId === assetId) {
-          wanted.set(`${asset.assetId}:${asset.variantId}`, asset);
-        }
-      }
+      // Layouts, fallbacks, branding, and plugins must carry an exact variant
+      // reference. Guessing here can make two players render different files
+      // when an asset has more than one ready variant.
       return;
     }
     const asset = byAsset.get(`${assetId}:${variantId}`);
@@ -100,7 +106,7 @@ export function requiredDownloads(manifest: Manifest): ManifestAsset[] {
       const download =
         policy === "download" ||
         (policy === "automatic" &&
-          (!isVideo || asset.fileSize <= AUTOMATIC_VIDEO_LIMIT_BYTES));
+          (!isVideo || asset.fileSize <= automaticVideoLimitBytes));
       if (download) {
         wanted.set(`${asset.assetId}:${asset.variantId}`, asset);
       }
@@ -114,6 +120,10 @@ export function requiredDownloads(manifest: Manifest): ManifestAsset[] {
     }
   }
 
+  if (manifest.branding?.logoAssetId) {
+    addAsset(manifest.branding.logoAssetId, manifest.branding.logoVariantId);
+  }
+
   // Layout-referenced images (asset placements and canvas backgrounds) must
   // be cached so a Layout renders correctly offline. Videos inside layout
   // zones follow their own playlist item's delivery policy, handled above.
@@ -122,8 +132,15 @@ export function requiredDownloads(manifest: Manifest): ManifestAsset[] {
     ...(manifest.layout ? [manifest.layout] : []),
   ] as Array<{
     document?: {
-      canvas?: { backgroundAssetId?: string | null };
-      placements?: Array<{ type: string; assetId?: string | null }>;
+      canvas?: {
+        backgroundAssetId?: string | null;
+        backgroundVariantId?: string | null;
+      };
+      placements?: Array<{
+        type: string;
+        assetId?: string | null;
+        variantId?: string | null;
+      }>;
     };
   }>;
   for (const layout of layouts) {
@@ -132,18 +149,18 @@ export function requiredDownloads(manifest: Manifest): ManifestAsset[] {
       continue;
     }
     if (document.canvas?.backgroundAssetId) {
-      addAsset(document.canvas.backgroundAssetId, null);
+      addAsset(
+        document.canvas.backgroundAssetId,
+        document.canvas.backgroundVariantId,
+      );
     }
     for (const placement of document.placements ?? []) {
       if (placement.type === "asset" && placement.assetId) {
         // Only images are required upfront; a zone video may stream.
-        const variant = manifest.assets.find(
-          (a) =>
-            a.assetId === placement.assetId && a.mimeType.startsWith("image/"),
-        );
-        if (variant) {
-          addAsset(placement.assetId, variant.variantId);
-        }
+        // The manifest contract carries an exact variant reference. Do not
+        // choose an arbitrary ready variant when a legacy or malformed layout
+        // omits it; rendering and caching must make the same decision.
+        addAsset(placement.assetId, placement.variantId);
       }
     }
   }
@@ -166,6 +183,13 @@ export class ManifestSync {
   private stored: StoredManifest | null = null;
   private timer: NodeJS.Timeout | null = null;
   private stopped = false;
+  private started = false;
+  private reconciliationIntervalMs = RECONCILE_INTERVAL_MS;
+  private maximumBytes = 8 * 1024 * 1024 * 1024;
+  private minimumFreeBytes = 1024 * 1024 * 1024;
+  private automaticVideoLimitBytes = DEFAULT_AUTOMATIC_VIDEO_LIMIT_BYTES;
+  private concurrentDownloads = DEFAULT_MAX_CONCURRENT_DOWNLOADS;
+  private identity: CacheIdentity | null = null;
   lastSyncError: string | null = null;
 
   constructor(
@@ -174,7 +198,52 @@ export class ManifestSync {
     private readonly events: ManifestSyncEvents,
     /** Counts transfer facts for telemetry. Absent in tests and previews. */
     private readonly downloadObserver?: DownloadObserver,
+    private readonly clock: ServerClock = new ServerClock(),
   ) {}
+
+  setIdentity(identity: CacheIdentity | null): void {
+    this.identity = identity;
+  }
+
+  /** Apply the authoritative server cache/download policy. */
+  applyPolicy(
+    maximumBytes: number,
+    minimumFreeBytes: number,
+    automaticVideoLimitBytes: number,
+    concurrentDownloads: number,
+    reconciliationSeconds: number,
+  ): void {
+    if (Number.isFinite(maximumBytes) && maximumBytes > 0) {
+      this.maximumBytes = maximumBytes;
+    }
+    if (Number.isFinite(minimumFreeBytes) && minimumFreeBytes >= 0) {
+      this.minimumFreeBytes = minimumFreeBytes;
+    }
+    if (
+      Number.isFinite(automaticVideoLimitBytes) &&
+      automaticVideoLimitBytes > 0
+    ) {
+      this.automaticVideoLimitBytes = automaticVideoLimitBytes;
+    }
+    if (Number.isFinite(concurrentDownloads) && concurrentDownloads >= 1) {
+      this.concurrentDownloads = Math.min(8, Math.floor(concurrentDownloads));
+    }
+    if (Number.isFinite(reconciliationSeconds) && reconciliationSeconds >= 60) {
+      this.reconciliationIntervalMs = Math.min(
+        86_400_000,
+        Math.floor(reconciliationSeconds * 1_000),
+      );
+    }
+    if (this.started) {
+      this.scheduleReconciliation();
+    }
+  }
+
+  async invalidateCachedState(): Promise<void> {
+    this.stored = null;
+    await this.store.delete(ACTIVE_FILE);
+    await this.store.clearMedia();
+  }
 
   /**
    * Activate the persisted manifest from disk with zero network. Safe to
@@ -182,6 +251,13 @@ export class ManifestSync {
    */
   async loadCached(): Promise<void> {
     this.stored = await this.store.readJson<StoredManifest>(ACTIVE_FILE);
+    if (
+      this.stored &&
+      (!this.identity || !cacheIdentityMatches(this.identity, this.stored))
+    ) {
+      await this.invalidateCachedState();
+      return;
+    }
     if (this.stored) {
       log.info("activating cached manifest at boot", {
         manifestVersion: this.stored.manifest.manifestVersion,
@@ -189,24 +265,37 @@ export class ManifestSync {
       const storedAt = Date.parse(this.stored.storedAt);
       const serverTime = Date.parse(this.stored.manifest.serverTime);
       const clockOffsetMs =
-        Number.isFinite(storedAt) && Number.isFinite(serverTime)
-          ? serverTime - storedAt
-          : 0;
+        typeof this.stored.clockOffsetMs === "number" &&
+        Number.isFinite(this.stored.clockOffsetMs)
+          ? this.stored.clockOffsetMs
+          : Number.isFinite(storedAt) && Number.isFinite(serverTime)
+            ? serverTime - storedAt
+            : 0;
+      this.clock.restore(clockOffsetMs);
       this.events.onManifestPrepared(this.stored.manifest, clockOffsetMs);
     }
   }
 
   /** Begin network reconciliation. Call only after the identity gate. */
   async start(): Promise<void> {
+    this.started = true;
+    this.scheduleReconciliation();
+    await this.syncNow("startup");
+  }
+
+  private scheduleReconciliation(): void {
+    if (this.timer) {
+      clearInterval(this.timer);
+    }
     this.timer = setInterval(() => {
       void this.syncNow("reconcile-timer");
-    }, RECONCILE_INTERVAL_MS);
+    }, this.reconciliationIntervalMs);
     this.timer.unref?.();
-    await this.syncNow("startup");
   }
 
   stop(): void {
     this.stopped = true;
+    this.started = false;
     if (this.timer) {
       clearInterval(this.timer);
       this.timer = null;
@@ -274,24 +363,27 @@ export class ManifestSync {
       return;
     }
 
+    const storedAt = Date.now();
+    const clockOffsetMs = this.clock.sync(manifest.serverTime, storedAt);
     this.stored = {
       manifest,
       etag: result.etag,
-      storedAt: new Date().toISOString(),
+      storedAt: new Date(storedAt).toISOString(),
+      clockOffsetMs,
+      installationId: this.identity?.installationId,
+      screenId: this.identity?.screenId,
+      normalizedServerUrl: this.identity?.normalizedServerUrl,
     };
     await this.store.writeJson(ACTIVE_FILE, this.stored);
     this.lastSyncError = null;
-    const serverTime = Date.parse(manifest.serverTime);
-    this.events.onManifestPrepared(
-      manifest,
-      Number.isFinite(serverTime) ? serverTime - Date.now() : 0,
-    );
+    this.events.onManifestPrepared(manifest, clockOffsetMs);
     await this.cleanupCache();
   }
 
   /** Download and verify everything the manifest requires. */
   private async prepare(manifest: Manifest): Promise<void> {
-    const required = requiredDownloads(manifest);
+    const required = requiredDownloads(manifest, this.automaticVideoLimitBytes);
+    await this.ensureSpace(required);
     const mediaDir = this.store.mediaDir();
     const queue = [...required];
     const failures: string[] = [];
@@ -328,7 +420,7 @@ export class ManifestSync {
 
     await Promise.all(
       Array.from(
-        { length: Math.min(MAX_CONCURRENT_DOWNLOADS, required.length) },
+        { length: Math.min(this.concurrentDownloads, required.length) },
         worker,
       ),
     );
@@ -338,12 +430,66 @@ export class ManifestSync {
     }
   }
 
+  private async ensureSpace(required: ManifestAsset[]): Promise<void> {
+    const requiredNames = new Set(required.map(mediaFileName));
+    let entries: string[] = [];
+    try {
+      entries = await fs.readdir(this.store.mediaDir());
+    } catch {
+      return;
+    }
+    // Evict files outside the candidate manifest before enforcing the server
+    // policy. A stale cache must not make a valid new manifest impossible.
+    await Promise.all(
+      entries
+        .filter(
+          (entry) => !entry.endsWith(".part") && !requiredNames.has(entry),
+        )
+        .map((entry) =>
+          fs.rm(path.join(this.store.mediaDir(), entry), { force: true }),
+        ),
+    );
+    const files = await Promise.all(
+      (await fs.readdir(this.store.mediaDir())).map(async (entry) => {
+        try {
+          return (await fs.stat(path.join(this.store.mediaDir(), entry))).size;
+        } catch {
+          return 0;
+        }
+      }),
+    );
+    const used = files.reduce((sum, size) => sum + size, 0);
+    const missingBytes = (
+      await Promise.all(
+        required.map(async (asset) => {
+          const file = path.join(this.store.mediaDir(), mediaFileName(asset));
+          return (await verifyFileIntegrity(file, asset.sha256, asset.fileSize))
+            ? 0
+            : asset.fileSize;
+        }),
+      )
+    ).reduce((sum, size) => sum + size, 0);
+    const filesystem = await fs.statfs(this.store.mediaDir());
+    const diskFree = filesystem.bavail * filesystem.bsize;
+    if (
+      used + missingBytes > this.maximumBytes ||
+      diskFree - missingBytes < this.minimumFreeBytes
+    ) {
+      throw new Error("insufficient cache space for the configured policy");
+    }
+  }
+
   /** Local media path for a cached variant, or null if not cached. */
   async cachedPath(asset: ManifestAsset): Promise<string | null> {
     const filePath = path.join(this.store.mediaDir(), mediaFileName(asset));
     try {
-      const stat = await fs.stat(filePath);
-      return stat.size === asset.fileSize ? filePath : null;
+      if (await verifyFileIntegrity(filePath, asset.sha256, asset.fileSize)) {
+        return filePath;
+      }
+      // Do not allow an invalid file to be served offline or to block a later
+      // verified download because it happens to have the expected size.
+      await fs.rm(filePath, { force: true });
+      return null;
     } catch {
       return null;
     }

@@ -1,6 +1,7 @@
 package org.tilecast.player
 
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.os.Bundle
 import android.content.BroadcastReceiver
 import android.content.Context
@@ -69,6 +70,8 @@ import org.tilecast.player.core.DiscoveredServer
 import org.tilecast.player.core.PlayerState
 import org.tilecast.player.content.FullscreenPlayback
 import org.tilecast.player.content.WithPluginBars
+import org.tilecast.player.content.BrandedFallbackKind
+import org.tilecast.player.content.resolveBrandedFallbackKind
 import org.tilecast.player.preview.LivePreviewCoordinator
 import org.tilecast.player.preview.LiveStreamCoordinator
 import org.tilecast.player.preview.PlayerWindowCapture
@@ -137,6 +140,9 @@ class MainActivity : ComponentActivity() {
 @Composable fun TilecastPlayer(model: PlayerViewModel,adminPrompt:Boolean=false,dismissAdmin:()->Unit={},reliability:ReliabilityController?=null) {
     val state by model.state.collectAsStateWithLifecycle()
 	val content by model.content.collectAsStateWithLifecycle()
+	val noContentKnown by model.noContentKnown.collectAsStateWithLifecycle()
+	val unavailableKnown by model.unavailableKnown.collectAsStateWithLifecycle()
+	val noContentLogoPath by model.noContentLogoPath.collectAsStateWithLifecycle()
 	val disabled by model.playbackDisabled.collectAsStateWithLifecycle()
 	val identify by model.identify.collectAsStateWithLifecycle()
 	val config by model.playerConfig.collectAsStateWithLifecycle()
@@ -152,18 +158,22 @@ class MainActivity : ComponentActivity() {
 	if(commissioning.required){CommissioningScreen(commissioning,model::setCommissioningPin,{activity?.openSystemSettings(Settings.ACTION_ACCESSIBILITY_SETTINGS)},{activity?.openSystemSettings(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES)},model::refreshCommissioning,model::advanceCommissioning,{model.runSelfTest(); Unit},model::completeCommissioning);return}
 	if(identify!=null){Box(Modifier.fillMaxSize().background(Color.Black),contentAlignment=Alignment.Center){Text(identify!!,color=Color.White,style=MaterialTheme.typography.displayLarge)};return}
 	if(update?.state in setOf("waiting_for_permission","waiting_for_user","installing")){UpdateApproval(update!!,model::openUpdatePermission,{activity?.installPlayerUpdate()?:model.installUpdate()});return}
-	if(safeMode){Box(Modifier.fillMaxSize().background(brandedBackground),contentAlignment=Alignment.Center){Column(horizontalAlignment=Alignment.CenterHorizontally){TilecastBrand();Spacer(Modifier.height(28.dp));Text("Player recovery mode",color=brandedText,style=MaterialTheme.typography.headlineLarge);Text("Tilecast remains paired and connected. Use Studio or the local maintenance menu to retry.",color=brandedText);Text("Diagnostic code: TC-RCV-10",color=SignalWarning)}};return}
+	if(safeMode){Box(Modifier.fillMaxSize().background(brandedBackground),contentAlignment=Alignment.Center){Column(horizontalAlignment=Alignment.CenterHorizontally){TilecastBrand();Spacer(Modifier.height(28.dp));Text("Player recovery mode",color=brandedText,style=MaterialTheme.typography.headlineLarge);Text("Tilecast remains paired and connected. Use Studio or the local maintenance menu to retry.",color=brandedText)}};return}
 	if(!activeHours){OutsideActiveHoursScreen(config?.power,config?.branding,brandedText);return}
-	if (content != null) {
+	val fallbackKind = resolveBrandedFallbackKind(content != null, disabled, noContentKnown, unavailableKnown, (state as? PlayerState.PairedIdle)?.connected == true)
+	if (fallbackKind == BrandedFallbackKind.ASSIGNED_CONTENT && content != null) {
 		// A bar rides above playback from the cached manifest, so a countdown keeps
 		// appearing on schedule — and an alert ticker keeps its own expiry — even
 		// while the server is unreachable.
-		WithPluginBars(content!!.content.manifest.plugins, content!!.content.serverClockOffsetSeconds) {
+		WithPluginBars(content!!.content.manifest.plugins, content!!.content.serverClockOffsetMillis) {
 			FullscreenPlayback(content!!, model::playbackBoundary, model::playbackError,model::websitePlaybackStatus,model::widgetPlaybackStatus,model::playbackProgress)
 		}
 		return
 	}
-	if(disabled){Box(Modifier.fillMaxSize().background(brandedBackground),contentAlignment=Alignment.Center){Column(horizontalAlignment=Alignment.CenterHorizontally){TilecastBrand();Spacer(Modifier.height(28.dp));Text(config?.branding?.disabledTitle?:"Playback disabled",color=brandedText,style=MaterialTheme.typography.headlineLarge);Text(config?.branding?.disabledMessage?:"This screen remains connected to Tilecast Studio.",color=brandedText)}};return}
+	if(fallbackKind == BrandedFallbackKind.DISABLED){BrandedStatusScreen(config?.branding, noContentLogoPath, config?.branding?.disabledTitle?:"Playback disabled", config?.branding?.disabledMessage?:"This screen remains connected to Tilecast Studio.", "disabled", brandedBackground, brandedText);return}
+	if(fallbackKind == BrandedFallbackKind.OFFLINE){BrandedStatusScreen(config?.branding, noContentLogoPath, "Player offline", "Waiting for the Tilecast server. Assigned content will remain unchanged until it is available.", "offline", brandedBackground, brandedText);return}
+	if(fallbackKind == BrandedFallbackKind.UNAVAILABLE){BrandedStatusScreen(config?.branding, noContentLogoPath, "Content unavailable", "Assigned content is not currently available.", "unavailable", brandedBackground, brandedText);return}
+	if(fallbackKind == BrandedFallbackKind.NO_CONTENT){BrandedStatusScreen(config?.branding, noContentLogoPath, config?.branding?.noContentTitle?:"No content assigned", config?.branding?.noContentMessage?:"This screen is ready for content.", "no_content", brandedBackground, brandedText);return}
 	val stateBackground = if (state is PlayerState.PairedIdle) brandedBackground else SignalBackground
 	Box(Modifier.fillMaxSize().background(stateBackground).padding(horizontal = SignalDimensions.ScreenHorizontal, vertical = SignalDimensions.ScreenVertical)) {
         Column(Modifier.fillMaxSize()) {
@@ -207,6 +217,7 @@ class MainActivity : ComponentActivity() {
 @Composable private fun PairingState(state: PlayerState.WaitingForApproval, cancel: () -> Unit) { var remaining by remember { mutableLongStateOf(Duration.between(Instant.parse(state.pairing.serverTime), Instant.parse(state.pairing.expiresAt)).seconds) }; LaunchedEffect(state.pairing.id) { val initial = remaining; val started = SystemClock.elapsedRealtime(); while (true) { remaining = (initial - (SystemClock.elapsedRealtime() - started) / 1_000).coerceAtLeast(0); delay(1_000) } }; Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) { Column(Modifier.weight(1f)) { Text(state.organizationName, color = SignalMuted, fontSize = 20.sp); Text("Pair this screen", color = SignalText, fontSize = 40.sp, fontWeight = FontWeight.SemiBold); Spacer(Modifier.height(20.dp)); Text(state.pairing.code.chunked(3).joinToString(" "), color = SignalBlue, fontSize = 72.sp, fontWeight = FontWeight.Bold, letterSpacing = 8.sp); Text("Enter this code in Tilecast Studio", color = SignalText, fontSize = 22.sp); Spacer(Modifier.height(20.dp)); Text("Expires in ${remaining / 60}:${(remaining % 60).toString().padStart(2, '0')}  ·  Connected to ${state.serverUrl}", color = SignalMuted, fontSize = 17.sp); Spacer(Modifier.height(25.dp)); SignalOutlinedButton(onClick = cancel) { Text("Cancel or change server", fontSize = 17.sp) } }; Column(horizontalAlignment = Alignment.CenterHorizontally) { Image(qrCode(state.pairing.approvalUrl).asImageBitmap(), "QR code for pairing approval", Modifier.size(230.dp).background(Color.White).padding(12.dp)); Spacer(Modifier.height(10.dp)); Text("Scan to approve", color = SignalMuted, fontSize = 17.sp) } } }
 
 @Composable private fun IdleState(state: PlayerState.PairedIdle) { Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Column(horizontalAlignment = Alignment.CenterHorizontally) { Text(state.screenName, color = SignalMuted, fontSize = 20.sp); Spacer(Modifier.height(15.dp)); Text("No content assigned", color = SignalText, fontSize = 48.sp, fontWeight = FontWeight.SemiBold); Spacer(Modifier.height(10.dp)); Text(if (state.connected) "Connected to Tilecast · Waiting for an assignment" else "Reconnecting to Tilecast…", color = if (state.connected) SignalBlue else SignalWarning, fontSize = 20.sp); state.detail?.let { Text(it, color = SignalMuted, fontSize = 16.sp) } } } }
+@Composable private fun BrandedStatusScreen(branding:org.tilecast.player.network.PlayerBranding?,logoPath:String?,title:String,message:String,status:String,background:Color,text:Color){val logo=remember(logoPath){logoPath?.let{runCatching{BitmapFactory.decodeFile(it)?.asImageBitmap()}.getOrNull()}};Box(Modifier.fillMaxSize().background(background).padding(72.dp),contentAlignment=Alignment.Center){Column(horizontalAlignment=Alignment.CenterHorizontally,verticalArrangement=Arrangement.spacedBy(16.dp)){if(logo!=null)Image(logo,"",Modifier.size(260.dp),contentScale=ContentScale.Fit)else TilecastBrand();Text(title,color=text,style=MaterialTheme.typography.headlineLarge,fontWeight=FontWeight.SemiBold);Text(message,color=text,textAlign=TextAlign.Center,fontSize=22.sp);Text(status.replace('_',' '),color=text.copy(alpha=.7f),fontSize=16.sp);branding?.footerText?.takeIf{it.isNotBlank()}?.let{Text(it,color=text.copy(alpha=.7f),fontSize=16.sp)}}}}
 @Composable private fun RevokedState(name: String?, reconnect: () -> Unit) { CenterMessage("Pairing was revoked", "${name ?: "This screen"} was removed or revoked in Tilecast Studio. Pair it again to restore access.", "Pair again", reconnect) }
 @Composable private fun IdentityMismatch(expected: String, actual: String, reset: () -> Unit) { CenterMessage("Server identity changed", "This address now belongs to a different Tilecast installation. Stored credentials were not sent. Expected $expected, received $actual.", "Reset connection", reset) }
 @Composable private fun ErrorState(message: String, retry: () -> Unit) { CenterMessage("Connection problem", message, "Choose server", retry) }

@@ -1,6 +1,7 @@
 package media
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/json"
@@ -14,8 +15,10 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/tilecast/tilecast/apps/server/internal/contentdefs"
+	"github.com/tilecast/tilecast/apps/server/internal/manifestchanges"
 )
 
 const UploadLifetime = 24 * time.Hour
@@ -37,6 +40,26 @@ type Service struct {
 	cfg         Config
 	invalidator AssetInvalidator
 	definitions *contentdefs.Catalog
+	hooks       FinalizationHooks
+}
+
+// FinalizationHooks is intentionally empty in production. Tests use the
+// boundaries to inject failures at the exact hand-off points where a process
+// crash or an ambiguous storage/database result must remain recoverable.
+type FinalizationHooks struct {
+	BeforeIdentityPersist    func() error
+	BeforeRegistrationCommit func() error
+}
+
+// finalizationDB is the small database surface used while holding the
+// per-upload advisory lock. Keeping every database operation on the acquired
+// connection is important: PostgreSQL advisory locks are session-scoped, so a
+// second finalizer must wait even when the first one has committed its initial
+// status transition and is moving bytes in storage.
+type finalizationDB interface {
+	Begin(context.Context) (pgx.Tx, error)
+	Exec(context.Context, string, ...any) (pgconn.CommandTag, error)
+	QueryRow(context.Context, string, ...any) pgx.Row
 }
 
 func NewService(db *pgxpool.Pool, storage Storage, cfg Config) *Service {
@@ -44,6 +67,7 @@ func NewService(db *pgxpool.Pool, storage Storage, cfg Config) *Service {
 }
 func (s *Service) Storage() Storage                                   { return s.storage }
 func (s *Service) SetAssetInvalidator(invalidator AssetInvalidator)   { s.invalidator = invalidator }
+func (s *Service) SetFinalizationHooks(hooks FinalizationHooks)       { s.hooks = hooks }
 func (s *Service) MaximumSourceBytes() int64                          { return s.cfg.SourceFetch.MaximumBytes }
 func (s *Service) SetContentDefinitions(catalog *contentdefs.Catalog) { s.definitions = catalog }
 func (s *Service) ContentDefinitions() *contentdefs.Catalog           { return s.definitions }
@@ -168,7 +192,29 @@ func (s *Service) AppendUpload(ctx context.Context, id, userID uuid.UUID, expect
 }
 
 func (s *Service) FinalizeUpload(ctx context.Context, id, userID uuid.UUID) (Asset, error) {
-	tx, err := s.db.Begin(ctx)
+	conn, err := s.db.Acquire(ctx)
+	if err != nil {
+		return Asset{}, err
+	}
+	released, unlocked := false, false
+	defer func() {
+		if !released {
+			conn.Release()
+		}
+	}()
+	// A finalization crosses two durable systems (PostgreSQL and storage). A
+	// row lock alone ends when the status transition commits, which allowed a
+	// concurrent retry to inspect or move the same temporary object. Hold a
+	// stable per-upload advisory lock for the entire hand-off and registration.
+	if _, err = conn.Exec(ctx, `SELECT pg_advisory_lock(hashtextextended($1,0))`, id.String()); err != nil {
+		return Asset{}, err
+	}
+	defer func() {
+		if !unlocked {
+			_, _ = conn.Exec(context.Background(), `SELECT pg_advisory_unlock(hashtextextended($1,0))`, id.String())
+		}
+	}()
+	tx, err := conn.Begin(ctx)
 	if err != nil {
 		return Asset{}, err
 	}
@@ -179,7 +225,10 @@ func (s *Service) FinalizeUpload(ctx context.Context, id, userID uuid.UUID) (Ass
 	var expires time.Time
 	var existing *uuid.UUID
 	var organizationID uuid.UUID
-	err = tx.QueryRow(ctx, `SELECT organization_id,original_filename,declared_mime_type,expected_size,current_offset,temporary_storage_key,status,expires_at,resulting_asset_id FROM upload_sessions WHERE id=$1 AND created_by=$2 FOR UPDATE`, id, userID).Scan(&organizationID, &filename, &declared, &expected, &offset, &key, &status, &expires, &existing)
+	var preparedAssetID, preparedVariantID *uuid.UUID
+	var preparedKey, preparedType, preparedMIME *string
+	var preparedHash []byte
+	err = tx.QueryRow(ctx, `SELECT organization_id,original_filename,declared_mime_type,expected_size,current_offset,temporary_storage_key,status,expires_at,resulting_asset_id,final_asset_id,final_variant_id,final_storage_key,final_asset_type,final_detected_mime_type,final_sha256 FROM upload_sessions WHERE id=$1 AND created_by=$2 FOR UPDATE`, id, userID).Scan(&organizationID, &filename, &declared, &expected, &offset, &key, &status, &expires, &existing, &preparedAssetID, &preparedVariantID, &preparedKey, &preparedType, &preparedMIME, &preparedHash)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Asset{}, ErrNotFound
 	}
@@ -188,66 +237,143 @@ func (s *Service) FinalizeUpload(ctx context.Context, id, userID uuid.UUID) (Ass
 	}
 	if status == UploadFinalized && existing != nil {
 		_ = tx.Commit(ctx)
+		_, _ = conn.Exec(context.Background(), `SELECT pg_advisory_unlock(hashtextextended($1,0))`, id.String())
+		unlocked = true
+		conn.Release()
+		released = true
 		return s.GetAsset(ctx, *existing)
 	}
-	if time.Now().After(expires) {
+	if status != UploadFinalizing && time.Now().After(expires) {
 		return Asset{}, ErrUploadExpired
 	}
-	if status != UploadPending && status != UploadUploading {
+	if status != UploadPending && status != UploadUploading && status != UploadFinalizing {
 		return Asset{}, ErrUploadUnavailable
 	}
-	if offset != expected {
+	if status != UploadFinalizing && offset != expected {
 		return Asset{}, ErrUploadIncomplete
 	}
-	if _, err := tx.Exec(ctx, `UPDATE upload_sessions SET status='finalizing' WHERE id=$1`, id); err != nil {
-		return Asset{}, err
+	assetID, variantID := uuid.New(), uuid.New()
+	if preparedAssetID != nil {
+		assetID = *preparedAssetID
+	}
+	if preparedVariantID != nil {
+		variantID = *preparedVariantID
+	}
+	if status != UploadFinalizing {
+		if _, err := tx.Exec(ctx, `UPDATE upload_sessions SET status='finalizing',final_asset_id=COALESCE(final_asset_id,$2),final_variant_id=COALESCE(final_variant_id,$3) WHERE id=$1`, id, assetID, variantID); err != nil {
+			return Asset{}, err
+		}
+	} else if preparedAssetID == nil || preparedVariantID == nil {
+		// Rows created before the recovery journal was added may be finalizing
+		// without one or both generated IDs. Repair that state while the row is
+		// still locked so concurrent retries use the same identity.
+		if _, err := tx.Exec(ctx, `UPDATE upload_sessions SET final_asset_id=COALESCE(final_asset_id,$2),final_variant_id=COALESCE(final_variant_id,$3) WHERE id=$1 AND status='finalizing'`, id, assetID, variantID); err != nil {
+			return Asset{}, err
+		}
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return Asset{}, err
 	}
 
-	file, err := s.storage.Open(key)
-	if err != nil {
-		return Asset{}, s.failUpload(ctx, id, "media_inspection_failed", err)
+	// A finalizing row is a durable hand-off record. If the process died after
+	// storage.Commit, retry from the final object; if it died before the move,
+	// the temporary object remains the source. Never delete a moved object just
+	// because the database transaction that registers it was interrupted.
+	finalKey := ""
+	if preparedKey != nil {
+		finalKey = *preparedKey
 	}
-	defer file.Close()
+	var sum []byte
+	var detectedType, detectedMIME, extension string
+	if preparedType != nil {
+		detectedType = *preparedType
+	}
+	if preparedMIME != nil {
+		detectedMIME = *preparedMIME
+	}
+	if len(preparedHash) > 0 {
+		sum = append([]byte(nil), preparedHash...)
+	}
+
+	sourceKey := key
+	if finalKey != "" {
+		if _, statErr := s.storage.Stat(finalKey); statErr == nil {
+			sourceKey = finalKey
+		}
+	}
+	file, err := s.storage.Open(sourceKey)
+	if err != nil {
+		if status == UploadFinalizing && finalKey != "" {
+			return Asset{}, err
+		}
+		return Asset{}, s.failUploadOn(ctx, conn, id, "media_inspection_failed", err)
+	}
 	stat, err := file.Stat()
 	if err != nil || stat.Size() != expected {
-		return Asset{}, s.failUpload(ctx, id, "upload_incomplete", ErrUploadIncomplete)
+		_ = file.Close()
+		if sourceKey == finalKey && finalKey != "" {
+			return Asset{}, s.failUploadOn(ctx, conn, id, "media_finalization_corrupt", ErrUploadIncomplete)
+		}
+		return Asset{}, s.failUploadOn(ctx, conn, id, "upload_incomplete", ErrUploadIncomplete)
 	}
-	hasher := sha256.New()
-	header := make([]byte, 512)
-	n, err := io.ReadFull(file, header)
-	if err != nil && !errors.Is(err, io.ErrUnexpectedEOF) {
-		return Asset{}, s.failUpload(ctx, id, "media_inspection_failed", err)
+	{
+		hasher := sha256.New()
+		header := make([]byte, 512)
+		n, readErr := io.ReadFull(file, header)
+		if readErr != nil && !errors.Is(readErr, io.ErrUnexpectedEOF) {
+			_ = file.Close()
+			return Asset{}, s.failUploadOn(ctx, conn, id, "media_inspection_failed", readErr)
+		}
+		header = header[:n]
+		if _, err := file.Seek(0, io.SeekStart); err != nil {
+			_ = file.Close()
+			return Asset{}, err
+		}
+		if _, err := io.Copy(hasher, file); err != nil {
+			_ = file.Close()
+			return Asset{}, s.failUploadOn(ctx, conn, id, "media_inspection_failed", err)
+		}
+		actualHash := hasher.Sum(nil)
+		if len(sum) == 0 {
+			sum = actualHash
+		} else if !bytes.Equal(sum, actualHash) {
+			_ = file.Close()
+			return Asset{}, s.failUploadOn(ctx, conn, id, "media_finalization_corrupt", errors.New("final media hash changed"))
+		}
+		if detectedType == "" {
+			detected, detectErr := DetectType(header)
+			if detectErr != nil {
+				_ = file.Close()
+				return Asset{}, s.failUploadOn(ctx, conn, id, "unsupported_media_type", detectErr)
+			}
+			detectedType, detectedMIME, extension = detected.AssetType, detected.MIMEType, detected.Extension
+		}
 	}
-	header = header[:n]
-	if _, err := file.Seek(0, io.SeekStart); err != nil {
+	_ = file.Close()
+	if finalKey == "" {
+		if extension == "" {
+			extension = ".bin"
+		}
+		finalKey = OriginalKey(assetID, extension)
+	}
+	if detectedType == "" || detectedMIME == "" {
+		return Asset{}, s.failUploadOn(ctx, conn, id, "media_inspection_failed", errors.New("finalization metadata is missing"))
+	}
+	// Persist the identity of the object before registering the Asset. A crash
+	// after this update and before the registration commit is recoverable.
+	if s.hooks.BeforeIdentityPersist != nil {
+		if err := s.hooks.BeforeIdentityPersist(); err != nil {
+			return Asset{}, err
+		}
+	}
+	if _, err := conn.Exec(ctx, `UPDATE upload_sessions SET final_asset_id=$2,final_variant_id=$3,final_storage_key=$4,final_asset_type=$5,final_detected_mime_type=$6,final_sha256=$7 WHERE id=$1 AND status='finalizing'`, id, assetID, variantID, finalKey, detectedType, detectedMIME, sum); err != nil {
 		return Asset{}, err
 	}
-	if _, err := io.Copy(hasher, file); err != nil {
-		return Asset{}, s.failUpload(ctx, id, "media_inspection_failed", err)
-	}
-	sum := hasher.Sum(nil)
-	detected, err := DetectType(header)
-	if err != nil {
-		return Asset{}, s.failUpload(ctx, id, "unsupported_media_type", err)
-	}
-	assetID, variantID := uuid.New(), uuid.New()
-	finalKey := OriginalKey(assetID, detected.Extension)
-	if err := s.storage.Commit(key, finalKey); err != nil {
-		return Asset{}, s.failUpload(ctx, id, "media_inspection_failed", err)
-	}
-	failFinalization := func(activeTx pgx.Tx, cause error) (Asset, error) {
-		// Release the failed transaction before updating the upload session through
-		// the pool; otherwise a saturated pool can deadlock the failure path.
-		if activeTx != nil {
-			_ = activeTx.Rollback(ctx)
+	if sourceKey != finalKey {
+		if err := s.storage.Commit(key, finalKey); err != nil {
+			// Leave the finalizing row and temporary object in place for a safe retry.
+			return Asset{}, err
 		}
-		if cleanupErr := s.storage.Delete(finalKey); cleanupErr != nil {
-			cause = fmt.Errorf("%w (final media cleanup failed: %v)", cause, cleanupErr)
-		}
-		return Asset{}, s.failUpload(ctx, id, "media_finalization_failed", cause)
 	}
 	now := time.Now().UTC()
 	name := strings.TrimSuffix(filename, filepath.Ext(filename))
@@ -257,30 +383,35 @@ func (s *Service) FinalizeUpload(ctx context.Context, id, userID uuid.UUID) (Ass
 	if len(name) > 180 {
 		name = name[:180]
 	}
-	finalizationTx, err := s.db.Begin(ctx)
+	finalizationTx, err := conn.Begin(ctx)
 	if err != nil {
-		return failFinalization(nil, err)
+		return Asset{}, err
 	}
 	defer finalizationTx.Rollback(ctx) //nolint:errcheck
-	_, err = finalizationTx.Exec(ctx, `INSERT INTO assets (id,organization_id,name,type,original_filename,declared_mime_type,detected_mime_type,sha256,original_size,processing_status,created_by,created_at,updated_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'queued',$10,$11,$11)`, assetID, organizationID, name, detected.AssetType, filename, declared, detected.MIMEType, sum, expected, userID, now)
+	_, err = finalizationTx.Exec(ctx, `INSERT INTO assets (id,organization_id,name,type,original_filename,declared_mime_type,detected_mime_type,sha256,original_size,processing_status,created_by,created_at,updated_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'queued',$10,$11,$11) ON CONFLICT(id) DO NOTHING`, assetID, organizationID, name, detectedType, filename, declared, detectedMIME, sum, expected, userID, now)
 	if err != nil {
-		return failFinalization(finalizationTx, err)
+		return Asset{}, err
 	}
-	_, err = finalizationTx.Exec(ctx, `INSERT INTO asset_variants (id,asset_id,kind,storage_provider,storage_key,mime_type,file_size,sha256) VALUES ($1,$2,'original','local',$3,$4,$5,$6)`, variantID, assetID, finalKey, detected.MIMEType, expected, sum)
+	_, err = finalizationTx.Exec(ctx, `INSERT INTO asset_variants (id,asset_id,kind,storage_provider,storage_key,mime_type,file_size,sha256) VALUES ($1,$2,'original','local',$3,$4,$5,$6) ON CONFLICT(asset_id,kind) DO NOTHING`, variantID, assetID, finalKey, detectedMIME, expected, sum)
 	if err != nil {
-		return failFinalization(finalizationTx, err)
+		return Asset{}, err
 	}
-	_, err = finalizationTx.Exec(ctx, `INSERT INTO media_jobs (id,asset_id,kind,status) VALUES ($1,$2,'inspect_asset','queued')`, uuid.New(), assetID)
+	_, err = finalizationTx.Exec(ctx, `INSERT INTO media_jobs (id,asset_id,kind,status) VALUES ($1,$2,'inspect_asset','queued') ON CONFLICT DO NOTHING`, uuid.New(), assetID)
 	if err != nil {
-		return failFinalization(finalizationTx, err)
+		return Asset{}, err
 	}
 	_, err = finalizationTx.Exec(ctx, `UPDATE upload_sessions SET status='finalized',completed_at=$2,resulting_asset_id=$3 WHERE id=$1`, id, now, assetID)
 	if err != nil {
-		return failFinalization(finalizationTx, err)
+		return Asset{}, err
 	}
 	_, err = finalizationTx.Exec(ctx, `INSERT INTO audit_logs (id,user_id,action,resource_type,resource_id,metadata) VALUES ($1,$2,'media.upload_finalized','asset',$3,jsonb_build_object('filename',$4::text,'sizeBytes',$5::bigint))`, uuid.New(), userID, assetID.String(), filename, expected)
 	if err != nil {
-		return failFinalization(finalizationTx, err)
+		return Asset{}, err
+	}
+	if s.hooks.BeforeRegistrationCommit != nil {
+		if err := s.hooks.BeforeRegistrationCommit(); err != nil {
+			return Asset{}, err
+		}
 	}
 	if err := finalizationTx.Commit(ctx); err != nil {
 		return Asset{}, err
@@ -289,7 +420,28 @@ func (s *Service) FinalizeUpload(ctx context.Context, id, userID uuid.UUID) (Ass
 }
 
 func (s *Service) failUpload(ctx context.Context, id uuid.UUID, code string, cause error) error {
-	_, _ = s.db.Exec(ctx, `UPDATE upload_sessions SET status='failed',failure_code=$2 WHERE id=$1`, id, code)
+	return s.failUploadOn(ctx, s.db, id, code, cause)
+}
+
+func (s *Service) failUploadOn(ctx context.Context, db finalizationDB, id uuid.UUID, code string, cause error) error {
+	var temporaryKey string
+	var finalKey *string
+	if err := db.QueryRow(ctx, `SELECT temporary_storage_key,final_storage_key FROM upload_sessions WHERE id=$1`, id).Scan(&temporaryKey, &finalKey); err != nil {
+		return cause
+	}
+	if _, err := db.Exec(ctx, `UPDATE upload_sessions SET status='failed',failure_code=$2,finalization_cleanup_pending=TRUE WHERE id=$1 AND status='finalizing'`, id, code); err != nil {
+		return cause
+	}
+
+	cleanupError := s.storage.Delete(temporaryKey)
+	if finalKey != nil && *finalKey != "" && *finalKey != temporaryKey {
+		if err := s.storage.Delete(*finalKey); cleanupError == nil {
+			cleanupError = err
+		}
+	}
+	if cleanupError == nil {
+		_, _ = db.Exec(ctx, `UPDATE upload_sessions SET finalization_cleanup_pending=FALSE WHERE id=$1 AND status='failed'`, id)
+	}
 	return cause
 }
 
@@ -623,7 +775,12 @@ func (s *Service) updateAsset(ctx context.Context, id, userID uuid.UUID, name, d
 	if availabilitySet && expiresAt != nil && !expiresAt.After(time.Now()) {
 		return Asset{}, errors.New("expiresAt must be in the future")
 	}
-	tag, err := s.db.Exec(ctx, `UPDATE assets SET name=COALESCE($2,name),description=COALESCE($3,description),available_from=CASE WHEN $4 THEN $5 ELSE available_from END,expires_at=CASE WHEN $4 THEN $6 ELSE expires_at END,updated_at=now() WHERE id=$1 AND deleted_at IS NULL AND archived_at IS NULL AND (expires_at IS NULL OR expires_at>now())`, id, name, description, availabilitySet, availableFrom, expiresAt)
+	tx, err := s.db.Begin(ctx)
+	if err != nil {
+		return Asset{}, err
+	}
+	defer tx.Rollback(ctx)
+	tag, err := tx.Exec(ctx, `UPDATE assets SET name=COALESCE($2,name),description=COALESCE($3,description),available_from=CASE WHEN $4 THEN $5 ELSE available_from END,expires_at=CASE WHEN $4 THEN $6 ELSE expires_at END,updated_at=now() WHERE id=$1 AND deleted_at IS NULL AND archived_at IS NULL AND (expires_at IS NULL OR expires_at>now())`, id, name, description, availabilitySet, availableFrom, expiresAt)
 	if err != nil {
 		return Asset{}, err
 	}
@@ -634,9 +791,29 @@ func (s *Service) updateAsset(ctx context.Context, id, userID uuid.UUID, name, d
 	if name != nil {
 		action = "media.asset_renamed"
 	}
-	_, _ = s.db.Exec(ctx, `INSERT INTO audit_logs(id,user_id,action,resource_type,resource_id)VALUES($1,$2,$3,'asset',$4)`, uuid.New(), userID, action, id.String())
+	if _, err = tx.Exec(ctx, `INSERT INTO audit_logs(id,user_id,action,resource_type,resource_id)VALUES($1,$2,$3,'asset',$4)`, uuid.New(), userID, action, id.String()); err != nil {
+		return Asset{}, err
+	}
+	var changes []manifestchanges.Change
+	transactionalUsed := false
 	if availabilitySet && s.invalidator != nil {
-		_ = s.invalidator.AssetChanged(ctx, id, "media.availability_updated")
+		if transactional, ok := s.invalidator.(TransactionalAssetInvalidator); ok {
+			transactionalUsed = true
+			changes, err = transactional.AssetChangedInTx(ctx, tx, id, "media.availability_updated")
+			if err != nil {
+				return Asset{}, fmt.Errorf("invalidate media manifest: %w", err)
+			}
+		}
+	}
+	if err = tx.Commit(ctx); err != nil {
+		return Asset{}, err
+	}
+	if transactionalUsed {
+		s.invalidator.(TransactionalAssetInvalidator).NotifyManifestChanges(changes)
+	} else if availabilitySet && s.invalidator != nil {
+		if err := s.invalidator.AssetChanged(ctx, id, "media.availability_updated"); err != nil {
+			return Asset{}, fmt.Errorf("invalidate media manifest: %w", err)
+		}
 	}
 	return s.GetAsset(ctx, id)
 }
@@ -719,12 +896,28 @@ func (s *Service) ArchiveAssets(ctx context.Context, ids []uuid.UUID, userID uui
 			return err
 		}
 	}
+	var changes []manifestchanges.Change
+	transactionalUsed := false
+	if transactional, ok := s.invalidator.(TransactionalAssetInvalidator); ok {
+		transactionalUsed = true
+		for _, id := range ids {
+			changed, changeErr := transactional.AssetChangedInTx(ctx, tx, id, "media.asset_archived")
+			if changeErr != nil {
+				return changeErr
+			}
+			changes = append(changes, changed...)
+		}
+	}
 	if err = tx.Commit(ctx); err != nil {
 		return err
 	}
-	if s.invalidator != nil {
+	if transactionalUsed {
+		s.invalidator.(TransactionalAssetInvalidator).NotifyManifestChanges(changes)
+	} else if s.invalidator != nil {
 		for _, id := range ids {
-			_ = s.invalidator.AssetChanged(ctx, id, "media.asset_archived")
+			if err := s.invalidator.AssetChanged(ctx, id, "media.asset_archived"); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
@@ -758,12 +951,28 @@ func (s *Service) RestoreAssets(ctx context.Context, ids []uuid.UUID, userID uui
 			return err
 		}
 	}
+	var changes []manifestchanges.Change
+	transactionalUsed := false
+	if transactional, ok := s.invalidator.(TransactionalAssetInvalidator); ok {
+		transactionalUsed = true
+		for _, id := range ids {
+			changed, changeErr := transactional.AssetChangedInTx(ctx, tx, id, "media.asset_restored")
+			if changeErr != nil {
+				return changeErr
+			}
+			changes = append(changes, changed...)
+		}
+	}
 	if err = tx.Commit(ctx); err != nil {
 		return err
 	}
-	if s.invalidator != nil {
+	if transactionalUsed {
+		s.invalidator.(TransactionalAssetInvalidator).NotifyManifestChanges(changes)
+	} else if s.invalidator != nil {
 		for _, id := range ids {
-			_ = s.invalidator.AssetChanged(ctx, id, "media.asset_restored")
+			if err := s.invalidator.AssetChanged(ctx, id, "media.asset_restored"); err != nil {
+				return err
+			}
 		}
 	}
 	return nil

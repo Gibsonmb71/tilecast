@@ -78,6 +78,24 @@ async function fileSize(filePath: string): Promise<number | null> {
   }
 }
 
+/** Verify both claims in a manifest before a file is used or promoted. */
+export async function verifyFileIntegrity(
+  filePath: string,
+  expectedSha256: string,
+  expectedSizeBytes: number,
+): Promise<boolean> {
+  const size = await fileSize(filePath);
+  if (size !== expectedSizeBytes) {
+    return false;
+  }
+  try {
+    const digest = await sha256File(filePath);
+    return digest.toLowerCase() === expectedSha256.toLowerCase();
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Transfer facts worth counting. A resume and an integrity failure are
  * separately reported because they mean different things: the first says the
@@ -115,11 +133,22 @@ async function transferVerified(
   observer?: DownloadObserver,
 ): Promise<void> {
   const startedAt = Date.now();
-  // Already promoted and intact? Done. (Cheap size check first; hash check
-  // happens at manifest verification time.)
+  // Already promoted and intact? Done. Size alone is not an integrity check:
+  // same-size corruption must be rejected and replaced.
   const existing = await fileSize(request.destination);
   if (existing === request.expectedSizeBytes) {
-    return;
+    if (
+      await verifyFileIntegrity(
+        request.destination,
+        request.expectedSha256,
+        request.expectedSizeBytes,
+      )
+    ) {
+      return;
+    }
+    await fs.rm(request.destination, { force: true });
+  } else if (existing !== null) {
+    await fs.rm(request.destination, { force: true });
   }
 
   const partPath = request.destination + ".part";

@@ -180,6 +180,25 @@ describe("requiredDownloads", () => {
     expect(requiredDownloads(m).map((a) => a.assetId)).toEqual(["a1"]);
   });
 
+  it("caches the exact layout variant when an asset has multiple variants", () => {
+    const m = manifest({
+      layout: {
+        id: "layout-1",
+        document: {
+          canvas: { backgroundAssetId: "logo", backgroundVariantId: "v2" },
+          placements: [],
+        },
+      },
+      assets: [
+        asset({ assetId: "logo", variantId: "v1" }),
+        asset({ assetId: "logo", variantId: "v2" }),
+      ],
+    });
+    expect(requiredDownloads(m).map((value) => value.variantId)).toEqual([
+      "v2",
+    ]);
+  });
+
   it("caches a Brand Bug logo so the mark survives an outage", () => {
     const m = manifest({
       assets: [asset({ assetId: "logo", variantId: "logo-v1" })],

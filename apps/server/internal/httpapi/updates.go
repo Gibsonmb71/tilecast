@@ -718,13 +718,13 @@ func (s *server) playerUpdateMetadata(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var code, size int64
-	var platform, name, hash, cert string
+	var platform, name, hash, cert, artifactName string
 	var sdk *int
-	if err := s.db.QueryRow(r.Context(), `SELECT pr.platform,pr.version_code,pr.version_name,pr.minimum_sdk,pr.apk_size,pr.apk_sha256,pr.signing_certificate_sha256 FROM player_releases pr WHERE pr.id=$1 AND pr.verification_status='verified' AND EXISTS(SELECT 1 FROM screen_update_states st JOIN update_deployments d ON d.id=st.deployment_id WHERE st.screen_id=$2 AND d.release_id=pr.id AND d.status='active' AND st.state NOT IN ('cancelled','incompatible'))`, release, principal.ScreenID).Scan(&platform, &code, &name, &sdk, &size, &hash, &cert); err != nil {
+	if err := s.db.QueryRow(r.Context(), `SELECT pr.platform,pr.version_code,pr.version_name,pr.minimum_sdk,pr.apk_size,pr.apk_sha256,pr.signing_certificate_sha256,pr.apk_name FROM player_releases pr WHERE pr.id=$1 AND pr.verification_status='verified' AND EXISTS(SELECT 1 FROM screen_update_states st JOIN update_deployments d ON d.id=st.deployment_id WHERE st.screen_id=$2 AND d.release_id=pr.id AND d.status='active' AND st.state NOT IN ('cancelled','incompatible'))`, release, principal.ScreenID).Scan(&platform, &code, &name, &sdk, &size, &hash, &cert, &artifactName); err != nil {
 		writeError(w, 404, "player_update_not_found", "Update is unavailable for this screen.")
 		return
 	}
-	data := map[string]any{"releaseId": release, "platform": platform, "versionCode": code, "versionName": name}
+	data := map[string]any{"releaseId": release, "artifactId": artifactName, "platform": platform, "versionCode": code, "versionName": name}
 	if platform == updates.PlatformLinux {
 		data["artifactSizeBytes"] = size
 		data["artifactSha256"] = hash

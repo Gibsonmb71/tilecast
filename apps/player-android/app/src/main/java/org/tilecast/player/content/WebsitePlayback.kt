@@ -26,8 +26,20 @@ import org.tilecast.player.network.ManifestWebsite
 import org.tilecast.player.ui.theme.SignalBackground
 import java.io.File
 import java.time.Instant
+import java.util.concurrent.atomic.AtomicBoolean
 
 data class WebsitePlaybackStatus(val assetId:String?=null,val state:String="idle",val loadStartedAt:String?=null,val loadCompletedAt:String?=null,val failureCategory:String?=null,val blockedNavigationCount:Int=0,val currentHost:String?=null,val fallbackShown:Boolean=false,val rendererRecoveryCount:Int=0)
+
+/** Evaluates clear-on-restart once per application process, not per config revision or Activity. */
+object WebsiteStartupClearGate {
+    private val evaluated = AtomicBoolean(false)
+
+    fun shouldClear(configured: Boolean): Boolean = evaluated.compareAndSet(false, true) && configured
+
+    internal fun resetForTests() {
+        evaluated.set(false)
+    }
+}
 
 object WebsiteNavigationPolicy {
     fun allows(raw:String,site:ManifestWebsite):Boolean=runCatching{val uri=java.net.URI(raw);if(uri.userInfo!=null||uri.host.isNullOrBlank())return false;val original=java.net.URI(site.url);val scheme=uri.scheme?.lowercase();if(scheme!="https"&&!(scheme=="http"&&original.scheme=="http"))return false;val port=uri.port;if(port!=-1&&port!=if(scheme=="https")443 else 80)return false;site.allowedHosts.any{it.equals(uri.host?.trimEnd('.'),true)}}.getOrDefault(false)
@@ -45,7 +57,7 @@ object WebsiteDataManager {
     DisposableEffect(item.id){onDispose{onStatus(WebsitePlaybackStatus())}}
     LaunchedEffect(item.id){report("loading");delay(site.loadTimeoutSeconds*1000L);if(!loaded&&failed==null){failed="load_timeout";report("timed_out","load_timeout")}}
     LaunchedEffect(item.id,item.durationMs,startOffsetMs){delay(((item.durationMs?:30_000)-startOffsetMs).coerceAtLeast(1));onDone()}
-    if(failed!=null&&!loaded){if(site.failureBehavior=="skip"){LaunchedEffect(failed){onDone()};return};val fallbackPath=site.fallbackVariantId?.let{session.content.localFiles[it]};if(site.failureBehavior=="fallback_image"&&fallbackPath!=null){val bitmap=remember(fallbackPath){BitmapFactory.decodeFile(fallbackPath)};if(bitmap!=null){LaunchedEffect(bitmap){firstFrame()};report("showing_fallback",failed,true);Image(bitmap.asImageBitmap(),null,Modifier.fillMaxSize().background(Color.Black),contentScale=when(item.fitMode){"cover"->ContentScale.Crop;"stretch"->ContentScale.FillBounds;else->ContentScale.Fit});return}};LaunchedEffect(failed){firstFrame()};Box(Modifier.fillMaxSize().background(parseColor(site.backgroundColor)),contentAlignment=Alignment.Center){Text("Website unavailable",color=Color.White)};return}
+    if(failed!=null&&!loaded){if(site.failureBehavior=="skip"){LaunchedEffect(failed){onDone()};return};val fallbackAsset=site.fallbackVariantId?.let{variantId->session.content.manifest.assets.firstOrNull{asset->asset.variantId==variantId&&asset.assetId==site.fallbackImageAssetId&&asset.isAvailableAt(session.content.serverNow())}};val fallbackPath=fallbackAsset?.variantId?.let{session.content.localFiles[it]};if(site.failureBehavior=="fallback_image"&&fallbackPath!=null){val bitmap=remember(fallbackPath){BitmapFactory.decodeFile(fallbackPath)};if(bitmap!=null){LaunchedEffect(bitmap){firstFrame()};report("showing_fallback",failed,true);Image(bitmap.asImageBitmap(),null,Modifier.fillMaxSize().background(Color.Black),contentScale=when(item.fitMode){"cover"->ContentScale.Crop;"stretch"->ContentScale.FillBounds;else->ContentScale.Fit});return}};LaunchedEffect(failed){firstFrame()};Box(Modifier.fillMaxSize().background(parseColor(site.backgroundColor)),contentAlignment=Alignment.Center){Text("Website unavailable",color=Color.White)};return}
     AndroidView(modifier=Modifier.fillMaxSize().graphicsLayer{alpha=if(pageVisible)1f else 0f}.background(parseColor(site.backgroundColor)),factory={context->WebView(context).apply{activeWebView=this
         setBackgroundColor(android.graphics.Color.parseColor(site.backgroundColor));isFocusable=false;isFocusableInTouchMode=false
         settings.javaScriptEnabled=site.javascriptEnabled;settings.domStorageEnabled=site.domStorageEnabled;settings.allowFileAccess=false;settings.allowContentAccess=false;settings.allowFileAccessFromFileURLs=false;settings.allowUniversalAccessFromFileURLs=false;settings.javaScriptCanOpenWindowsAutomatically=false;settings.setSupportMultipleWindows(false);settings.mixedContentMode=WebSettings.MIXED_CONTENT_NEVER_ALLOW;settings.cacheMode=if(site.reloadPolicy=="load_once")WebSettings.LOAD_CACHE_ELSE_NETWORK else WebSettings.LOAD_DEFAULT;settings.saveFormData=false;settings.setGeolocationEnabled(false);settings.mediaPlaybackRequiresUserGesture=true;settings.textZoom=100;settings.userAgentString=site.customUserAgent.takeIf{it.isNotBlank()}?:settings.userAgentString

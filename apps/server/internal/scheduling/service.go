@@ -19,18 +19,37 @@ var (
 	ErrNotFound = errors.New("schedule resource not found")
 	ErrConflict = errors.New("schedule conflict")
 	ErrLimit    = errors.New("schedule limit exceeded")
+	// ErrDisplayControlUnsupported is returned instead of silently assigning a
+	// display-only schedule to a platform that cannot execute it.
+	ErrDisplayControlUnsupported = errors.New("display-control schedule is unsupported on this platform")
 )
 
 type Notifier interface{ ManifestChanged(uuid.UUID, int64) }
 type Limits struct{ MaxSchedules, MaxTargetsPerSchedule, MaxGroupsPerScreen, PrefetchDays, ActivationGraceSeconds, ClockSkewWarningSeconds int }
+type PresentationReadiness interface {
+	ValidatePresentation(context.Context, string, uuid.UUID, time.Time) error
+}
+type OrganizationSettingsProvider interface {
+	OrganizationValues(context.Context) (map[string]any, error)
+}
 type Service struct {
-	db       *pgxpool.Pool
-	notifier Notifier
-	limits   Limits
+	db                 *pgxpool.Pool
+	notifier           Notifier
+	limits             Limits
+	readiness          PresentationReadiness
+	organizationValues OrganizationSettingsProvider
 }
 
 func NewService(db *pgxpool.Pool, n Notifier, l Limits) *Service {
 	return &Service{db: db, notifier: n, limits: l}
+}
+
+func (s *Service) SetPresentationReadiness(readiness PresentationReadiness) {
+	s.readiness = readiness
+}
+
+func (s *Service) SetOrganizationSettingsProvider(provider OrganizationSettingsProvider) {
+	s.organizationValues = provider
 }
 
 type Group struct {
@@ -290,6 +309,32 @@ func (s *Service) AddScreen(ctx context.Context, group, screen, user uuid.UUID) 
 		return err
 	}
 	defer tx.Rollback(ctx)
+	// A group-targeted display-control schedule follows every member. Check the
+	// new member before changing membership so an Android Player cannot acquire
+	// a schedule it has no way to execute after the schedule itself was created
+	// for an all-Linux group.
+	var unsupported bool
+	if err = tx.QueryRow(ctx, `
+		SELECT EXISTS(
+			SELECT 1
+			FROM screens sc
+			JOIN screen_groups g ON g.id=$1 AND g.organization_id=sc.organization_id AND g.deleted_at IS NULL
+			WHERE sc.id=$2 AND sc.platform<>'linux'
+			  AND EXISTS(
+				SELECT 1
+				FROM schedules schedule
+				JOIN schedule_targets target ON target.schedule_id=schedule.id
+				WHERE target.target_type='group'
+				  AND target.screen_group_id=$1
+				  AND schedule.deleted_at IS NULL
+				  AND schedule.display_action IS NOT NULL
+			  )
+		)`, group, screen).Scan(&unsupported); err != nil {
+		return err
+	}
+	if unsupported {
+		return fmt.Errorf("%w: display-control schedules are supported only on Linux Players", ErrDisplayControlUnsupported)
+	}
 	tag, err := tx.Exec(ctx, `INSERT INTO screen_group_memberships(screen_group_id,screen_id,added_by) SELECT g.id,sc.id,$3 FROM screen_groups g JOIN screens sc ON sc.organization_id=g.organization_id WHERE g.id=$1 AND sc.id=$2 AND g.deleted_at IS NULL`, group, screen, user)
 	if err != nil {
 		var databaseError *pgconn.PgError
@@ -474,6 +519,15 @@ func (s *Service) validateInput(ctx context.Context, in Input) error {
 	if !ok {
 		return errors.New("presentation is unpublished, deleted, or invalid")
 	}
+	if s.readiness != nil {
+		contentType, contentID := "layout", in.LayoutID
+		if in.PlaylistID != uuid.Nil {
+			contentType, contentID = "playlist", &in.PlaylistID
+		}
+		if err := s.readiness.ValidatePresentation(ctx, contentType, *contentID, time.Now().UTC()); err != nil {
+			return err
+		}
+	}
 	seen := map[string]bool{}
 	for _, t := range in.Targets {
 		if t.Type != "screen" && t.Type != "group" {
@@ -497,8 +551,51 @@ func (s *Service) validateInput(ctx context.Context, in Input) error {
 		if !targetOK {
 			return errors.New("schedule target is invalid or belongs to another organization")
 		}
+		if in.DisplayAction != nil {
+			var unsupported bool
+			if t.Type == "screen" {
+				if err := s.db.QueryRow(ctx, `SELECT platform<>'linux' FROM screens WHERE id=$1`, t.ID).Scan(&unsupported); err != nil {
+					return err
+				}
+			} else if err := s.db.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM screen_group_memberships m JOIN screens sc ON sc.id=m.screen_id WHERE m.screen_group_id=$1 AND sc.platform<>'linux')`, t.ID).Scan(&unsupported); err != nil {
+				return err
+			}
+			if unsupported {
+				return fmt.Errorf("%w: display-control schedules are supported only on Linux Players", ErrDisplayControlUnsupported)
+			}
+		}
 	}
 	return nil
+}
+
+func (s *Service) applyOrganizationDefaults(ctx context.Context, in Input) (Input, error) {
+	if in.Type != OneTime || in.OneTimeStart == nil || in.OneTimeEnd != nil || s.organizationValues == nil {
+		return in, nil
+	}
+	values, err := s.organizationValues.OrganizationValues(ctx)
+	if err != nil {
+		return in, err
+	}
+	minutes := settingInt(values, "scheduling.default_one_time_duration_minutes", 60)
+	if minutes < 1 {
+		minutes = 60
+	}
+	in.OneTimeEnd = ptrTime(in.OneTimeStart.Add(time.Duration(minutes) * time.Minute))
+	return in, nil
+}
+
+func ptrTime(value time.Time) *time.Time { return &value }
+
+func settingInt(values map[string]any, key string, fallback int) int {
+	switch value := values[key].(type) {
+	case float64:
+		return int(value)
+	case int:
+		return value
+	case int64:
+		return int(value)
+	}
+	return fallback
 }
 func (s *Service) withDefaultTimezone(ctx context.Context, in Input) (Input, error) {
 	if strings.TrimSpace(in.Timezone) != "" {
@@ -541,6 +638,10 @@ func (s *Service) Create(ctx context.Context, user uuid.UUID, in Input) (Record,
 	if err != nil {
 		return Record{}, err
 	}
+	in, err = s.applyOrganizationDefaults(ctx, in)
+	if err != nil {
+		return Record{}, err
+	}
 	if err := s.validateInput(ctx, in); err != nil {
 		return Record{}, err
 	}
@@ -568,6 +669,10 @@ func (s *Service) Update(ctx context.Context, id, user uuid.UUID, in Input) (Rec
 		return Record{}, err
 	}
 	in, err = s.normalizeSyncGroupTargets(ctx, in)
+	if err != nil {
+		return Record{}, err
+	}
+	in, err = s.applyOrganizationDefaults(ctx, in)
 	if err != nil {
 		return Record{}, err
 	}
@@ -867,6 +972,10 @@ func (s *Service) Preview(ctx context.Context, screen uuid.UUID, at time.Time, p
 			return Preview{}, normalizeErr
 		}
 		proposed = &normalized
+		*proposed, err = s.applyOrganizationDefaults(ctx, *proposed)
+		if err != nil {
+			return Preview{}, err
+		}
 		if err = s.validateInput(ctx, *proposed); err != nil {
 			return Preview{}, err
 		}
@@ -999,4 +1108,25 @@ func (s *Service) Config() (int, int, int) {
 		clock = 300
 	}
 	return s.limits.PrefetchDays, s.limits.ActivationGraceSeconds, clock
+}
+
+func (s *Service) ConfigFor(ctx context.Context) (int, int, int, error) {
+	prefetch, grace, clock := s.Config()
+	if s.organizationValues == nil {
+		return prefetch, grace, clock, nil
+	}
+	values, err := s.organizationValues.OrganizationValues(ctx)
+	if err != nil {
+		return 0, 0, 0, err
+	}
+	if value := settingInt(values, "scheduling.prefetch_days", prefetch); value > 0 {
+		prefetch = value
+	}
+	if value := settingInt(values, "scheduling.activation_grace_seconds", grace); value > 0 {
+		grace = value
+	}
+	if value := settingInt(values, "scheduling.clock_skew_warning_seconds", clock); value > 0 {
+		clock = value
+	}
+	return prefetch, grace, clock, nil
 }

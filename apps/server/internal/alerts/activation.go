@@ -400,10 +400,15 @@ func alertExpiry(alert nwsProperties, now time.Time, maxMinutes int) time.Time {
 
 func (s *Service) activate(ctx context.Context, tx pgx.Tx, rule Rule, event, headline, description string, now, expires time.Time) (uuid.UUID, []uuid.UUID, error) {
 	var err error
+	if rule.PlaylistID == nil {
+		return uuid.Nil, nil, fmt.Errorf("alert rule has no takeover playlist")
+	}
 	var organizationID uuid.UUID
-	var ready bool
-	if err = tx.QueryRow(ctx, `SELECT organization_id,(deleted_at IS NULL AND EXISTS(SELECT 1 FROM playlist_items WHERE playlist_id=playlists.id)) FROM playlists WHERE id=$1`, rule.PlaylistID).Scan(&organizationID, &ready); err != nil || !ready {
+	if err = tx.QueryRow(ctx, `SELECT organization_id FROM playlists WHERE id=$1 AND deleted_at IS NULL`, *rule.PlaylistID).Scan(&organizationID); err != nil {
 		return uuid.Nil, nil, fmt.Errorf("alert rule playlist is not ready")
+	}
+	if err = s.playlists.ValidatePresentationNowInTx(ctx, tx, "playlist", *rule.PlaylistID, now.UTC()); err != nil {
+		return uuid.Nil, nil, err
 	}
 	rows, err := tx.Query(ctx, `SELECT DISTINCT s.id FROM screens s WHERE s.organization_id=$1 AND s.deleted_at IS NULL AND
 		(s.id=ANY($2) OR EXISTS(SELECT 1 FROM screen_group_memberships m WHERE m.screen_id=s.id AND m.screen_group_id=ANY($3)))`, organizationID, rule.ScreenIDs, rule.GroupIDs)
@@ -413,9 +418,11 @@ func (s *Service) activate(ctx context.Context, tx pgx.Tx, rule Rule, event, hea
 	screenIDs := []uuid.UUID{}
 	for rows.Next() {
 		var id uuid.UUID
-		if rows.Scan(&id) == nil {
-			screenIDs = append(screenIDs, id)
+		if err = rows.Scan(&id); err != nil {
+			rows.Close()
+			return uuid.Nil, nil, err
 		}
+		screenIDs = append(screenIDs, id)
 	}
 	rows.Close()
 	if err = rows.Err(); err != nil {
@@ -479,7 +486,11 @@ func (s *Service) clearMissing(ctx context.Context, seen map[string]bool, now ti
 	items := []missing{}
 	for rows.Next() {
 		var item missing
-		if rows.Scan(&item.alertID, &item.ruleID, &item.takeoverID) == nil && !seen[item.alertID+"\x00"+item.ruleID.String()] {
+		if err = rows.Scan(&item.alertID, &item.ruleID, &item.takeoverID); err != nil {
+			rows.Close()
+			return err
+		}
+		if !seen[item.alertID+"\x00"+item.ruleID.String()] {
 			items = append(items, item)
 		}
 	}
@@ -525,13 +536,20 @@ func (s *Service) cancelTakeover(ctx context.Context, takeoverID uuid.UUID, now 
 	screenIDs := []uuid.UUID{}
 	for rows.Next() {
 		var id uuid.UUID
-		if rows.Scan(&id) == nil {
-			screenIDs = append(screenIDs, id)
+		if err = rows.Scan(&id); err != nil {
+			rows.Close()
+			return err
 		}
+		screenIDs = append(screenIDs, id)
 	}
 	rows.Close()
+	if err = rows.Err(); err != nil {
+		return err
+	}
 	for _, screenID := range screenIDs {
-		_, _ = tx.Exec(ctx, `UPDATE screen_manifest_state SET manifest_version=manifest_version+1,changed_at=$2,change_reason='takeover.cancelled' WHERE screen_id=$1`, screenID, now)
+		if _, err = tx.Exec(ctx, `UPDATE screen_manifest_state SET manifest_version=manifest_version+1,changed_at=$2,change_reason='takeover.cancelled' WHERE screen_id=$1`, screenID, now); err != nil {
+			return err
+		}
 	}
 	if err = tx.Commit(ctx); err != nil {
 		return err
@@ -543,7 +561,12 @@ func (s *Service) cancelTakeover(ctx context.Context, takeoverID uuid.UUID, now 
 func (s *Service) notify(ctx context.Context, screenIDs []uuid.UUID) {
 	for _, screenID := range screenIDs {
 		var version int64
-		_ = s.db.QueryRow(ctx, `SELECT manifest_version FROM screen_manifest_state WHERE screen_id=$1`, screenID).Scan(&version)
+		if err := s.db.QueryRow(ctx, `SELECT manifest_version FROM screen_manifest_state WHERE screen_id=$1`, screenID).Scan(&version); err != nil {
+			if s.logger != nil {
+				s.logger.Error("manifest notification could not read committed version", "screen_id", screenID, "error", err)
+			}
+			continue
+		}
 		s.devices.Notify(screenID, map[string]any{"type": "takeover.changed", "manifestVersion": version})
 		s.devices.Notify(screenID, map[string]any{"type": "manifest.changed", "manifestVersion": version})
 	}

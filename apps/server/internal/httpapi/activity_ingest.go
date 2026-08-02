@@ -83,6 +83,10 @@ func (s *server) ingestPlayerActivity(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer tx.Rollback(r.Context()) //nolint:errcheck
+	if err := lockActivityScreen(r.Context(), tx, principal.ScreenID); err != nil {
+		s.internalError(w, r, err)
+		return
+	}
 	result := playerActivityBatchResult{AcknowledgedEventIDs: make([]string, 0, len(input.Events))}
 	now := time.Now().UTC()
 	for index := range input.Events {

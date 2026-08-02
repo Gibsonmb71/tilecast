@@ -305,17 +305,15 @@ export function PlaylistEditorPage() {
           {
             assetId: asset.id,
             durationMs:
-              asset.type === "image"
-                ? 10000
-                : asset.type === "widget" &&
-                    asset.widget?.provider !== "youtube"
-                  ? 30000
-                  : undefined,
+              asset.type === "widget" && asset.widget?.provider !== "youtube"
+                ? 30000
+                : undefined,
             fitMode: "contain",
             transition: "none",
             audioEnabled: asset.type !== "widget",
             volume: asset.type === "widget" ? 0 : 1,
             deliveryPolicy: asset.type === "widget" ? "stream" : "download",
+            usePlayerDefaults: asset.type === "image" || asset.type === "video",
           },
           csrf,
         );
@@ -733,6 +731,7 @@ function itemInput(item: PlaylistItem): PlaylistItemInput {
     videoStartOffsetMs: item.videoStartOffsetMs,
     videoEndOffsetMs: item.videoEndOffsetMs,
     deliveryPolicy: item.deliveryPolicy,
+    usePlayerDefaults: item.usePlayerDefaults ?? false,
   };
 }
 function TimelineItem({
@@ -792,10 +791,33 @@ function TimelineItem({
         </small>
       </span>
       <div className="timeline-item__controls">
+        {(item.assetType === "image" || item.assetType === "video") && (
+          <label className="audio-toggle">
+            <input
+              disabled={!canManage}
+              type="checkbox"
+              checked={item.usePlayerDefaults ?? false}
+              onChange={(event) => {
+                const enabled = event.target.checked;
+                onChange({
+                  ...itemInput(item),
+                  usePlayerDefaults: enabled,
+                  durationMs:
+                    item.assetType === "image" && enabled
+                      ? undefined
+                      : item.assetType === "image" && !enabled
+                        ? (item.durationMs ?? 10000)
+                        : item.durationMs,
+                });
+              }}
+            />
+            Use Player defaults
+          </label>
+        )}
         <label>
           Fit
           <Select
-            disabled={!canManage}
+            disabled={!canManage || (item.usePlayerDefaults ?? false)}
             value={item.fitMode}
             onChange={(e) =>
               set("fitMode", e.target.value as PlaylistItem["fitMode"])
@@ -809,7 +831,7 @@ function TimelineItem({
         <label>
           Transition
           <Select
-            disabled={!canManage}
+            disabled={!canManage || (item.usePlayerDefaults ?? false)}
             value={item.transition}
             onChange={(e) =>
               set("transition", e.target.value as PlaylistItem["transition"])
@@ -846,13 +868,19 @@ function TimelineItem({
         {item.assetType === "layout" ? (
           <label>
             Seconds
-            <input
-              disabled={!canManage}
-              type="number"
-              min="1"
-              value={(item.durationMs ?? 30000) / 1000}
-              onChange={(e) => set("durationMs", Number(e.target.value) * 1000)}
-            />
+            {item.usePlayerDefaults ? (
+              <span className="status-copy">Player default</span>
+            ) : (
+              <input
+                disabled={!canManage}
+                type="number"
+                min="1"
+                value={(item.durationMs ?? 30000) / 1000}
+                onChange={(e) =>
+                  set("durationMs", Number(e.target.value) * 1000)
+                }
+              />
+            )}
           </label>
         ) : item.assetType === "widget" && item.widgetProvider === "youtube" ? (
           <>
@@ -892,23 +920,29 @@ function TimelineItem({
         ) : playlistItemUsesFixedDuration(item) ? (
           <label>
             Seconds
-            <input
-              disabled={!canManage}
-              type="number"
-              min="1"
-              value={
-                (item.durationMs ??
-                  (item.assetType === "widget" ? 30000 : 10000)) / 1000
-              }
-              onChange={(e) => set("durationMs", Number(e.target.value) * 1000)}
-            />
+            {item.assetType === "image" && item.usePlayerDefaults ? (
+              <span className="status-copy">Player default</span>
+            ) : (
+              <input
+                disabled={!canManage}
+                type="number"
+                min="1"
+                value={
+                  (item.durationMs ??
+                    (item.assetType === "widget" ? 30000 : 10000)) / 1000
+                }
+                onChange={(e) =>
+                  set("durationMs", Number(e.target.value) * 1000)
+                }
+              />
+            )}
           </label>
         ) : (
           <>
             <label>
               Start (s)
               <input
-                disabled={!canManage}
+                disabled={!canManage || (item.usePlayerDefaults ?? false)}
                 type="number"
                 min="0"
                 value={(item.videoStartOffsetMs ?? 0) / 1000}
@@ -920,7 +954,7 @@ function TimelineItem({
             <label>
               End (s)
               <input
-                disabled={!canManage}
+                disabled={!canManage || (item.usePlayerDefaults ?? false)}
                 type="number"
                 min="0"
                 value={
@@ -936,7 +970,7 @@ function TimelineItem({
             </label>
             <label className="audio-toggle">
               <input
-                disabled={!canManage}
+                disabled={!canManage || (item.usePlayerDefaults ?? false)}
                 type="checkbox"
                 checked={item.audioEnabled}
                 onChange={(e) => set("audioEnabled", e.target.checked)}
@@ -946,7 +980,7 @@ function TimelineItem({
             <label>
               Volume
               <input
-                disabled={!canManage}
+                disabled={!canManage || (item.usePlayerDefaults ?? false)}
                 type="range"
                 min="0"
                 max="1"

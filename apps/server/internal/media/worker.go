@@ -466,6 +466,98 @@ func (p *WorkerPool) cleanExpired(ctx context.Context) error {
 			return err
 		}
 	}
+	// Finalization is intentionally reconciled separately from expiry. A process
+	// or database failure can leave the object moved while the upload row is
+	// still finalizing; retrying the normal idempotent finalizer registers that
+	// object instead of treating it as an orphan.
+	rows, err = p.service.db.Query(ctx, `SELECT id,created_by,temporary_storage_key,final_storage_key,created_at FROM upload_sessions WHERE status='finalizing' ORDER BY created_at LIMIT 32`)
+	if err != nil {
+		return err
+	}
+	type pendingFinalization struct {
+		id, user  uuid.UUID
+		temporary string
+		final     *string
+		createdAt time.Time
+	}
+	pending := []pendingFinalization{}
+	for rows.Next() {
+		var item pendingFinalization
+		if err := rows.Scan(&item.id, &item.user, &item.temporary, &item.final, &item.createdAt); err != nil {
+			rows.Close()
+			return err
+		}
+		pending = append(pending, item)
+	}
+	rows.Close()
+	for _, item := range pending {
+		temporaryExists := false
+		if _, statErr := p.service.storage.Stat(item.temporary); statErr == nil {
+			temporaryExists = true
+		}
+		finalExists := false
+		if item.final != nil {
+			if _, statErr := p.service.storage.Stat(*item.final); statErr == nil {
+				finalExists = true
+			}
+		}
+		if !temporaryExists && !finalExists && time.Since(item.createdAt) > 24*time.Hour {
+			if _, updateErr := p.service.db.Exec(ctx, `UPDATE upload_sessions SET status='failed',failure_code='media_finalization_source_missing' WHERE id=$1 AND status='finalizing'`, item.id); updateErr != nil {
+				return updateErr
+			}
+			continue
+		}
+		if _, err := p.service.FinalizeUpload(ctx, item.id, item.user); err == nil {
+			continue
+		} else {
+			if p.logger != nil {
+				p.logger.Warn("upload finalization reconciliation deferred", "upload_id", item.id, "error", err)
+			}
+		}
+	}
+	// Failed finalizations can still own a temporary or moved final object.
+	// Cleanup is a separate retryable pass so a transient storage failure never
+	// leaves an orphan behind or keeps the upload in finalizing forever.
+	rows, err = p.service.db.Query(ctx, `SELECT id,temporary_storage_key,final_storage_key FROM upload_sessions WHERE status='failed' AND finalization_cleanup_pending=TRUE ORDER BY created_at LIMIT 32`)
+	if err != nil {
+		return err
+	}
+	type pendingCleanup struct {
+		id        uuid.UUID
+		temporary string
+		final     *string
+	}
+	cleanupItems := []pendingCleanup{}
+	for rows.Next() {
+		var item pendingCleanup
+		if err := rows.Scan(&item.id, &item.temporary, &item.final); err != nil {
+			rows.Close()
+			return err
+		}
+		cleanupItems = append(cleanupItems, item)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return err
+	}
+	rows.Close()
+	for _, item := range cleanupItems {
+		cleanupErr := p.service.storage.Delete(item.temporary)
+		if item.final != nil && *item.final != "" && *item.final != item.temporary {
+			if err := p.service.storage.Delete(*item.final); cleanupErr == nil {
+				cleanupErr = err
+			}
+		}
+		if cleanupErr != nil {
+			if p.logger != nil {
+				p.logger.Warn("upload finalization cleanup deferred", "upload_id", item.id, "error", cleanupErr)
+			}
+			continue
+		}
+		if _, err := p.service.db.Exec(ctx, `UPDATE upload_sessions SET finalization_cleanup_pending=FALSE WHERE id=$1 AND status='failed'`, item.id); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 func fileHash(path string) (int64, []byte, error) {

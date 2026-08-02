@@ -10,6 +10,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/tilecast/tilecast/apps/server/internal/contentdefs"
+	"github.com/tilecast/tilecast/apps/server/internal/manifestchanges"
 )
 
 // DataSourceRefreshWorker periodically fetches, parses, and caches Data Source data.
@@ -180,15 +181,15 @@ func (worker *DataSourceRefreshWorker) runOne(ctx context.Context) (bool, error)
 		return true, worker.fail(ctx, dataSourceID, refreshSeconds, diagnostics, "cache_encoding_failed")
 	}
 	next := nextDataSourceRefresh(refreshSeconds, upstreamExpiresAt)
-	var playerDataChanged bool
-	err = worker.service.db.QueryRow(ctx, `WITH previous AS MATERIALIZED (
-		SELECT cached_payload,using_cached_data,error_code FROM data_source_refresh_states WHERE data_source_id=$1
-	), updated AS (
-		UPDATE data_source_refresh_states SET next_refresh_at=$2,last_success_at=now(),http_result_category=$3,parse_status=$4,available_event_count=$5,available_item_count=$6,using_cached_data=FALSE,cache_updated_at=$7,cache_expires_at=$8,cached_payload=$9::jsonb,error_code=NULL,upstream_last_modified=NULLIF($10,''),upstream_expires_at=$11,locked_at=NULL,locked_by=NULL,updated_at=now() WHERE data_source_id=$1 RETURNING data_source_id
-	) SELECT previous.cached_payload IS DISTINCT FROM $9::jsonb OR previous.using_cached_data OR previous.error_code IS NOT NULL FROM previous,updated`, dataSourceID, next, diagnostics.HTTPResultCategory, diagnostics.ParseStatus, diagnostics.AvailableEventCount, diagnostics.AvailableItemCount, diagnostics.CacheUpdatedAt, diagnostics.CacheExpiresAt, string(payload), upstreamLastModified, upstreamExpiresAt).Scan(&playerDataChanged)
-	if err == nil && playerDataChanged && worker.service.invalidator != nil {
-		err = worker.service.invalidator.DataSourceChanged(ctx, dataSourceID, "data_source.refreshed")
-	}
+	err = worker.commitProjection(ctx, dataSourceID, "data_source.refreshed", func(tx pgx.Tx) (bool, error) {
+		var playerDataChanged bool
+		err := tx.QueryRow(ctx, `WITH previous AS MATERIALIZED (
+			SELECT cached_payload,using_cached_data,error_code FROM data_source_refresh_states WHERE data_source_id=$1
+		), updated AS (
+			UPDATE data_source_refresh_states SET next_refresh_at=$2,last_success_at=now(),http_result_category=$3,parse_status=$4,available_event_count=$5,available_item_count=$6,using_cached_data=FALSE,cache_updated_at=$7,cache_expires_at=$8,cached_payload=$9::jsonb,error_code=NULL,upstream_last_modified=NULLIF($10,''),upstream_expires_at=$11,locked_at=NULL,locked_by=NULL,updated_at=now() WHERE data_source_id=$1 RETURNING data_source_id
+		) SELECT previous.cached_payload IS DISTINCT FROM $9::jsonb OR previous.using_cached_data OR previous.error_code IS NOT NULL FROM previous,updated`, dataSourceID, next, diagnostics.HTTPResultCategory, diagnostics.ParseStatus, diagnostics.AvailableEventCount, diagnostics.AvailableItemCount, diagnostics.CacheUpdatedAt, diagnostics.CacheExpiresAt, string(payload), upstreamLastModified, upstreamExpiresAt).Scan(&playerDataChanged)
+		return playerDataChanged, err
+	})
 	return true, err
 }
 
@@ -206,17 +207,16 @@ func (worker *DataSourceRefreshWorker) reprojectManualRecords(ctx context.Contex
 	if err != nil {
 		return worker.fail(ctx, dataSourceID, 300, DataSourceDiagnostics{ParseStatus: "cache_encoding_failed"}, "cache_encoding_failed")
 	}
-	var playerDataChanged bool
-	err = worker.service.db.QueryRow(ctx, `WITH previous AS MATERIALIZED (
-		SELECT cached_payload,using_cached_data,error_code FROM data_source_refresh_states WHERE data_source_id=$1
-	), updated AS (
-		UPDATE data_source_refresh_states SET next_refresh_at=COALESCE($2,now()+interval '100 years'),last_success_at=now(),http_result_category='manual',parse_status='success',available_item_count=$3,using_cached_data=FALSE,cache_updated_at=now(),cache_expires_at=now()+interval '100 years',cached_payload=$4::jsonb,error_code=NULL,locked_at=NULL,locked_by=NULL,updated_at=now() WHERE data_source_id=$1 RETURNING data_source_id
-	) SELECT previous.cached_payload IS DISTINCT FROM $4::jsonb OR previous.error_code IS NOT NULL FROM previous,updated`,
-		dataSourceID, projection.NextBoundary, projection.Visible, string(payload)).Scan(&playerDataChanged)
-	if err == nil && playerDataChanged && worker.service.invalidator != nil {
-		err = worker.service.invalidator.DataSourceChanged(ctx, dataSourceID, "data_source.refreshed")
-	}
-	return err
+	return worker.commitProjection(ctx, dataSourceID, "data_source.refreshed", func(tx pgx.Tx) (bool, error) {
+		var playerDataChanged bool
+		err := tx.QueryRow(ctx, `WITH previous AS MATERIALIZED (
+			SELECT cached_payload,using_cached_data,error_code FROM data_source_refresh_states WHERE data_source_id=$1
+		), updated AS (
+			UPDATE data_source_refresh_states SET next_refresh_at=COALESCE($2,now()+interval '100 years'),last_success_at=now(),http_result_category='manual',parse_status='success',available_item_count=$3,using_cached_data=FALSE,cache_updated_at=now(),cache_expires_at=now()+interval '100 years',cached_payload=$4::jsonb,error_code=NULL,locked_at=NULL,locked_by=NULL,updated_at=now() WHERE data_source_id=$1 RETURNING data_source_id
+		) SELECT previous.cached_payload IS DISTINCT FROM $4::jsonb OR previous.error_code IS NOT NULL FROM previous,updated`,
+			dataSourceID, projection.NextBoundary, projection.Visible, string(payload)).Scan(&playerDataChanged)
+		return playerDataChanged, err
+	})
 }
 
 func nextDataSourceRefresh(refreshSeconds int, upstreamExpiresAt *time.Time) time.Time {
@@ -232,14 +232,51 @@ func (worker *DataSourceRefreshWorker) fail(ctx context.Context, dataSourceID uu
 		refreshSeconds = 30
 	}
 	next := time.Now().Add(time.Duration(refreshSeconds) * time.Second)
-	var playerDataChanged bool
-	err := worker.service.db.QueryRow(ctx, `WITH previous AS MATERIALIZED (
-		SELECT using_cached_data,error_code FROM data_source_refresh_states WHERE data_source_id=$1
-	), updated AS (
-		UPDATE data_source_refresh_states SET next_refresh_at=$2,http_result_category=$3,parse_status=$4,using_cached_data=(cache_updated_at IS NOT NULL AND cache_expires_at>now()),error_code=$5,locked_at=NULL,locked_by=NULL,updated_at=now() WHERE data_source_id=$1 RETURNING using_cached_data,error_code
-	) SELECT previous.using_cached_data IS DISTINCT FROM updated.using_cached_data OR (previous.error_code IS NULL) IS DISTINCT FROM (updated.error_code IS NULL) FROM previous,updated`, dataSourceID, next, diagnostics.HTTPResultCategory, diagnostics.ParseStatus, code).Scan(&playerDataChanged)
-	if err == nil && playerDataChanged && worker.service.invalidator != nil {
-		err = worker.service.invalidator.DataSourceChanged(ctx, dataSourceID, "data_source.cache_state_changed")
+	return worker.commitProjection(ctx, dataSourceID, "data_source.cache_state_changed", func(tx pgx.Tx) (bool, error) {
+		var playerDataChanged bool
+		err := tx.QueryRow(ctx, `WITH previous AS MATERIALIZED (
+			SELECT using_cached_data,error_code FROM data_source_refresh_states WHERE data_source_id=$1
+		), updated AS (
+			UPDATE data_source_refresh_states SET next_refresh_at=$2,http_result_category=$3,parse_status=$4,using_cached_data=(cache_updated_at IS NOT NULL AND cache_expires_at>now()),error_code=$5,locked_at=NULL,locked_by=NULL,updated_at=now() WHERE data_source_id=$1 RETURNING using_cached_data,error_code
+		) SELECT previous.using_cached_data IS DISTINCT FROM updated.using_cached_data OR (previous.error_code IS NULL) IS DISTINCT FROM (updated.error_code IS NULL) FROM previous,updated`, dataSourceID, next, diagnostics.HTTPResultCategory, diagnostics.ParseStatus, code).Scan(&playerDataChanged)
+		return playerDataChanged, err
+	})
+}
+
+// commitProjection keeps a refreshed payload and its manifest-version bumps in
+// the same database transaction. A notification is emitted only after commit,
+// so a failed write cannot leave a player looking at a version that never made
+// it to durable storage.
+func (worker *DataSourceRefreshWorker) commitProjection(ctx context.Context, dataSourceID uuid.UUID, reason string, update func(pgx.Tx) (bool, error)) error {
+	tx, err := worker.service.db.Begin(ctx)
+	if err != nil {
+		return err
 	}
-	return err
+	defer tx.Rollback(ctx) //nolint:errcheck
+	changed, err := update(tx)
+	if err != nil {
+		return err
+	}
+	var changes []manifestchanges.Change
+	transactionalUsed := false
+	if changed && worker.service.invalidator != nil {
+		if transactional, ok := worker.service.invalidator.(TransactionalAssetInvalidator); ok {
+			transactionalUsed = true
+			changes, err = transactional.DataSourceChangedInTx(ctx, tx, dataSourceID, reason)
+			if err != nil {
+				return err
+			}
+		}
+	}
+	if err = tx.Commit(ctx); err != nil {
+		return err
+	}
+	if !changed || worker.service.invalidator == nil {
+		return nil
+	}
+	if transactionalUsed {
+		worker.service.invalidator.(TransactionalAssetInvalidator).NotifyManifestChanges(changes)
+		return nil
+	}
+	return worker.service.invalidator.DataSourceChanged(ctx, dataSourceID, reason)
 }

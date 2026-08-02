@@ -6,8 +6,14 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.tilecast.player.network.PlayerCachePolicy
 import org.tilecast.player.network.PlayerConfig
+import org.tilecast.player.network.PlayerReliabilityPolicy
 
 class PlayerConfigManagerTest {
+	@Test fun webviewWatchdogUsesTheAuthoritativeWebviewThreshold(){
+		val policy=PlayerReliabilityPolicy(playbackStallSeconds=30,webviewStallSeconds=75)
+		assertEquals(75,watchdogThresholdSeconds(policy,true))
+		assertEquals(30,watchdogThresholdSeconds(policy,false))
+	}
     @Test fun validatesSafeConfiguration(){PlayerConfigValidator.validate(PlayerConfig(1,2,"2026-07-12T18:00:00Z"))}
     @Test(expected=IllegalArgumentException::class) fun rejectsUnsafeReportingInterval(){PlayerConfigValidator.validate(PlayerConfig(1,2,"2026-07-12T18:00:00Z",cache=PlayerCachePolicy(concurrentDownloads=20)))}
     @Test fun rejectsStaleOrDuplicateRevisions(){

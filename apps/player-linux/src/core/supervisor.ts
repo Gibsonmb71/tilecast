@@ -47,6 +47,8 @@ export interface SupervisorConfig {
   maxLadderRunsBeforeSafeMode: number;
   /** Window for counting ladder exhaustions. */
   ladderRunWindowMs: number;
+  /** If false, do not enter safe mode after repeated ladder exhaustion. */
+  safeModeEnabled?: boolean;
 }
 
 export const DEFAULT_SUPERVISOR_CONFIG: SupervisorConfig = {
@@ -55,6 +57,7 @@ export const DEFAULT_SUPERVISOR_CONFIG: SupervisorConfig = {
   healthyClearMs: 10 * 60_000,
   maxLadderRunsBeforeSafeMode: 3,
   ladderRunWindowMs: 60 * 60_000,
+  safeModeEnabled: true,
 };
 
 /** Persisted across process restarts. */
@@ -143,7 +146,10 @@ export function evaluate(
     const runs = [...base.ladderRunsAtMs, nowMs].filter(
       (t) => nowMs - t <= config.ladderRunWindowMs,
     );
-    if (runs.length >= config.maxLadderRunsBeforeSafeMode) {
+    if (
+      config.safeModeEnabled !== false &&
+      runs.length >= config.maxLadderRunsBeforeSafeMode
+    ) {
       return {
         action: "enter_safe_mode",
         state: {

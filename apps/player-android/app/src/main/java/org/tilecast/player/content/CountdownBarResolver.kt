@@ -50,8 +50,9 @@ internal fun resolveCountdownBar(
     plugins: List<ManifestPlugin>,
     now: Instant,
     clockOffsetSeconds: Long? = null,
+    clockOffsetMillis: Long? = null,
 ): ActiveCountdownBar? {
-    val at = now.plusSeconds(clockOffsetSeconds ?: 0)
+    val at = now.plusMillis(clockOffsetMillis ?: (clockOffsetSeconds ?: 0) * 1_000L)
     val active = mutableListOf<ActiveCountdownBar>()
     for (plugin in plugins) {
         if (plugin.type != "countdown_bar" || plugin.version != 1) continue

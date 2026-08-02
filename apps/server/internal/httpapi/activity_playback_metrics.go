@@ -20,8 +20,9 @@ WITH bounds AS (
 	SELECT p.screen_id,
 	       GREATEST(p.started_at, b.from_ts) AS started_at,
 	       LEAST(COALESCE(p.ended_at, b.to_ts), b.to_ts) AS ended_at
-	FROM playback_sessions p CROSS JOIN bounds b
+	FROM playback_sessions p JOIN screens s ON s.id=p.screen_id CROSS JOIN bounds b
 	WHERE p.session_type = 'presentation'
+	  AND s.enabled = TRUE AND s.deleted_at IS NULL AND s.archived_at IS NULL
 	  AND p.result IN ('playing','completed','recovered','partial')
 	  AND p.started_at < b.to_ts AND COALESCE(p.ended_at, b.to_ts) > b.from_ts
 ), ordered AS (
@@ -48,8 +49,9 @@ const contentExposureSQL = `
 SELECT COALESCE(SUM(EXTRACT(EPOCH FROM (
            LEAST(COALESCE(p.ended_at, $2::timestamptz), $2::timestamptz)
          - GREATEST(p.started_at, $1::timestamptz)))) * 1000, 0)::bigint
-FROM playback_sessions p
+FROM playback_sessions p JOIN screens s ON s.id=p.screen_id
 WHERE p.session_type <> 'presentation'
+	AND s.enabled = TRUE AND s.deleted_at IS NULL AND s.archived_at IS NULL
   AND p.result IN ('playing','completed','recovered','partial')
   AND p.started_at < $2::timestamptz AND COALESCE(p.ended_at, $2::timestamptz) > $1::timestamptz`
 

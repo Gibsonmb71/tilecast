@@ -98,12 +98,13 @@ type Document struct {
 }
 
 type Canvas struct {
-	Width             int        `json:"width"`
-	Height            int        `json:"height"`
-	Orientation       string     `json:"orientation"`
-	BackgroundColor   string     `json:"backgroundColor"`
-	BackgroundAssetID *uuid.UUID `json:"backgroundAssetId,omitempty"`
-	SafeAreaPercent   float64    `json:"safeAreaPercent"`
+	Width               int        `json:"width"`
+	Height              int        `json:"height"`
+	Orientation         string     `json:"orientation"`
+	BackgroundColor     string     `json:"backgroundColor"`
+	BackgroundAssetID   *uuid.UUID `json:"backgroundAssetId,omitempty"`
+	BackgroundVariantID *uuid.UUID `json:"backgroundVariantId,omitempty"`
+	SafeAreaPercent     float64    `json:"safeAreaPercent"`
 }
 
 type Placement struct {
@@ -121,6 +122,7 @@ type Placement struct {
 	GroupID    *uuid.UUID      `json:"groupId,omitempty"`
 	WidgetID   *uuid.UUID      `json:"widgetId,omitempty"`
 	AssetID    *uuid.UUID      `json:"assetId,omitempty"`
+	VariantID  *uuid.UUID      `json:"variantId,omitempty"`
 	PlaylistID *uuid.UUID      `json:"playlistId,omitempty"`
 	Overrides  json.RawMessage `json:"overrides,omitempty"`
 	Primitive  *Primitive      `json:"primitive,omitempty"`

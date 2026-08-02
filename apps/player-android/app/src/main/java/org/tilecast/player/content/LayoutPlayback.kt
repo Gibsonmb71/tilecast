@@ -1,7 +1,9 @@
 package org.tilecast.player.content
 
+import android.graphics.BitmapFactory
 import android.os.SystemClock
 import androidx.compose.foundation.background
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxSize
@@ -17,6 +19,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
@@ -50,10 +54,10 @@ fun FullscreenLayoutPlayback(
     // (primitives, text bindings); heartbeat while composed so the stall watchdog only fires
     // when rendering has genuinely stopped.
     LaunchedEffect(layout.id) { while (true) { onProgress(); kotlinx.coroutines.delay(15_000) } }
-    var now by remember { mutableStateOf(Instant.now()) }
+    var now by remember { mutableStateOf(session.content.serverNow()) }
     LaunchedEffect(structured) {
         while (true) {
-            now = Instant.now()
+            now = session.content.serverNow()
             kotlinx.coroutines.delay(30_000)
         }
     }
@@ -68,9 +72,9 @@ fun FullscreenLayoutPlayback(
     }
     val readinessIds = visiblePlacements.mapNotNull { placement ->
         when (placement.type) {
-            "playlistZone" -> placement.id.takeIf { session.content.manifest.playlists.any { it.id == placement.playlistId && it.items.isNotEmpty() } }
+            "playlistZone" -> placement.id.takeIf { session.content.manifest.playlists.any { playlist -> playlist.id == placement.playlistId && playlist.availableAt(now, session.content.manifest.assets).items.isNotEmpty() } }
             "widget" -> placement.id.takeIf { widgets.containsKey(placement.widgetId) }
-            "asset" -> placement.id.takeIf { session.content.manifest.assets.any { it.assetId == placement.assetId } }
+            "asset" -> placement.id.takeIf { session.content.manifest.assets.any { asset -> asset.assetId == placement.assetId && placement.variantId != null && asset.variantId == placement.variantId && asset.isAvailableAt(now) } }
             else -> null
         }
     }.toSet()
@@ -104,6 +108,17 @@ fun FullscreenLayoutPlayback(
 		val scaleX = canvasWidth.value / sourceWidth
 		val scaleY = canvasHeight.value / sourceHeight
 		Box(Modifier.size(canvasWidth, canvasHeight).background(layoutColor(document.canvas.backgroundColor))) {
+			val backgroundAsset = document.canvas.backgroundAssetId?.let { assetID ->
+                session.content.manifest.assets.firstOrNull { asset ->
+                    asset.assetId == assetID && document.canvas.backgroundVariantId != null && asset.variantId == document.canvas.backgroundVariantId && asset.isAvailableAt(now)
+				}
+			}
+			val backgroundBitmap = backgroundAsset?.variantId?.let { session.content.localFiles[it] }?.let { path ->
+				remember(path) { BitmapFactory.decodeFile(path) }
+			}
+			backgroundBitmap?.let { bitmap ->
+				Image(bitmap.asImageBitmap(), null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+			}
 			visiblePlacements.sortedBy { it.layer }.forEach { placement ->
 				val left = maxOf(placement.x, originX.toFloat())
 				val top = maxOf(placement.y, originY.toFloat())
@@ -123,6 +138,7 @@ fun FullscreenLayoutPlayback(
 						placementIds = setOf(placement.id),
 						drawBackground = false,
 						viewport = spanViewport,
+						nowProvider = { session.content.serverNow() },
 					)
                     return@forEach
                 }
@@ -135,13 +151,13 @@ fun FullscreenLayoutPlayback(
                 Box(modifier) {
                     when (placement.type) {
                         "playlistZone" -> session.content.manifest.playlists.firstOrNull { it.id == placement.playlistId }?.let { playlist ->
-                            PlaylistZone(session, playlist, placement.id, placement.playback?.muted ?: true, onError, onWebsiteStatus, onWidgetStatus, onProgress, activityReporter, { markReady(placement.id) }, useCompositableVideo)
+                            PlaylistZone(session, playlist.availableAt(now, session.content.manifest.assets), placement.id, placement.playback?.muted ?: true, onError, onWebsiteStatus, onWidgetStatus, onProgress, activityReporter, { markReady(placement.id) }, useCompositableVideo)
                         }
                         "widget" -> widgets[placement.widgetId]?.let { widget ->
                             val item = ManifestItem("layout-${placement.id}", widget.assetId, assetType = "widget", durationMs = Long.MAX_VALUE, fitMode = placement.playback?.fit ?: "contain", transition = "none", audioEnabled = !(placement.playback?.muted ?: true), volume = 1f, deliveryPolicy = "stream")
                             RenderedItem(item, null, session.content.manifest.websites.firstOrNull { it.assetId == widget.assetId }, widget, session, 0, {}, onError, onWebsiteStatus, onWidgetStatus, onProgress, activityReporter, placement.id, onFirstFrame = { markReady(placement.id) }, useCompositableVideo = useCompositableVideo)
                         }
-                        "asset" -> session.content.manifest.assets.firstOrNull { it.assetId == placement.assetId }?.let { asset ->
+						"asset" -> session.content.manifest.assets.firstOrNull { asset -> asset.assetId == placement.assetId && placement.variantId != null && asset.variantId == placement.variantId && asset.isAvailableAt(now) }?.let { asset ->
                             val item = ManifestItem("layout-${placement.id}", asset.assetId, asset.variantId, if (asset.mimeType.startsWith("video/")) "video" else "image", if (asset.mimeType.startsWith("image/")) Long.MAX_VALUE else null, placement.playback?.fit ?: "contain", "none", !(placement.playback?.muted ?: true), 1f, deliveryPolicy = "download")
                             LayoutAssetItem(session, item, asset, placement.id, onError, onWebsiteStatus, onWidgetStatus, onProgress, activityReporter, { markReady(placement.id) }, useCompositableVideo)
                         }
@@ -180,6 +196,7 @@ private fun PlaylistZone(
                 assets = session.content.manifest.assets,
                 anchor = anchor,
                 serverClockOffsetSeconds = session.content.serverClockOffsetSeconds,
+                serverClockOffsetMillis = session.content.serverClockOffsetMillis,
                 startedAtElapsedRealtimeMs = session.startedAtElapsedRealtimeMs,
                 startedAtWallClock = session.startedAtWallClock,
             )
@@ -267,6 +284,7 @@ private fun LayoutAssetItem(
                 assets = session.content.manifest.assets,
                 anchor = anchor,
                 serverClockOffsetSeconds = session.content.serverClockOffsetSeconds,
+                serverClockOffsetMillis = session.content.serverClockOffsetMillis,
                 startedAtElapsedRealtimeMs = session.startedAtElapsedRealtimeMs,
                 startedAtWallClock = session.startedAtWallClock,
             )

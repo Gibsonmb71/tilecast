@@ -81,6 +81,19 @@ func (s *server) screenTimeline(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnprocessableEntity, "timeline_domain_invalid", "Domain is invalid.")
 		return
 	}
+	var operational bool
+	if err := s.db.QueryRow(r.Context(), `
+		SELECT EXISTS(
+			SELECT 1 FROM screens
+			WHERE id=$1 AND enabled=TRUE AND deleted_at IS NULL AND archived_at IS NULL
+		)`, screenID).Scan(&operational); err != nil {
+		s.internalError(w, r, err)
+		return
+	}
+	if !operational {
+		writeError(w, http.StatusNotFound, "screen_not_found", "Screen was not found.")
+		return
+	}
 
 	response := screenTimelineResponse{Entries: []screenTimelineEntry{}}
 	response.Range.From, response.Range.To = window.From, window.To

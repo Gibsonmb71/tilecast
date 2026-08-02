@@ -11,6 +11,7 @@ import { ApiError, NetworkError, type ApiClient } from "./api";
 import { logger } from "./log";
 import type { StateStore } from "./storage";
 import type { PlayerConfig } from "./types";
+import { cacheIdentityMatches, type CacheIdentity } from "./cache-identity";
 
 const log = logger("config");
 
@@ -20,6 +21,9 @@ interface StoredConfig {
   etag: string | null;
   current: PlayerConfig;
   previous: PlayerConfig | null;
+  installationId?: string;
+  screenId?: string;
+  normalizedServerUrl?: string;
 }
 
 export interface ConfigSyncEvents {
@@ -29,6 +33,10 @@ export interface ConfigSyncEvents {
 
 export class ConfigSync {
   private stored: StoredConfig | null = null;
+  private operation: Promise<void> = Promise.resolve();
+  private queuedTrigger: string | null = null;
+  private syncing = false;
+  private identity: CacheIdentity | null = null;
   lastConfigError: string | null = null;
 
   constructor(
@@ -37,9 +45,25 @@ export class ConfigSync {
     private readonly events: ConfigSyncEvents,
   ) {}
 
+  setIdentity(identity: CacheIdentity | null): void {
+    this.identity = identity;
+  }
+
+  async invalidateCachedState(): Promise<void> {
+    this.stored = null;
+    await this.store.delete(CONFIG_FILE);
+  }
+
   /** Apply the persisted configuration from disk with zero network. */
   async loadCached(): Promise<void> {
     this.stored = await this.store.readJson<StoredConfig>(CONFIG_FILE);
+    if (
+      this.stored &&
+      (!this.identity || !cacheIdentityMatches(this.identity, this.stored))
+    ) {
+      await this.invalidateCachedState();
+      return;
+    }
     if (this.stored) {
       this.events.onConfigApplied(this.stored.current);
     }
@@ -50,6 +74,26 @@ export class ConfigSync {
   }
 
   async syncNow(trigger: string): Promise<void> {
+    if (this.syncing) {
+      this.queuedTrigger = trigger;
+      return this.operation;
+    }
+    this.syncing = true;
+    this.operation = (async () => {
+      let next: string | null = trigger;
+      while (next) {
+        this.queuedTrigger = null;
+        await this.syncExclusive(next);
+        next = this.queuedTrigger;
+      }
+    })().finally(() => {
+      this.syncing = false;
+      this.queuedTrigger = null;
+    });
+    return this.operation;
+  }
+
+  private async syncExclusive(trigger: string): Promise<void> {
     let result;
     try {
       result = await this.client.config(this.stored?.etag ?? null);
@@ -84,6 +128,9 @@ export class ConfigSync {
       etag: result.etag,
       current: config,
       previous: this.stored?.current ?? null,
+      installationId: this.identity?.installationId,
+      screenId: this.identity?.screenId,
+      normalizedServerUrl: this.identity?.normalizedServerUrl,
     };
     await this.store.writeJson(CONFIG_FILE, this.stored);
     this.lastConfigError = null;

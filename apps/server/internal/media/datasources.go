@@ -12,6 +12,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/tilecast/tilecast/apps/server/internal/contentdefs"
+	"github.com/tilecast/tilecast/apps/server/internal/manifestchanges"
 )
 
 type dataSourceAdapterFactory func(*Service, string) configNormalizer
@@ -268,11 +269,24 @@ func (s *Service) UpdateDataSource(ctx context.Context, id, user uuid.UUID, inpu
 	if _, err = tx.Exec(ctx, `INSERT INTO audit_logs(id,user_id,action,resource_type,resource_id) VALUES($1,$2,'data_source.updated','data_source',$3)`, uuid.New(), user, id.String()); err != nil {
 		return DataSource{}, err
 	}
+	var changes []manifestchanges.Change
+	transactionalUsed := false
+	if transactional, ok := s.invalidator.(TransactionalAssetInvalidator); ok {
+		transactionalUsed = true
+		changes, err = transactional.DataSourceChangedInTx(ctx, tx, id, "data_source.updated")
+		if err != nil {
+			return DataSource{}, fmt.Errorf("invalidate data source manifest: %w", err)
+		}
+	}
 	if err = tx.Commit(ctx); err != nil {
 		return DataSource{}, err
 	}
-	if s.invalidator != nil {
-		_ = s.invalidator.DataSourceChanged(ctx, id, "data_source.updated")
+	if transactionalUsed {
+		s.invalidator.(TransactionalAssetInvalidator).NotifyManifestChanges(changes)
+	} else if s.invalidator != nil {
+		if err := s.invalidator.DataSourceChanged(ctx, id, "data_source.updated"); err != nil {
+			return DataSource{}, fmt.Errorf("invalidate data source manifest: %w", err)
+		}
 	}
 	return s.GetDataSource(ctx, id)
 }
@@ -741,14 +755,40 @@ func (s *Service) DeleteDataSource(ctx context.Context, id, user uuid.UUID) erro
 		}
 		return &DependencyError{Resource: "data source", UsedBy: names}
 	}
-	tag, err := s.db.Exec(ctx, `UPDATE data_sources SET deleted_at=now(),updated_at=now() WHERE id=$1 AND deleted_at IS NULL`, id)
+	tx, err := s.db.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	tag, err := tx.Exec(ctx, `UPDATE data_sources SET deleted_at=now(),updated_at=now() WHERE id=$1 AND deleted_at IS NULL`, id)
 	if err != nil {
 		return err
 	}
 	if tag.RowsAffected() == 0 {
 		return ErrNotFound
 	}
-	_, _ = s.db.Exec(ctx, `INSERT INTO audit_logs(id,user_id,action,resource_type,resource_id) VALUES($1,$2,'data_source.deleted','data_source',$3)`, uuid.New(), user, id.String())
+	if _, err = tx.Exec(ctx, `INSERT INTO audit_logs(id,user_id,action,resource_type,resource_id) VALUES($1,$2,'data_source.deleted','data_source',$3)`, uuid.New(), user, id.String()); err != nil {
+		return err
+	}
+	var changes []manifestchanges.Change
+	transactionalUsed := false
+	if transactional, ok := s.invalidator.(TransactionalAssetInvalidator); ok {
+		transactionalUsed = true
+		changes, err = transactional.DataSourceChangedInTx(ctx, tx, id, "data_source.deleted")
+		if err != nil {
+			return err
+		}
+	}
+	if err = tx.Commit(ctx); err != nil {
+		return err
+	}
+	if transactionalUsed {
+		s.invalidator.(TransactionalAssetInvalidator).NotifyManifestChanges(changes)
+	} else if s.invalidator != nil {
+		if err := s.invalidator.DataSourceChanged(ctx, id, "data_source.deleted"); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
