@@ -192,7 +192,7 @@ export function PlayerPolicyEditor({
           </h2>
           <p>
             {target === "group"
-              ? "Override organization defaults for this sync group."
+              ? "Override organization defaults for this Display Group."
               : "Override inherited playback and device behavior for this screen only."}
           </p>
         </div>

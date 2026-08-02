@@ -19,6 +19,12 @@ Pairing sessions expire after ten minutes. Codes use an unambiguous alphabet and
 
 The player installation UUID remains stable across upgrades and is used to recognize a previously paired screen. Studio shows the existing screen name and requires the deliberate **Repair and replace credential** action when that screen still has an active credential. Approval records the authorization but does not revoke the old credential. Only a successful one-time enrollment creates the replacement credential and revokes the previous active credentials in the same database transaction. The existing screen ID, assignments, groups, schedules, policies, and history remain unchanged.
 
+### Screen replacement
+
+Hardware replacement is a separate approval mode from pairing recovery. Studio can select **Replace hardware for an existing screen** for a new player installation. The server records the target logical screen ID in the pairing session but leaves its name, location, Display Group membership and geometry, assignments, schedules, policies, scopes, and snapshots untouched. The target screen is updated with the new physical metadata only during successful one-time enrollment.
+
+The new credential is inserted before the old credential is retired. The hardware update, history transition, old-credential revocation, and enrollment-token consumption commit together; any failure rolls back the whole replacement and leaves the old player usable. `screen_player_history` stores the installation ID, platform, version, hardware metadata, pairing time, retirement time, and reason. Credential repair continues to use the stable player installation UUID and does not create a hardware-replacement history row.
+
 Only the latest pending or approved pairing session for a player installation is actionable. Tilecast Player stores its session ID, private poll secret, visible code, expiry, and polling interval in Room, resumes that session after activity or process recreation, and clears it after enrollment or expiry. A stored device credential is attempted first and is cleared only after an authenticated endpoint confirms that it is invalid or revoked.
 
 ## Authenticated connection
@@ -42,6 +48,15 @@ Every identifier field in a heartbeat (`currentItemId`, `currentAssetId`, `curre
 Server-side handling is deliberately asymmetric. A malformed **optional playback identifier** — the eight fields listed first above — is dropped, named in the warning log, and returned in `data.ignoredFields`; the rest of the heartbeat is then processed normally. This exists because the same message carries the lifecycle facts that settle a self-update (`playerVersion`, `playerVersionCode`, `lastHealthyPlaybackAt`, `playbackState`, `safeMode`), and one unusable telemetry field must not strand a deployment on a healthy screen. A malformed **required, deployment, command, or credential-bearing** field still rejects the whole heartbeat: `currentUpdateDeploymentId` or `lastCommandId` with an unreadable value would misattribute an update or a command result. Dropped values are recorded as absent, never coerced or substituted.
 
 Status thresholds are centralized on the server: connected socket is `online`, contact within two minutes is `recent`, contact within fifteen minutes is `stale`, and older contact is `offline`. Administrative disable and credential revocation override those states.
+
+Display Control is optional heartbeat metadata. A Linux Player may report
+`displayControlProvider`, `displayControlProviders`,
+`displayControlCapabilities` (capability-to-provider), `displayPowerState`,
+`displayPowerStateConfirmed`, `displayPowerStateObservedAt`,
+`displayControlPolicyState`, and a bounded `displayControlError`. These fields
+never change the Player's connection status. A successful Display Control
+command means that the Player accepted and attempted its fixed provider call;
+state confirmation is a separate observation.
 
 ## Manifest synchronization and playback
 
@@ -77,8 +92,26 @@ Source playlist items may run until the provider signals completion or for a fix
 
 Manifest v4 may contain one active Takeover with its playlist and half-open activation/expiration interval. The released manifest retains the `emergency` property for backward compatibility; current heartbeat and activity contracts use Takeover names. The player prepares it atomically, interrupts normal playback when ready, and re-evaluates schedules on restoration. `commands.available` prompts authenticated retrieval; acknowledgement and safe result endpoints make delivery persistent and idempotent. Takeover overrides playback-disabled state, then returns to disabled after expiration.
 
+Quick Present is carried as the optional `presentationOverride` field in the
+same manifest. It references a projected playlist, Layout, or deterministic
+one-item asset playlist and includes its start, optional expiration, and
+playback anchor. Players select it below an active Takeover and above schedules,
+reevaluate at both boundaries, and use the anchor for synchronized playback.
+The field is optional so older Players continue their normal assigned or
+scheduled presentation while the server stack is upgraded. AirPlay remains a
+runtime presentation path and keeps its existing priority over this field.
+
 Player configuration is retrieved separately from `/api/v1/player/config` with device authentication, ETag, schema version, and monotonic effective revision. `config.changed` contains only the revision. The player validates and stores current and previous valid configurations; it never receives administrative inheritance sources or deployment secrets.
 
 Configuration v1 also carries typed `reliability`, `power`, `managedKiosk`, and `accessibility` sections. Status reports distinguish configured and effective reliability mode and include throttled foreground, boot attempts, commissioning step and completion, cached fallback, last healthy playback/sync/connection, lock-task, accessibility, active-hours, sleep/wake, recovery, safe-mode, self-test, update-readiness, and maintenance-session state. Foreground package is omitted from non-administrative diagnostics and is never retained as unbounded history.
 
 The persistent command allowlist includes bounded recovery operations: retry or skip the current item, recreate the renderer or playback session, restart the activity or Player process, resynchronize content and configuration, clear safe mode, and run the local self-test. Payloads cannot specify applications, URLs, paths, or executable actions. Device reboot is not exposed without confirmed device-owner capability.
+
+The same persistent command system carries `display_power_on`,
+`display_power_off`, `display_set_input`, `display_set_volume`,
+`display_mute`, `display_unmute`, `display_set_brightness`, and
+`display_probe`. Payloads are closed and range-checked by the server and the
+Player. Linux executes only fixed shell-free `cec-ctl` or `ddcutil` calls with
+bounded time and output. A Display Control schedule uses the normal manifest
+schedule entry with `displayAction`; it has no playlist or Layout and is
+evaluated by the same timezone, priority, and offline transition resolver.

@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { resolveSelection, scheduleApplies } from "./schedule";
+import {
+  presentationOverrideActive,
+  resolveDisplayPolicy,
+  resolveSelection,
+  scheduleApplies,
+} from "./schedule";
 import type { Manifest, ManifestSchedule } from "./types";
 
 function baseManifest(overrides: Partial<Manifest> = {}): Manifest {
@@ -153,6 +158,32 @@ describe("scheduleApplies", () => {
   });
 });
 
+describe("resolveDisplayPolicy", () => {
+  it("uses schedule precedence and marks a power-off policy", () => {
+    const result = resolveDisplayPolicy(
+      baseManifest({
+        schedules: [
+          weekly({
+            id: "power-on",
+            priority: 10,
+            displayAction: { type: "display_power_on" },
+            playlistId: null,
+          }),
+          weekly({
+            id: "power-off",
+            priority: 20,
+            displayAction: { type: "display_power_off" },
+            playlistId: null,
+          }),
+        ],
+      }),
+      new Date("2026-07-17T15:00:00Z"),
+    );
+    expect(result.scheduleId).toBe("power-off");
+    expect(result.policyState).toBe("powered_off_by_policy");
+  });
+});
+
 describe("resolveSelection", () => {
   const inWindow = new Date("2026-07-17T15:00:00Z");
 
@@ -277,6 +308,78 @@ describe("resolveSelection", () => {
     expect(nightSelection).toMatchObject({
       playlistId: "direct",
       source: "direct",
+    });
+  });
+
+  it("selects Quick Present above schedules and returns to current scheduling after expiry", () => {
+    const manifest = baseManifest({
+      schedules: [weekly()],
+      playlist: { id: "direct", revision: 1, name: "Direct", items: [] },
+      presentationOverride: {
+        id: "present-1",
+        contentType: "playlist",
+        contentId: "quick-playlist",
+        contentName: "Open house",
+        startedAt: "2026-07-17T14:30:00Z",
+        expiresAt: "2026-07-17T15:30:00Z",
+        playlistId: "quick-playlist",
+      },
+    });
+    expect(presentationOverrideActive(manifest, inWindow)).toBe(true);
+    expect(resolveSelection(manifest, inWindow)).toMatchObject({
+      playlistId: "quick-playlist",
+      source: "quick_present",
+      playbackAnchor: "2026-07-17T14:30:00Z",
+    });
+    expect(
+      resolveSelection(manifest, new Date("2026-07-17T15:30:00Z")).source,
+    ).toBe("schedule");
+  });
+
+  it("lets an Emergency Takeover preempt Quick Present", () => {
+    const manifest = baseManifest({
+      presentationOverride: {
+        id: "present-1",
+        contentType: "playlist",
+        contentId: "quick-playlist",
+        contentName: "Open house",
+        startedAt: "2026-07-17T14:30:00Z",
+        expiresAt: "2026-07-17T15:30:00Z",
+        playlistId: "quick-playlist",
+      },
+      takeover: {
+        id: "takeover-1",
+        playlistId: "emergency-playlist",
+        activatedAt: "2026-07-17T14:45:00Z",
+        expiresAt: "2026-07-17T15:30:00Z",
+      },
+    });
+    expect(resolveSelection(manifest, inWindow)).toMatchObject({
+      playlistId: "emergency-playlist",
+      source: "takeover",
+    });
+  });
+
+  it("supports an until-stopped Quick Present session", () => {
+    const manifest = baseManifest({
+      presentationOverride: {
+        id: "present-forever",
+        contentType: "asset",
+        contentId: "virtual-present-forever",
+        contentName: "Welcome",
+        startedAt: "2026-07-17T14:30:00Z",
+        expiresAt: null,
+        playlistId: "virtual-present-forever",
+      },
+    });
+    expect(
+      presentationOverrideActive(manifest, new Date("2030-01-01T00:00:00Z")),
+    ).toBe(true);
+    expect(
+      resolveSelection(manifest, new Date("2030-01-01T00:00:00Z")),
+    ).toMatchObject({
+      playlistId: "virtual-present-forever",
+      source: "quick_present",
     });
   });
 });

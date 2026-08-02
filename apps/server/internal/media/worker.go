@@ -19,22 +19,30 @@ import (
 )
 
 type WorkerPool struct {
-	service *Service
-	logger  *slog.Logger
-	id      string
-	wg      sync.WaitGroup
-	cancel  context.CancelFunc
-	gate    func() bool
+	service        *Service
+	logger         *slog.Logger
+	id             string
+	wg             sync.WaitGroup
+	cancel         context.CancelFunc
+	gate           func() bool
+	extraProcessor func(context.Context, string, *uuid.UUID, []byte) error
 }
 
 // SetGate installs a check consulted before claiming work. Backup snapshots
 // pause media processing so files cannot mutate while they are archived.
 func (p *WorkerPool) SetGate(gate func() bool) { p.gate = gate }
 
+// SetExtraProcessor lets a feature-owned media job reuse the durable worker
+// lifecycle without adding feature-specific SQL or a second scheduler.
+func (p *WorkerPool) SetExtraProcessor(processor func(context.Context, string, *uuid.UUID, []byte) error) {
+	p.extraProcessor = processor
+}
+
 type job struct {
 	ID                    uuid.UUID
 	AssetID               *uuid.UUID
 	Kind                  string
+	Payload               []byte
 	Attempts, MaxAttempts int
 }
 
@@ -92,7 +100,7 @@ func (p *WorkerPool) claim(ctx context.Context) (*job, error) {
 	}
 	defer tx.Rollback(ctx) //nolint:errcheck
 	var j job
-	err = tx.QueryRow(ctx, `SELECT id,asset_id,kind,attempts,max_attempts FROM media_jobs WHERE (status='queued' AND run_after<=now()) OR (status='running' AND locked_at<now()-interval '10 minutes') ORDER BY run_after,created_at FOR UPDATE SKIP LOCKED LIMIT 1`).Scan(&j.ID, &j.AssetID, &j.Kind, &j.Attempts, &j.MaxAttempts)
+	err = tx.QueryRow(ctx, `SELECT id,asset_id,kind,payload,attempts,max_attempts FROM media_jobs WHERE (status='queued' AND run_after<=now()) OR (status='running' AND locked_at<now()-interval '10 minutes') ORDER BY run_after,created_at FOR UPDATE SKIP LOCKED LIMIT 1`).Scan(&j.ID, &j.AssetID, &j.Kind, &j.Payload, &j.Attempts, &j.MaxAttempts)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
 	}
@@ -148,6 +156,9 @@ func (p *WorkerPool) process(ctx context.Context, j job) error {
 	case "clean_expired_uploads":
 		return p.cleanExpired(ctx)
 	default:
+		if p.extraProcessor != nil {
+			return p.extraProcessor(ctx, j.Kind, j.AssetID, j.Payload)
+		}
 		return fmt.Errorf("unknown media job %s", j.Kind)
 	}
 }

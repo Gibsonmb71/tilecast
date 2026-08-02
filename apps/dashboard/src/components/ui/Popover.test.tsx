@@ -203,6 +203,41 @@ describe("Popover dismissal", () => {
   });
 });
 
+describe("Popover placement", () => {
+  // The rect stub below is global to the DOM, so it must not outlive this block.
+  afterEach(() => vi.restoreAllMocks());
+
+  /**
+   * The panel is `position: fixed` with `top: 0` as its pre-measurement origin.
+   * A flipped panel that kept that `top` while also setting `bottom` would have
+   * both vertical edges anchored, and an auto height stretches to fill between
+   * them — the sidebar account menu, which sits at the bottom of the viewport and
+   * therefore always flips, filled the whole screen.
+   */
+  it("anchors only one vertical edge when it flips above its trigger", async () => {
+    const user = userEvent.setup();
+    // A trigger at the bottom of the viewport, with a panel too tall to fit below.
+    vi.spyOn(Element.prototype, "getBoundingClientRect").mockReturnValue({
+      top: 700,
+      bottom: 730,
+      left: 12,
+      right: 60,
+      width: 48,
+      height: 120,
+      x: 12,
+      y: 700,
+      toJSON: () => ({}),
+    });
+    router(<CreateMenu />);
+
+    await user.click(screen.getByRole("button", { name: "Create" }));
+
+    const panel = screen.getByRole("menu");
+    expect(panel.style.bottom).not.toBe("");
+    expect(panel.style.top).toBe("auto");
+  });
+});
+
 describe("Popover keyboard contract", () => {
   it("moves focus into a form panel, because the panel is not next in document order", async () => {
     const user = userEvent.setup();

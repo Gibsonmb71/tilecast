@@ -16,15 +16,18 @@ import (
 	"github.com/tilecast/tilecast/apps/server/internal/contentdefs"
 	"github.com/tilecast/tilecast/apps/server/internal/plugins"
 	"github.com/tilecast/tilecast/apps/server/internal/scheduling"
+	"github.com/tilecast/tilecast/apps/server/internal/span"
 )
 
 type Service struct {
-	db          *pgxpool.Pool
-	notifier    Notifier
-	scheduling  *scheduling.Service
-	sources     SourceProjector
-	definitions *contentdefs.Catalog
-	plugins     PluginProjector
+	db                    *pgxpool.Pool
+	notifier              Notifier
+	scheduling            *scheduling.Service
+	sources               SourceProjector
+	definitions           *contentdefs.Catalog
+	plugins               PluginProjector
+	presentationOverrides PresentationOverrideProjector
+	span                  SpanProjector
 	// approvalGate refuses assignment of content that is waiting for review.
 	// Nil means this installation does not gate assignment at all. It runs inside
 	// the assignment transaction so the answer cannot go stale before the commit.
@@ -40,6 +43,11 @@ type PluginProjector interface {
 	ManifestForScreen(context.Context, uuid.UUID) ([]plugins.ManifestPlugin, error)
 }
 
+type SpanProjector interface {
+	ViewportForScreen(context.Context, uuid.UUID) (*span.Panel, *span.Canvas, error)
+	PrepareVideo(context.Context, uuid.UUID, uuid.UUID, uuid.UUID) (span.VideoPanel, error)
+}
+
 func NewService(db *pgxpool.Pool, notifier Notifier) *Service {
 	return &Service{db: db, notifier: notifier, definitions: contentdefs.MustLoad()}
 }
@@ -48,6 +56,10 @@ func (s *Service) SetScheduling(service *scheduling.Service)          { s.schedu
 func (s *Service) SetSourceProjector(projector SourceProjector)       { s.sources = projector }
 func (s *Service) SetContentDefinitions(catalog *contentdefs.Catalog) { s.definitions = catalog }
 func (s *Service) SetPluginProjector(projector PluginProjector)       { s.plugins = projector }
+func (s *Service) SetSpanProjector(projector SpanProjector)           { s.span = projector }
+func (s *Service) SetPresentationOverrides(projector PresentationOverrideProjector) {
+	s.presentationOverrides = projector
+}
 
 // SetApprovalGate installs the content review check used by every assignment
 // path. The gate takes the assignment's own transaction: it locks the content
@@ -1273,7 +1285,7 @@ func (s *Service) Assignment(ctx context.Context, screenID uuid.UUID) (Assignmen
 	if s.scheduling != nil {
 		_, _, a.ClockSkewWarningSeconds = s.scheduling.Config()
 	}
-	scheduleRows, e := s.db.Query(ctx, `SELECT DISTINCT s.id,s.name,COALESCE(p.name,l.name),CASE WHEN s.layout_id IS NOT NULL THEN 'layout' ELSE 'playlist' END,s.priority,s.enabled FROM schedules s LEFT JOIN playlists p ON p.id=s.playlist_id LEFT JOIN layouts l ON l.id=s.layout_id JOIN schedule_targets t ON t.schedule_id=s.id LEFT JOIN screen_group_memberships m ON m.screen_group_id=t.screen_group_id AND m.screen_id=$1 WHERE s.deleted_at IS NULL AND (t.screen_id=$1 OR m.screen_id=$1) ORDER BY s.priority DESC,s.id`, screenID)
+	scheduleRows, e := s.db.Query(ctx, `SELECT DISTINCT s.id,s.name,COALESCE(p.name,l.name,''),CASE WHEN s.display_action IS NOT NULL THEN 'display_control' WHEN s.layout_id IS NOT NULL THEN 'layout' ELSE 'playlist' END,s.priority,s.enabled FROM schedules s LEFT JOIN playlists p ON p.id=s.playlist_id LEFT JOIN layouts l ON l.id=s.layout_id JOIN schedule_targets t ON t.schedule_id=s.id LEFT JOIN screen_group_memberships m ON m.screen_group_id=t.screen_group_id AND m.screen_id=$1 WHERE s.deleted_at IS NULL AND (t.screen_id=$1 OR m.screen_id=$1) ORDER BY s.priority DESC,s.id`, screenID)
 	if e != nil {
 		return Assignment{}, e
 	}
@@ -1299,9 +1311,42 @@ func (s *Service) Assignment(ctx context.Context, screenID uuid.UUID) (Assignmen
 	return a, nil
 }
 
+func (s *Service) projectSpanVideo(ctx context.Context, screenID, assetID, sourceVariantID uuid.UUID, asset *ManifestAsset, enabled bool) (uuid.UUID, error) {
+	if !enabled || s.span == nil {
+		return sourceVariantID, nil
+	}
+	panel, err := s.span.PrepareVideo(ctx, screenID, assetID, sourceVariantID)
+	if errors.Is(err, span.ErrNotFound) {
+		return sourceVariantID, nil
+	}
+	if err != nil {
+		return uuid.Nil, err
+	}
+	if panel.Status != "ready" {
+		if panel.Status == "failed" {
+			return uuid.Nil, fmt.Errorf("%w: Span video preparation failed", ErrConflict)
+		}
+		return uuid.Nil, fmt.Errorf("%w: Span video panel is still preparing", ErrConflict)
+	}
+	asset.VariantID = panel.ID
+	asset.MIMEType = panel.MIMEType
+	asset.FileSize = panel.FileSize
+	asset.SHA256 = panel.SHA256
+	asset.DownloadPath = panel.DownloadPath
+	width, height := panel.Width, panel.Height
+	duration := panel.DurationSeconds
+	asset.Width, asset.Height, asset.DurationSeconds = &width, &height, &duration
+	return panel.ID, nil
+}
+
 func (s *Service) BuildManifest(ctx context.Context, screenID uuid.UUID) (Manifest, string, error) {
 	if err := s.reconcilePresentationCatalog(ctx); err != nil {
 		return Manifest{}, "", err
+	}
+	if s.presentationOverrides != nil {
+		if err := s.presentationOverrides.ReconcileExpired(ctx); err != nil {
+			return Manifest{}, "", err
+		}
 	}
 	// Expiration is persisted during reconciliation so an unchanged ETag can never
 	// hide the removal of a takeover from a player.
@@ -1329,6 +1374,22 @@ func (s *Service) BuildManifest(ctx context.Context, screenID uuid.UUID) (Manife
 		prefetch, grace, _ = s.scheduling.Config()
 	}
 	manifest := Manifest{SchemaVersion: 11, ManifestVersion: assignment.ManifestVersion, ScreenID: screenID, GeneratedAt: changed, ServerTime: now, Mode: "presentation", Assets: []ManifestAsset{}, Playlists: []ManifestPlaylist{}, Layouts: []ManifestLayout{}, Schedules: []ManifestSchedule{}, Websites: []ManifestWebsite{}, Widgets: []ManifestWidget{}, DataSources: []ManifestDataSource{}, Plugins: []plugins.ManifestPlugin{}, PrefetchHorizonDays: prefetch, ActivationGraceSeconds: grace}
+	spanEnabled := false
+	if s.span != nil {
+		panel, canvas, spanErr := s.span.ViewportForScreen(ctx, screenID)
+		if errors.Is(spanErr, span.ErrNotReady) {
+			return Manifest{}, "", fmt.Errorf("%w: Span geometry is incomplete", ErrConflict)
+		}
+		if spanErr != nil {
+			return Manifest{}, "", spanErr
+		}
+		if panel != nil && canvas != nil {
+			spanEnabled = true
+			manifest.SchemaVersion = 15
+			manifest.Canvas = &ManifestCanvas{Width: canvas.Width, Height: canvas.Height}
+			manifest.Viewport = &ManifestViewport{X: panel.X, Y: panel.Y, Width: panel.Width, Height: panel.Height, Rotation: panel.Rotation, Order: panel.PanelOrder, BezelLeft: panel.BezelLeft, BezelTop: panel.BezelTop, BezelRight: panel.BezelRight, BezelBottom: panel.BezelBottom}
+		}
+	}
 	if s.plugins != nil {
 		manifest.Plugins, err = s.plugins.ManifestForScreen(ctx, screenID)
 		if err != nil {
@@ -1343,6 +1404,30 @@ func (s *Service) BuildManifest(ctx context.Context, screenID uuid.UUID) (Manife
 	}
 	playlistIDs := []uuid.UUID{}
 	layoutIDs := []uuid.UUID{}
+	var presentationOverride *PresentationOverride
+	if s.presentationOverrides != nil {
+		presentationOverride, err = s.presentationOverrides.ActiveForScreen(ctx, screenID)
+		if err != nil {
+			return Manifest{}, "", err
+		}
+		if presentationOverride != nil {
+			manifest.PresentationOverride = &ManifestPresentationOverride{
+				ID:          presentationOverride.ID,
+				ContentType: presentationOverride.ContentType,
+				ContentID:   presentationOverride.ContentID,
+				ContentName: presentationOverride.ContentName,
+				StartedAt:   presentationOverride.StartedAt,
+				ExpiresAt:   presentationOverride.ExpiresAt,
+				WakeDisplay: presentationOverride.WakeDisplay,
+			}
+			switch presentationOverride.ContentType {
+			case "playlist":
+				playlistIDs = append(playlistIDs, presentationOverride.ContentID)
+			case "layout":
+				layoutIDs = append(layoutIDs, presentationOverride.ContentID)
+			}
+		}
+	}
 	if assignment.PlaylistID != nil {
 		playlistIDs = append(playlistIDs, *assignment.PlaylistID)
 	}
@@ -1373,14 +1458,14 @@ func (s *Service) BuildManifest(ctx context.Context, screenID uuid.UUID) (Manife
 				}
 			}
 			var schedulePlaylistID *uuid.UUID
-			if record.LayoutID == nil {
+			if record.LayoutID == nil && record.DisplayAction == nil && record.PlaylistID != uuid.Nil {
 				value := record.PlaylistID
 				schedulePlaylistID = &value
 			}
-			manifest.Schedules = append(manifest.Schedules, ManifestSchedule{ID: record.ID, PlaylistID: schedulePlaylistID, LayoutID: record.LayoutID, Type: string(record.Type), Timezone: record.Timezone, Priority: record.Priority, Specificity: record.Specificity, StartDate: record.StartDate, EndDate: record.EndDate, OneTimeStart: record.OneTimeStart, OneTimeEnd: record.OneTimeEnd, DailyStart: record.DailyStart, DailyEnd: record.DailyEnd, DaysOfWeek: record.DaysOfWeek})
+			manifest.Schedules = append(manifest.Schedules, ManifestSchedule{ID: record.ID, PlaylistID: schedulePlaylistID, LayoutID: record.LayoutID, DisplayAction: record.DisplayAction, Type: string(record.Type), Timezone: record.Timezone, Priority: record.Priority, Specificity: record.Specificity, StartDate: record.StartDate, EndDate: record.EndDate, OneTimeStart: record.OneTimeStart, OneTimeEnd: record.OneTimeEnd, DailyStart: record.DailyStart, DailyEnd: record.DailyEnd, DaysOfWeek: record.DaysOfWeek})
 			if record.LayoutID != nil {
 				layoutIDs = append(layoutIDs, *record.LayoutID)
-			} else {
+			} else if record.DisplayAction == nil && record.PlaylistID != uuid.Nil {
 				playlistIDs = append(playlistIDs, record.PlaylistID)
 			}
 		}
@@ -1468,6 +1553,15 @@ func (s *Service) BuildManifest(ctx context.Context, screenID uuid.UUID) (Manife
 	}
 	seen := map[uuid.UUID]bool{}
 	seenPlaylists := map[uuid.UUID]bool{}
+	if presentationOverride != nil && presentationOverride.ContentType == "asset" {
+		virtual, projectionErr := s.projectPresentationAsset(ctx, screenID, &manifest, *presentationOverride, seen, spanEnabled)
+		if projectionErr != nil {
+			return Manifest{}, "", projectionErr
+		}
+		manifest.Playlists = append(manifest.Playlists, virtual)
+		manifest.PresentationOverride.PlaylistID = &virtual.ID
+		manifest.Playlist = &virtual
+	}
 	for _, playlistID := range playlistIDs {
 		if seenPlaylists[playlistID] {
 			continue
@@ -1567,8 +1661,15 @@ func (s *Service) BuildManifest(ctx context.Context, screenID uuid.UUID) (Manife
 			if err != nil {
 				return Manifest{}, "", err
 			}
-			asset.DownloadPath = "/api/v1/player/assets/" + asset.AssetID.String() + "/variants/" + asset.VariantID.String()
-			mp.Items = append(mp.Items, ManifestItem{ID: item.ID, AssetID: item.AssetID, AssetType: item.AssetType, VariantID: item.VariantID, DurationMS: item.DurationMS, FitMode: item.FitMode, Transition: item.Transition, AudioEnabled: item.AudioEnabled, Volume: item.Volume, VideoStartOffsetMS: item.VideoStartOffsetMS, VideoEndOffsetMS: item.VideoEndOffsetMS, DeliveryPolicy: item.DeliveryPolicy, AvailableFrom: item.AvailableFrom, ExpiresAt: item.ExpiresAt})
+			sourceVariantID := asset.VariantID
+			assetVariantID, projectionErr := s.projectSpanVideo(ctx, screenID, item.AssetID, sourceVariantID, &asset, spanEnabled && item.AssetType == "video")
+			if projectionErr != nil {
+				return Manifest{}, "", projectionErr
+			}
+			if !spanEnabled || item.AssetType != "video" {
+				asset.DownloadPath = "/api/v1/player/assets/" + asset.AssetID.String() + "/variants/" + asset.VariantID.String()
+			}
+			mp.Items = append(mp.Items, ManifestItem{ID: item.ID, AssetID: item.AssetID, AssetType: item.AssetType, VariantID: &assetVariantID, DurationMS: item.DurationMS, FitMode: item.FitMode, Transition: item.Transition, AudioEnabled: item.AudioEnabled, Volume: item.Volume, VideoStartOffsetMS: item.VideoStartOffsetMS, VideoEndOffsetMS: item.VideoEndOffsetMS, DeliveryPolicy: item.DeliveryPolicy, AvailableFrom: item.AvailableFrom, ExpiresAt: item.ExpiresAt})
 			if !seen[asset.VariantID] {
 				manifest.Assets = append(manifest.Assets, asset)
 				seen[asset.VariantID] = true
@@ -1580,6 +1681,28 @@ func (s *Service) BuildManifest(ctx context.Context, screenID uuid.UUID) (Manife
 			manifest.DirectFallbackPlaylist = &fallback
 		}
 	}
+	if presentationOverride != nil {
+		switch presentationOverride.ContentType {
+		case "playlist":
+			for index := range manifest.Playlists {
+				if manifest.Playlists[index].ID == presentationOverride.ContentID {
+					selected := manifest.Playlists[index]
+					manifest.PresentationOverride.PlaylistID = &selected.ID
+					manifest.Playlist = &selected
+					break
+				}
+			}
+		case "layout":
+			for index := range manifest.Layouts {
+				if manifest.Layouts[index].ID == presentationOverride.ContentID {
+					selected := manifest.Layouts[index]
+					manifest.PresentationOverride.LayoutID = &selected.ID
+					manifest.Layout = &selected
+					break
+				}
+			}
+		}
+	}
 	for _, dependency := range layoutDependencies {
 		switch dependency.Type {
 		case "asset":
@@ -1588,7 +1711,14 @@ func (s *Service) BuildManifest(ctx context.Context, screenID uuid.UUID) (Manife
 			if err != nil {
 				return Manifest{}, "", fmt.Errorf("%w: Layout Asset unavailable", ErrConflict)
 			}
-			asset.DownloadPath = "/api/v1/player/assets/" + asset.AssetID.String() + "/variants/" + asset.VariantID.String()
+			sourceVariantID := asset.VariantID
+			_, projectionErr := s.projectSpanVideo(ctx, screenID, dependency.ID, sourceVariantID, &asset, spanEnabled && strings.HasPrefix(asset.MIMEType, "video/"))
+			if projectionErr != nil {
+				return Manifest{}, "", projectionErr
+			}
+			if !spanEnabled || !strings.HasPrefix(asset.MIMEType, "video/") {
+				asset.DownloadPath = "/api/v1/player/assets/" + asset.AssetID.String() + "/variants/" + asset.VariantID.String()
+			}
 			if !seen[asset.VariantID] {
 				manifest.Assets = append(manifest.Assets, asset)
 				seen[asset.VariantID] = true
@@ -1752,6 +1882,106 @@ func (s *Service) BuildManifest(ctx context.Context, screenID uuid.UUID) (Manife
 	}
 	baseETag := manifestETagForSchema(screenID, assignment.ManifestVersion, manifest.SchemaVersion)
 	return manifest, manifestETagForSchedules(baseETag, manifest.Schedules), nil
+}
+
+// projectPresentationAsset adapts one library asset into the same one-item
+// playlist shape used by the normal Player renderer. This keeps Quick Present
+// lightweight without creating hidden playlists that would leak into the
+// content library or require cleanup after expiry.
+func (s *Service) projectPresentationAsset(ctx context.Context, screenID uuid.UUID, manifest *Manifest, override PresentationOverride, seen map[uuid.UUID]bool, spanEnabled bool) (ManifestPlaylist, error) {
+	var name, assetType, status string
+	var availableFrom, expiresAt *time.Time
+	if err := s.db.QueryRow(ctx, `SELECT name,type,processing_status,available_from,expires_at FROM assets WHERE id=$1 AND deleted_at IS NULL AND archived_at IS NULL AND origin='library' AND system_managed=FALSE`, override.ContentID).Scan(&name, &assetType, &status, &availableFrom, &expiresAt); err != nil {
+		return ManifestPlaylist{}, fmt.Errorf("%w: Quick Present content is unavailable", ErrConflict)
+	}
+	if status != "ready" {
+		return ManifestPlaylist{}, fmt.Errorf("%w: Quick Present content is still processing", ErrConflict)
+	}
+	itemID := uuid.NewSHA1(override.ID, []byte("quick-present-item"))
+	item := ManifestItem{ID: itemID, AssetID: override.ContentID, AssetType: assetType, FitMode: "contain", Transition: "none", AudioEnabled: false, Volume: 1, DeliveryPolicy: "download", AvailableFrom: availableFrom, ExpiresAt: expiresAt}
+	switch assetType {
+	case "image", "video":
+		var asset ManifestAsset
+		if err := s.db.QueryRow(ctx, `SELECT v.asset_id,v.id,v.mime_type,encode(v.sha256,'hex'),v.file_size,v.width,v.height,v.duration_seconds FROM asset_variants v WHERE v.asset_id=$1 AND v.deleted_at IS NULL AND v.player_compatible=TRUE ORDER BY CASE v.kind WHEN 'playback' THEN 0 WHEN 'original' THEN 1 ELSE 2 END LIMIT 1`, override.ContentID).Scan(&asset.AssetID, &asset.VariantID, &asset.MIMEType, &asset.SHA256, &asset.FileSize, &asset.Width, &asset.Height, &asset.DurationSeconds); err != nil {
+			return ManifestPlaylist{}, fmt.Errorf("%w: Quick Present media variant is unavailable", ErrConflict)
+		}
+		sourceVariantID := asset.VariantID
+		projectedVariantID, projectionErr := s.projectSpanVideo(ctx, screenID, override.ContentID, sourceVariantID, &asset, spanEnabled && assetType == "video")
+		if projectionErr != nil {
+			return ManifestPlaylist{}, projectionErr
+		}
+		if !spanEnabled || assetType != "video" {
+			asset.DownloadPath = "/api/v1/player/assets/" + asset.AssetID.String() + "/variants/" + asset.VariantID.String()
+		}
+		if !seen[asset.VariantID] {
+			manifest.Assets = append(manifest.Assets, asset)
+			seen[asset.VariantID] = true
+		}
+		item.VariantID = &projectedVariantID
+		if assetType == "image" {
+			duration := int64(10_000)
+			item.DurationMS = &duration
+		} else {
+			item.AudioEnabled = true
+		}
+	case "widget":
+		var widget ManifestWidget
+		widget.AssetID = override.ContentID
+		if err := s.db.QueryRow(ctx, `SELECT w.provider,w.preset_id,w.config_version,w.configuration FROM widgets w WHERE w.asset_id=$1`, override.ContentID).Scan(&widget.Provider, &widget.PresetID, &widget.ConfigVersion, &widget.Configuration); err != nil {
+			return ManifestPlaylist{}, fmt.Errorf("%w: Quick Present widget is unavailable", ErrConflict)
+		}
+		widget.Name = name
+		if widget.Provider == "website" {
+			if err := s.projectPresentationWebsite(ctx, manifest, override.ContentID, name); err != nil {
+				return ManifestPlaylist{}, err
+			}
+			item.AssetType = "website"
+			item.DeliveryPolicy = "stream"
+		} else {
+			manifest.Widgets = append(manifest.Widgets, widget)
+			item.DeliveryPolicy = "stream"
+		}
+		duration := int64(10_000)
+		item.DurationMS = &duration
+	case "website":
+		if err := s.projectPresentationWebsite(ctx, manifest, override.ContentID, name); err != nil {
+			return ManifestPlaylist{}, err
+		}
+		item.AssetType = "website"
+		item.DeliveryPolicy = "stream"
+		duration := int64(10_000)
+		item.DurationMS = &duration
+	default:
+		return ManifestPlaylist{}, fmt.Errorf("%w: Quick Present content type is unsupported", ErrConflict)
+	}
+	return ManifestPlaylist{ID: override.ID, Revision: 1, Name: name, Items: []ManifestItem{item}}, nil
+}
+
+func (s *Service) projectPresentationWebsite(ctx context.Context, manifest *Manifest, assetID uuid.UUID, name string) error {
+	var website ManifestWebsite
+	website.AssetID, website.Name = assetID, name
+	if err := s.db.QueryRow(ctx, `SELECT url,allowed_hosts,javascript_enabled,dom_storage_enabled,cookie_policy,reload_policy,refresh_interval_seconds,load_timeout_seconds,zoom_percent,scroll_x,scroll_y,custom_user_agent,background_color,failure_behavior,fallback_image_asset_id FROM website_assets WHERE asset_id=$1`, assetID).Scan(&website.URL, &website.AllowedHosts, &website.JavaScriptEnabled, &website.DOMStorageEnabled, &website.CookiePolicy, &website.ReloadPolicy, &website.RefreshIntervalSeconds, &website.LoadTimeoutSeconds, &website.ZoomPercent, &website.ScrollX, &website.ScrollY, &website.CustomUserAgent, &website.BackgroundColor, &website.FailureBehavior, &website.FallbackImageAssetID); err != nil {
+		return fmt.Errorf("%w: Quick Present website is unavailable", ErrConflict)
+	}
+	if website.FallbackImageAssetID != nil {
+		fallback, err := s.resolveImageVariant(ctx, *website.FallbackImageAssetID)
+		if err != nil {
+			return fmt.Errorf("%w: Quick Present website fallback is unavailable", ErrConflict)
+		}
+		website.FallbackVariantID = &fallback.VariantID
+		found := false
+		for _, asset := range manifest.Assets {
+			if asset.VariantID == fallback.VariantID {
+				found = true
+				break
+			}
+		}
+		if !found {
+			manifest.Assets = append(manifest.Assets, fallback)
+		}
+	}
+	manifest.Websites = append(manifest.Websites, website)
+	return nil
 }
 
 const crossfadePlayerVersionCode = 33
@@ -2164,7 +2394,8 @@ func manifestETagForSchedules(base string, schedules []ManifestSchedule) string 
 	}
 	value := base
 	for _, schedule := range schedules {
-		value += ":" + schedule.ID.String()
+		action, _ := json.Marshal(schedule.DisplayAction)
+		value += ":" + schedule.ID.String() + ":" + string(action)
 	}
 	sum := sha256.Sum256([]byte(value))
 	return `"sha256-` + hex.EncodeToString(sum[:]) + `"`

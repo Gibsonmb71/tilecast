@@ -132,6 +132,29 @@ describe("AirPlay Linux process ownership", () => {
     ).toBe(true);
   });
 
+  it("handles a receiver error and exit as one process failure", async () => {
+    const result = testManager(() => new FakeProcess());
+    await result.manager.prepareSession(config("gateway"), "vah264dec");
+    const originalReceiver = result.calls[0]?.process;
+
+    originalReceiver?.emit("error", new Error("receiver failed to start"));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(
+      result.calls.filter((call) => call.binary === "/usr/bin/gst-launch-1.0"),
+    ).toHaveLength(2);
+
+    // A child can emit both error and exit. The second notification belongs to
+    // the same process and must not consume another bounded restart.
+    originalReceiver?.emit("exit", 1, "SIGTERM");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(
+      result.calls.filter((call) => call.binary === "/usr/bin/gst-launch-1.0"),
+    ).toHaveLength(2);
+
+    await result.manager.stopSession("test_cleanup");
+  });
+
   it("enforces the local absolute expiry even without server contact", async () => {
     vi.useFakeTimers();
     try {
@@ -279,5 +302,32 @@ describe("AirPlay capability probing", () => {
     expect(capabilities.limitation).toContain(
       "UxPlay was found at /usr/local/bin/uxplay but its -v version check failed",
     );
+  });
+});
+
+describe("AirPlay capability probing", () => {
+  it("uses UxPlay's supported version flag and recognizes 1.73.6", async () => {
+    const result = testManager((binary) => {
+      const process = new FakeProcess();
+      queueMicrotask(() => {
+        if (binary === "/usr/local/bin/uxplay") {
+          process.stdout.emit(
+            "data",
+            'UxPlay version 1.73.6; for help, use option "-h"\n',
+          );
+        }
+        process.exitCode = 0;
+        process.emit("close", 0, null);
+      });
+      return process;
+    });
+
+    const capabilities = await result.manager.probeCapabilities();
+
+    expect(
+      result.calls.find((call) => call.binary === "/usr/local/bin/uxplay")?.args,
+    ).toEqual(["-v"]);
+    expect(capabilities.uxplayInstalled).toBe(true);
+    expect(capabilities.uxplayVersion).toBe("1.73.6");
   });
 });

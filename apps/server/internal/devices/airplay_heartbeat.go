@@ -64,18 +64,33 @@ func (s *Service) updateAirplayHeartbeat(ctx context.Context, screenID uuid.UUID
 	// Live session state stays guarded: a player may only clear or advance the
 	// snapshot of a session it still owns, so a stale 'none' cannot wipe a
 	// session that has since been handed to it.
-	_, _ = s.db.Exec(ctx, `UPDATE screen_player_status SET
+	tag, err := s.db.Exec(ctx, `UPDATE screen_player_status SET
 		external_presentation_state=CASE WHEN $2='' THEN external_presentation_state WHEN $2='none' THEN NULL ELSE $2 END,
-		external_presentation_session_id=CASE WHEN $2='none' THEN NULL ELSE COALESCE($3,external_presentation_session_id) END,
-		external_presentation_role=CASE WHEN $2='none' THEN NULL ELSE COALESCE(NULLIF($4,''),external_presentation_role) END,
-		airplay_receiver_state=CASE WHEN $2='none' THEN NULL ELSE COALESCE(NULLIF($5,''),airplay_receiver_state) END,
-		airplay_transport=CASE WHEN $2='none' THEN NULL ELSE COALESCE(NULLIF($6,''),airplay_transport) END,
-		airplay_connected=CASE WHEN $2='none' THEN NULL ELSE COALESCE($7,airplay_connected) END,
-		external_presentation_expires_at=CASE WHEN $2='none' THEN NULL ELSE COALESCE($8,external_presentation_expires_at) END
-		WHERE screen_id=$1 AND ($2 <> 'none' OR ($3 IS NOT NULL AND external_presentation_session_id=$3))`,
-		screenID, state, heartbeat.ExternalPresentationSessionID, heartbeat.ExternalPresentationRole,
-		heartbeat.AirplayReceiverState, heartbeat.AirplayTransport, heartbeat.AirplayConnected,
+		external_presentation_session_id=CASE WHEN $2='none' THEN NULL ELSE COALESCE($3::uuid,external_presentation_session_id) END,
+		-- The participant role is assigned by the server when the session is
+		-- created. Heartbeats may report observations, but must not promote a
+		-- follower into a gateway or rewrite the role used for reconciliation.
+		external_presentation_role=CASE WHEN $2='none' THEN NULL ELSE external_presentation_role END,
+		airplay_receiver_state=CASE WHEN $2='none' THEN NULL ELSE COALESCE(NULLIF($4,''),airplay_receiver_state) END,
+		airplay_transport=CASE WHEN $2='none' THEN NULL ELSE COALESCE(NULLIF($5,''),airplay_transport) END,
+		airplay_connected=CASE WHEN $2='none' THEN NULL ELSE COALESCE($6,airplay_connected) END,
+		external_presentation_expires_at=CASE WHEN $2='none' THEN NULL ELSE COALESCE($7,external_presentation_expires_at) END
+		WHERE screen_id=$1 AND $3::uuid IS NOT NULL AND external_presentation_session_id=$3::uuid
+		  AND ($2='none' OR EXISTS(
+			SELECT 1 FROM external_presentation_sessions
+			WHERE id=$3::uuid AND status IN ('preparing','waiting','active','ended','expired','failed')
+		  ))`,
+		screenID, state, heartbeat.ExternalPresentationSessionID, heartbeat.AirplayReceiverState,
+		heartbeat.AirplayTransport, heartbeat.AirplayConnected,
 		heartbeat.ExternalPresentationExpiresAt)
+	if err != nil || tag.RowsAffected() == 0 {
+		// The session assignment is server-owned. A player may still report its
+		// capabilities while idle, but an external-presentation heartbeat must
+		// name the assignment currently held by this screen. This prevents a
+		// delayed heartbeat from an older session, or a malformed heartbeat with
+		// no session ID, from taking over a newer one.
+		return
+	}
 
 	if state == "" {
 		return
@@ -96,7 +111,7 @@ func (s *Service) updateAirplayHeartbeat(ctx context.Context, screenID uuid.UUID
 		// let that stale player snapshot repopulate the reliability row after the
 		// session has become terminal. Queue a server-owned stop as well so a
 		// player that recovered from local state cannot keep advertising it.
-		_, _ = s.db.Exec(ctx, `UPDATE screen_player_status SET external_presentation_state=NULL,external_presentation_session_id=NULL,external_presentation_role=NULL,airplay_receiver_state=NULL,airplay_transport=NULL,airplay_connected=NULL,external_presentation_expires_at=NULL WHERE screen_id=$1`, screenID)
+		_, _ = s.db.Exec(ctx, `UPDATE screen_player_status SET external_presentation_state=NULL,external_presentation_session_id=NULL,external_presentation_role=NULL,airplay_receiver_state=NULL,airplay_transport=NULL,airplay_connected=NULL,external_presentation_expires_at=NULL WHERE screen_id=$1 AND external_presentation_session_id=$2`, screenID, *heartbeat.ExternalPresentationSessionID)
 		var organizationID uuid.UUID
 		if s.db.QueryRow(ctx, `SELECT organization_id FROM screens WHERE id=$1`, screenID).Scan(&organizationID) == nil {
 			_, _ = s.db.Exec(ctx, `INSERT INTO player_commands(id,organization_id,screen_id,type,payload,idempotency_key,created_by,expires_at) SELECT $1,$2,$3,'stop_airplay_session',jsonb_build_object('sessionId',$4::text,'reason','server_session_terminal'),$5,NULL,now()+interval '5 minutes' WHERE NOT EXISTS(SELECT 1 FROM player_commands WHERE screen_id=$3 AND type='stop_airplay_session' AND payload->>'sessionId'=$4 AND state IN ('pending','delivered','acknowledged','running'))`, uuid.New(), organizationID, screenID, (*heartbeat.ExternalPresentationSessionID).String(), uuid.New())
@@ -117,8 +132,8 @@ func (s *Service) updateAirplayHeartbeat(ctx context.Context, screenID uuid.UUID
 		"preparing": "preparing", "waiting": "waiting", "connected": "active",
 		"degraded": "active", "failed": "failed",
 	}[state]
-	if nextSessionStatus != "" && (heartbeat.ExternalPresentationRole == "gateway" || heartbeat.ExternalPresentationRole == "single") {
-		_, _ = s.db.Exec(ctx, `UPDATE external_presentation_sessions SET status=$2,ended_at=CASE WHEN $2='failed' THEN COALESCE(ended_at,now()) ELSE ended_at END,end_reason=CASE WHEN $2='failed' THEN COALESCE(end_reason,'player_reported_failure') ELSE end_reason END,pin=CASE WHEN $2='failed' THEN NULL ELSE pin END,device_id=CASE WHEN $2='failed' THEN NULL ELSE device_id END WHERE id=$1 AND status IN ('preparing','waiting','active','stopping')`, *heartbeat.ExternalPresentationSessionID, nextSessionStatus)
+	if nextSessionStatus != "" {
+		_, _ = s.db.Exec(ctx, `UPDATE external_presentation_sessions SET status=$2,ended_at=CASE WHEN $2='failed' THEN COALESCE(ended_at,now()) ELSE ended_at END,end_reason=CASE WHEN $2='failed' THEN COALESCE(end_reason,'player_reported_failure') ELSE end_reason END,pin=CASE WHEN $2='failed' THEN NULL ELSE pin END,device_id=CASE WHEN $2='failed' THEN NULL ELSE device_id END WHERE id=$1 AND status IN ('preparing','waiting','active') AND EXISTS(SELECT 1 FROM external_presentation_screen_states WHERE session_id=$1 AND screen_id=$3 AND role IN ('gateway','single'))`, *heartbeat.ExternalPresentationSessionID, nextSessionStatus, screenID)
 	}
 }
 
@@ -143,7 +158,7 @@ func (s *Service) reconcileClearedAirplaySession(ctx context.Context, screenID u
 		return
 	}
 	defer tx.Rollback(ctx)
-	tag, err := tx.Exec(ctx, `UPDATE external_presentation_sessions SET status='failed',ended_at=COALESCE(ended_at,now()),end_reason=COALESCE(end_reason,'gateway_cleared_session'),pin=NULL,device_id=NULL WHERE id=$1 AND status IN ('preparing','waiting','active','stopping')`, *sessionID)
+	tag, err := tx.Exec(ctx, `UPDATE external_presentation_sessions SET status='failed',ended_at=COALESCE(ended_at,now()),end_reason=COALESCE(end_reason,'gateway_cleared_session'),pin=NULL,device_id=NULL WHERE id=$1 AND status IN ('preparing','waiting','active')`, *sessionID)
 	if err != nil || tag.RowsAffected() == 0 {
 		return
 	}

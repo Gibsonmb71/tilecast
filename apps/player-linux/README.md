@@ -10,11 +10,15 @@ content, weekly and one-time schedules, emergency takeover), the player
 configuration channel, the persistent command protocol, batched activity-event
 telemetry, on-demand live screen previews, and LAN (mDNS) server discovery.
 
-Hardware-specific Android features are intentionally excluded: HDMI-CEC,
+Hardware-specific Android features are intentionally excluded: Android
 device-owner/lock-task kiosk, the accessibility return service, boot receivers,
 APK self-update, and the `power_assist_*` / `restart_activity` /
 `install_player_update` commands. On Linux the equivalent reliability comes
 from a kiosk compositor plus the systemd unit below.
+
+Linux Display Control is an optional host integration. It uses `cec-ctl` for
+HDMI-CEC and `ddcutil` for DDC/CI when those tools and device permissions are
+available; it is capability-gated and never required for playback.
 
 ## Design goal: configure once, never touch again
 

@@ -60,6 +60,13 @@ func (s *server) screenReliability(w http.ResponseWriter, r *http.Request) {
 		'externalPresentationRole',ps.external_presentation_role,'airplayReceiverState',ps.airplay_receiver_state,
 		'airplayTransport',ps.airplay_transport,'airplayConnected',ps.airplay_connected,
 		'externalPresentationExpiresAt',ps.external_presentation_expires_at,
+		'displayControlProvider',ps.display_control_provider,'displayControlProviders',ps.display_control_providers,
+		'displayControlCapabilities',ps.display_control_capabilities,'displayPowerState',ps.display_power_state,
+		'displayPowerStateConfirmed',ps.display_power_state_confirmed,'displayPowerStateObservedAt',ps.display_power_state_observed_at,
+		'displayControlPolicyState',ps.display_control_policy_state,'displayControlLastCommandId',ps.display_control_last_command_id,
+		'displayControlLastCommandState',ps.display_control_last_command_state,'displayControlLastCommandResult',ps.display_control_last_command_result,
+		'displayControlLastCommandSentAt',ps.display_control_last_command_sent_at,'displayControlLastStateConfirmedAt',ps.display_control_last_state_confirmed_at,
+		'displayControlError',ps.display_control_error,
 		'powerAssist',jsonb_build_object('deviceSleep',COALESCE(pa.device_sleep,'untested'),'tvStandby',COALESCE(pa.tv_standby,'untested'),'deviceWake',COALESCE(pa.device_wake,'untested'),'tvWake',COALESCE(pa.tv_wake,'untested'),'inputSelection',COALESCE(pa.input_selection,'untested'),'tilecastStartup',COALESCE(pa.tilecast_startup,'untested'),'lastTestedAt',pa.last_tested_at)
 	) FROM screens sc LEFT JOIN screen_player_status ps ON ps.screen_id=sc.id LEFT JOIN screen_power_assist_results pa ON pa.screen_id=sc.id WHERE sc.id=$1`, id, detailedDiagnostics(r)).Scan(&raw)
 	if errors.Is(err, pgx.ErrNoRows) {

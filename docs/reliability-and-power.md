@@ -35,9 +35,16 @@ Active hours use explicit IANA timezones, ISO weekdays (Monday 1 through Sunday 
 
 Outside active hours the player saves state, stops media decoding, releases keep-screen-on, pauses ordinary presentation, and uses a true-black fallback when Android sleep is unavailable. Cached configuration and manifests are used immediately after boot without waiting for the network.
 
-## Power Assist, not direct CEC
+## Power Assist and Display Control
 
-Power Assist uses the Android device’s sleep and wake behavior. Compatible devices may send HDMI-CEC standby or One Touch Play commands to the connected TV. Tilecast does **not** send raw HDMI-CEC commands and cannot infer that the physical TV changed power or input merely because the Android process resumed.
+Android Power Assist uses the Android device’s sleep and wake behavior. Compatible devices may relay HDMI-CEC standby or One Touch Play commands to the connected TV, but Tilecast does **not** send raw HDMI-CEC commands from Android and cannot infer that the physical TV changed power or input merely because the Android process resumed.
+
+Linux Players have a separate optional [Display Control](display-control.md)
+provider system. When Linux detects `cec-ctl` or `ddcutil` and the Player has
+the required device permissions, Studio can expose only the capabilities that
+were detected. Provider calls are fixed, shell-free, and time-bounded. Linux
+reports a command as sent separately from a display state confirmed by a later
+heartbeat; unsupported hardware is not an outage.
 
 Sleep strategy is capability ordered: authorized device policy, optional Accessibility global lock, then black screen. Wake is best effort through supported activity/alarm behavior. Studio’s per-screen wizard stores administrator-confirmed device sleep, TV standby, device wake, TV wake, input selection, and Tilecast startup separately. Results are device-specific, not universal compatibility claims.
 

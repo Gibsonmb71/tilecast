@@ -91,16 +91,26 @@ fun FullscreenLayoutPlayback(
             onFirstFrame()
         }
     }
-    BoxWithConstraints(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        val sourceRatio = document.canvas.width.toFloat() / document.canvas.height
-        val targetRatio = maxWidth.value / maxHeight.value
-        val canvasWidth = if (targetRatio > sourceRatio) maxHeight * sourceRatio else maxWidth
-        val canvasHeight = if (targetRatio > sourceRatio) maxHeight else maxWidth / sourceRatio
-        val scaleX = canvasWidth.value / document.canvas.width
-        val scaleY = canvasHeight.value / document.canvas.height
-        Box(Modifier.size(canvasWidth, canvasHeight).background(layoutColor(document.canvas.backgroundColor))) {
-            visiblePlacements.sortedBy { it.layer }.forEach { placement ->
-                if (placement.type == "primitive") {
+	BoxWithConstraints(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+		val spanViewport = session.content.manifest.viewport
+		val sourceWidth = spanViewport?.width ?: document.canvas.width
+		val sourceHeight = spanViewport?.height ?: document.canvas.height
+		val originX = spanViewport?.x ?: 0
+		val originY = spanViewport?.y ?: 0
+		val sourceRatio = sourceWidth.toFloat() / sourceHeight
+		val targetRatio = maxWidth.value / maxHeight.value
+		val canvasWidth = if (targetRatio > sourceRatio) maxHeight * sourceRatio else maxWidth
+		val canvasHeight = if (targetRatio > sourceRatio) maxHeight else maxWidth / sourceRatio
+		val scaleX = canvasWidth.value / sourceWidth
+		val scaleY = canvasHeight.value / sourceHeight
+		Box(Modifier.size(canvasWidth, canvasHeight).background(layoutColor(document.canvas.backgroundColor))) {
+			visiblePlacements.sortedBy { it.layer }.forEach { placement ->
+				val left = maxOf(placement.x, originX.toFloat())
+				val top = maxOf(placement.y, originY.toFloat())
+				val right = minOf(placement.x + placement.width, (originX + sourceWidth).toFloat())
+				val bottom = minOf(placement.y + placement.height, (originY + sourceHeight).toFloat())
+				if (right <= left || bottom <= top) return@forEach
+				if (placement.type == "primitive") {
                     placement.primitive?.binding?.dataSourceId?.let { dataSourceId ->
                         session.content.manifest.dataSources.firstOrNull { it.id == dataSourceId }?.let { dataSource ->
                             LayoutBindingActivity(activityReporter, placement.id, dataSource)
@@ -109,15 +119,16 @@ fun FullscreenLayoutPlayback(
                     LayoutPrimitiveCanvas(
                         document = document,
                         modifier = Modifier.fillMaxSize().zIndex(placement.layer.toFloat()),
-                        structuredSources = structured,
-                        placementIds = setOf(placement.id),
-                        drawBackground = false,
-                    )
+						structuredSources = structured,
+						placementIds = setOf(placement.id),
+						drawBackground = false,
+						viewport = spanViewport,
+					)
                     return@forEach
                 }
-                val modifier = Modifier
-                    .offset((placement.x * scaleX).dp, (placement.y * scaleY).dp)
-                    .size((placement.width * scaleX).dp, (placement.height * scaleY).dp)
+				val modifier = Modifier
+					.offset(((left - originX) * scaleX).dp, ((top - originY) * scaleY).dp)
+					.size(((right - left) * scaleX).dp, ((bottom - top) * scaleY).dp)
                     .zIndex(placement.layer.toFloat())
                     .alpha(placement.opacity)
                     .clip(RoundedCornerShape((placement.playback?.cornerRadius ?: 0f).dp))

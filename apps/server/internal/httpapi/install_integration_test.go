@@ -1,6 +1,8 @@
 package httpapi
 
 import (
+	"archive/tar"
+	"compress/gzip"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -31,7 +33,7 @@ func cacheLinuxRelease(t *testing.T, env activityTestEnvironment, root string, b
 		id, int64(4210), "player-linux-v0.12.0", int64(len(body)), hash); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(root, id.String()+".AppImage"), body, 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(root, id.String()+".appimage"), body, 0o600); err != nil {
 		t.Fatal(err)
 	}
 	return hash
@@ -94,6 +96,202 @@ func TestServedPlayerUnitIncludesManagedHostToolPath(t *testing.T) {
 	})
 }
 
+func TestInstallScriptRejectsAnUnsafeRequestURL(t *testing.T) {
+	withActivityDatabase(t, func(env activityTestEnvironment) {
+		env.server.publicURL = ""
+		request := httptest.NewRequest(http.MethodGet, "/install.sh", nil)
+		request.Host = "tilecast.example; touch /tmp/tilecast-owned"
+		request.Header.Set("X-Forwarded-Proto", "https\nsh")
+		recorder := httptest.NewRecorder()
+		env.server.installScript(recorder, request)
+
+		if recorder.Code != http.StatusInternalServerError {
+			t.Fatalf("status = %d, want 500", recorder.Code)
+		}
+		if strings.Contains(recorder.Body.String(), "SERVER_URL=") {
+			t.Fatal("unsafe request URL was interpolated into the installer")
+		}
+	})
+}
+
+func TestInstallScriptRejectsAnUnsafeConfiguredURL(t *testing.T) {
+	withActivityDatabase(t, func(env activityTestEnvironment) {
+		env.server.publicURL = "https://signage.example.org/$(touch /tmp/tilecast-owned)"
+		recorder := httptest.NewRecorder()
+		env.server.installScript(recorder, httptest.NewRequest(http.MethodGet, "/install.sh", nil))
+
+		if recorder.Code != http.StatusInternalServerError {
+			t.Fatalf("status = %d, want 500", recorder.Code)
+		}
+		if strings.Contains(recorder.Body.String(), "SERVER_URL=") {
+			t.Fatal("unsafe configured URL was interpolated into the installer")
+		}
+	})
+}
+
+func TestAirplayInstallScriptIsEmbeddedAndServedByTilecast(t *testing.T) {
+	withActivityDatabase(t, func(env activityTestEnvironment) {
+		recorder := httptest.NewRecorder()
+		env.server.airplayInstallScript(recorder, httptest.NewRequest(http.MethodGet, "/install-airplay.sh", nil))
+
+		if recorder.Code != http.StatusOK {
+			t.Fatalf("status = %d", recorder.Code)
+		}
+		body := recorder.Body.String()
+		if !strings.Contains(body, "UXPLAY_VERSION=\"1.73.6\"") || !strings.Contains(body, "apt-get install") {
+			t.Fatalf("unexpected AirPlay installer body: %s", firstLines(body, 20))
+		}
+	})
+}
+
+func TestAirplayCleanupCommandWakesThePlayerAndDeduplicates(t *testing.T) {
+	withActivityDatabase(t, func(env activityTestEnvironment) {
+		var organizationID uuid.UUID
+		if err := env.pool.QueryRow(context.Background(), `SELECT organization_id FROM screens WHERE id=$1`, env.screenID).Scan(&organizationID); err != nil {
+			t.Fatal(err)
+		}
+		messages := make(chan map[string]any, 2)
+		unregister := env.server.devices.RegisterPresenceWithNotifier(env.screenID, nil, func(message map[string]any) error {
+			messages <- message
+			return nil
+		})
+		defer unregister()
+
+		sessionID := uuid.New()
+		payload := []byte(`{"sessionId":"` + sessionID.String() + `","reason":"expired"}`)
+		if err := env.server.queueAirplayStopCommand(context.Background(), organizationID, env.screenID, uuid.Nil, payload); err != nil {
+			t.Fatal(err)
+		}
+		if err := env.server.queueAirplayStopCommand(context.Background(), organizationID, env.screenID, uuid.Nil, payload); err != nil {
+			t.Fatal(err)
+		}
+		var count int
+		if err := env.pool.QueryRow(context.Background(), `SELECT count(*) FROM player_commands WHERE screen_id=$1 AND type='stop_airplay_session' AND payload->>'sessionId'=$2`, env.screenID, sessionID.String()).Scan(&count); err != nil {
+			t.Fatal(err)
+		}
+		if count != 1 {
+			t.Fatalf("cleanup command count = %d, want one", count)
+		}
+		select {
+		case message := <-messages:
+			if message["type"] != "commands.available" {
+				t.Fatalf("wake message = %#v", message)
+			}
+		case <-time.After(time.Second):
+			t.Fatal("cleanup command did not wake the connected player")
+		}
+	})
+}
+
+func TestAirPlayInstallScriptUsesOnlyTheTilecastServer(t *testing.T) {
+	withActivityDatabase(t, func(env activityTestEnvironment) {
+		env.server.installLimiter = newRateLimiter(60, time.Minute)
+		origin := httptest.NewServer(env.server.routes())
+		defer origin.Close()
+		env.server.publicURL = origin.URL
+
+		response, err := origin.Client().Get(origin.URL + "/install-airplay.sh")
+		if err != nil {
+			t.Fatal(err)
+		}
+		body, _ := io.ReadAll(response.Body)
+		response.Body.Close()
+		if response.StatusCode != http.StatusOK {
+			t.Fatalf("script status = %d, body = %s", response.StatusCode, string(body))
+		}
+		script := string(body)
+		if strings.Contains(script, installServerURLToken) {
+			t.Fatal("the server address placeholder was not substituted")
+		}
+		if !strings.Contains(script, `readonly SERVER_URL="`+origin.URL+`"`) {
+			t.Fatalf("script does not carry the server URL: %s", firstLines(script, 20))
+		}
+		if strings.Contains(script, "git clone") || strings.Contains(script, "github.com") || strings.Contains(script, "githubusercontent") {
+			t.Fatal("the AirPlay installer reaches a source-code host")
+		}
+		if !strings.Contains(script, "uxplay -v") || strings.Contains(script, "uxplay --version") {
+			t.Fatal("the AirPlay installer does not use UxPlay's supported version flag")
+		}
+		for _, match := range regexp.MustCompile(`https?://[^[:space:]"']+`).FindAllString(script, -1) {
+			if !strings.HasPrefix(match, origin.URL) {
+				t.Fatalf("the AirPlay installer contains a non-Tilecast URL: %s", match)
+			}
+		}
+
+		paths := scriptFetchPaths(script)
+		if len(paths) != 2 {
+			t.Fatalf("AirPlay installer fetch paths = %v, want checksum and archive", paths)
+		}
+		for _, path := range paths {
+			fetched, err := origin.Client().Get(origin.URL + path)
+			if err != nil {
+				t.Fatalf("GET %s: %v", path, err)
+			}
+			fetchedBody, _ := io.ReadAll(fetched.Body)
+			fetched.Body.Close()
+			if fetched.StatusCode != http.StatusOK || len(fetchedBody) == 0 {
+				t.Fatalf("GET %s = %d with %d bytes", path, fetched.StatusCode, len(fetchedBody))
+			}
+		}
+	})
+}
+
+func TestEmbeddedUxPlayArtifactMatchesPinnedIdentity(t *testing.T) {
+	archive, err := installAssets.ReadFile(installUxPlayArchive)
+	if err != nil {
+		t.Fatal(err)
+	}
+	digest := sha256.Sum256(archive)
+	if got := hex.EncodeToString(digest[:]); got != installUxPlaySHA256 {
+		t.Fatalf("embedded archive SHA-256 = %s, want %s", got, installUxPlaySHA256)
+	}
+
+	gzipReader, err := gzip.NewReader(strings.NewReader(string(archive)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer gzipReader.Close()
+	want := map[string]bool{
+		"UxPlay-" + installUxPlayVersion + "/CMakeLists.txt": false,
+		"UxPlay-" + installUxPlayVersion + "/LICENSE":        false,
+		"UxPlay-" + installUxPlayVersion + "/uxplay.cpp":     false,
+	}
+	tarReader := tar.NewReader(gzipReader)
+	for {
+		header, err := tarReader.Next()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, ok := want[header.Name]; ok {
+			want[header.Name] = true
+		}
+	}
+	for name, found := range want {
+		if !found {
+			t.Errorf("embedded UxPlay archive is missing %s", name)
+		}
+	}
+
+	server := &server{}
+	artifact := httptest.NewRecorder()
+	server.installableUxPlayArtifact(artifact, httptest.NewRequest(http.MethodGet, installUxPlayArchiveURL, nil))
+	if artifact.Code != http.StatusOK {
+		t.Fatalf("artifact status = %d", artifact.Code)
+	}
+	served := sha256.Sum256(artifact.Body.Bytes())
+	if hex.EncodeToString(served[:]) != installUxPlaySHA256 {
+		t.Fatal("served UxPlay artifact does not match its pinned checksum")
+	}
+
+	checksum := httptest.NewRecorder()
+	server.installableUxPlayChecksum(checksum, httptest.NewRequest(http.MethodGet, installUxPlayArchiveURL+".sha256", nil))
+	if strings.TrimSpace(checksum.Body.String()) != installUxPlaySHA256 {
+		t.Fatalf("published checksum = %q", checksum.Body.String())
+	}
+}
 func TestInstallableLinuxReleaseReportsNothingUntilOneIsCached(t *testing.T) {
 	withActivityDatabase(t, func(env activityTestEnvironment) {
 		env.server.updates = newTestUpdateService(t, env, t.TempDir())

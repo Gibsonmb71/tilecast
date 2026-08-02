@@ -48,9 +48,23 @@ Android Room stores pending, ready, active, failed, and superseded manifests plu
 
 Playback supports either a fullscreen playlist or a published Layout. Layouts render natively, scale landscape and portrait canvases without distortion, and run positioned playlist zones independently alongside Apps, Assets, and primitives. Publishing limits a Layout to one active video-capable placement or zone and one audio-emitting placement or zone. An invalid or incompletely prepared Layout never replaces the previous verified presentation.
 
-## Scheduling and sync groups
+## Scheduling and Display Groups
 
-Sync groups own synchronized fallback content and schedule targeting. A screen belongs to zero or one group; PostgreSQL enforces the invariant with a unique membership constraint. Assigning content through any member updates the group assignment, and a schedule aimed at a grouped screen is normalized to the group target. Ungrouped screens keep independent assignments and schedules. `internal/scheduling` remains the server authority for half-open interval evaluation and deterministic precedence: priority, later effective start, then stable ID. The Android `ScheduleEngine` implements the same transport semantics for offline evaluation.
+Display Groups own synchronized fallback content and schedule targeting. Existing
+groups migrate to `display_mode=mirror`, which is the current synchronized
+behavior. A screen belongs to zero or one group; PostgreSQL enforces the
+invariant with a unique membership constraint. Assigning content through any
+member updates the group assignment, and a schedule aimed at a grouped screen
+is normalized to the group target. Ungrouped screens keep independent
+assignments and schedules. `internal/scheduling` remains the server authority
+for half-open interval evaluation and deterministic precedence: priority, later
+effective start, then stable ID. The Android `ScheduleEngine` implements the
+same transport semantics for offline evaluation.
+
+Span Display Groups extend this model with a logical canvas and one validated
+viewport per member. The manifest adds optional canvas/viewport fields only for
+Span screens; server-side panel preparation keeps legacy Linux hardware on
+normal-resolution H.264 files. See [Span video walls](span-video-walls.md).
 
 Player manifests contain only schedules relevant to the authenticated screen, its playlist or Layout fallback, referenced published Layout revisions, required Apps, playlist zones, structured datasets, media variants, server time, preparation policy, and optional sync-group playback epoch. Group members calculate the same current item and elapsed offset from the shared clock, including after reconnecting late. Recurring rules use calendar calculations rather than fixed-duration days. A repeated local time uses the earlier occurrence for a start and later occurrence for an end; a nonexistent local time advances to the first valid time after the DST gap.
 
@@ -102,7 +116,7 @@ The closed typed registry separates organization settings, preferences, group po
 
 ## Milestone 10 Android reliability
 
-`CommissioningController`, `ActiveHoursEngine`, `ReliabilitySupervisor`, `ReliabilityController`, and the accessibility return policy are independent of Compose playback UI. Boot recovery restores cached state and uses bounded launch retries. Watchdog escalation persists crash history, executes each recovery rung, and enters safe mode without deleting configuration. Managed Kiosk is capability-confirmed through Android device policy and lock task. Accessibility Control observes only foreground package transitions and applies a fixed excluded-package policy. Power Assist selects device-policy sleep, accessibility lock, or black-screen fallback; it never sends direct HDMI-CEC commands. Studio stores human-confirmed physical-TV results separately from player-reported Android capability and shows a computed Zero-Touch Readiness panel. See [reliability-and-power.md](reliability-and-power.md).
+`CommissioningController`, `ActiveHoursEngine`, `ReliabilitySupervisor`, `ReliabilityController`, and the accessibility return policy are independent of Compose playback UI. Boot recovery restores cached state and uses bounded launch retries. Watchdog escalation persists crash history, executes each recovery rung, and enters safe mode without deleting configuration. Managed Kiosk is capability-confirmed through Android device policy and lock task. Accessibility Control observes only foreground package transitions and applies a fixed excluded-package policy. Android Power Assist selects device-policy sleep, accessibility lock, or black-screen fallback; it never sends direct HDMI-CEC commands. Linux Display Control is a separate capability-gated provider path for host-attached displays. Studio stores human-confirmed physical-TV results separately from player-reported Android capability and shows a computed Zero-Touch Readiness panel. See [reliability-and-power.md](reliability-and-power.md).
 
 ## Milestone 9 player updates
 

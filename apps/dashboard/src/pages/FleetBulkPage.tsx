@@ -108,7 +108,7 @@ export function FleetBulkPage() {
     <section>
       <PageHeader
         title="Bulk changes"
-        description="Apply one change to many screens. Tilecast shows exactly what will change before anything happens, including screens pulled in by a sync group."
+        description="Apply one change to many screens. Tilecast shows exactly what will change before anything happens, including screens pulled in by a Display Group."
       />
 
       <div className="settings-sections">
@@ -116,8 +116,8 @@ export function FleetBulkPage() {
           <header>
             <h3>Screens</h3>
             <p>
-              A screen in a sync group shares that group&apos;s assignment, so
-              selecting one member includes the rest. The preview lists them.
+              A screen in a Display Group shares that group&apos;s assignment,
+              so selecting one member includes the rest. The preview lists them.
             </p>
           </header>
           <div className="settings-subsection__action">
@@ -158,7 +158,7 @@ export function FleetBulkPage() {
                   {item.name}
                   <small>
                     {item.syncGroupName
-                      ? `Sync group: ${item.syncGroupName}`
+                      ? `Display Group: ${item.syncGroupName}`
                       : item.location || "No location"}
                   </small>
                 </span>

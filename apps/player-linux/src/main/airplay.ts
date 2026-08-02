@@ -388,6 +388,7 @@ export class AirplayManager {
   private senderSeenAt: number | null = null;
   private receiverVideoSink: "vaapisink" | "autovideosink" = "autovideosink";
   private stopping = false;
+  private operationTail: Promise<void> = Promise.resolve();
 
   constructor(options: AirplayManagerOptions) {
     this.store = options.store;
@@ -529,6 +530,15 @@ export class AirplayManager {
     config: ExternalPresentationConfig,
     decoder: SupportedDecoder,
   ): Promise<ExternalPresentationStatus> {
+    return this.runExclusive(() =>
+      this.prepareSessionInternal(config, decoder),
+    );
+  }
+
+  private async prepareSessionInternal(
+    config: ExternalPresentationConfig,
+    decoder: SupportedDecoder,
+  ): Promise<ExternalPresentationStatus> {
     validateConfig(config);
     if (
       this.config &&
@@ -567,12 +577,18 @@ export class AirplayManager {
       });
       return this.status!;
     } catch (error) {
-      await this.stopSession("prepare_failed");
+      await this.stopSessionInternal("prepare_failed", true);
       throw error;
     }
   }
 
   async startGateway(
+    decoder: SupportedDecoder,
+  ): Promise<ExternalPresentationStatus> {
+    return this.runExclusive(() => this.startGatewayInternal(decoder));
+  }
+
+  private async startGatewayInternal(
     decoder: SupportedDecoder,
   ): Promise<ExternalPresentationStatus> {
     const config = this.config;
@@ -585,7 +601,7 @@ export class AirplayManager {
     try {
       await this.startUxplay(config, decoder);
     } catch (error) {
-      await this.stopSession("gateway_start_failed");
+      await this.stopSessionInternal("gateway_start_failed", true);
       throw error;
     }
     this.setStatus({
@@ -598,7 +614,7 @@ export class AirplayManager {
   }
 
   async stopSession(reason = "stopped"): Promise<void> {
-    await this.stopSessionInternal(reason, true);
+    await this.runExclusive(() => this.stopSessionInternal(reason, true));
   }
 
   private async stopSessionInternal(
@@ -626,6 +642,12 @@ export class AirplayManager {
   async recoverSession(
     decoder: SupportedDecoder | null,
   ): Promise<ExternalPresentationStatus | null> {
+    return this.runExclusive(() => this.recoverSessionInternal(decoder));
+  }
+
+  private async recoverSessionInternal(
+    decoder: SupportedDecoder | null,
+  ): Promise<ExternalPresentationStatus | null> {
     const persisted =
       await this.store.readJson<ExternalPresentationConfig>(SESSION_FILE);
     if (!persisted) return null;
@@ -639,15 +661,15 @@ export class AirplayManager {
       return null;
     }
     try {
-      await this.prepareSession(persisted, decoder);
+      await this.prepareSessionInternal(persisted, decoder);
       if (persisted.role === "single" || persisted.role === "gateway") {
-        await this.startGateway(decoder);
+        await this.startGatewayInternal(decoder);
       }
     } catch (error) {
       log.warn("failed to reconstruct persisted AirPlay session", {
         error: String(error),
       });
-      await this.stopSession("recovery_failed");
+      await this.stopSessionInternal("recovery_failed", true);
       return null;
     }
     return this.status;
@@ -734,20 +756,29 @@ export class AirplayManager {
     const managed: ManagedProcess = { child, kind: "uxplay", stopping: false };
     this.uxplay = managed;
     this.attachOutput(managed);
-    child.once("error", (error) => {
-      if (this.uxplay?.child !== child || managed.stopping || this.stopping)
-        return;
-      log.warn("UxPlay process failed to start or exited with an error", {
-        error: String(error),
-      });
-      void this.handleGatewayExit(decoder);
-    });
-    child.once("exit", () => {
+    let processEnded = false;
+    const handleProcessEnd = () => {
+      if (processEnded) return;
+      processEnded = true;
       if (this.uxplay?.child !== child) return;
       this.uxplay = null;
       if (!managed.stopping && !this.stopping)
         void this.handleGatewayExit(decoder);
+    };
+    child.once("error", (error) => {
+      if (
+        processEnded ||
+        this.uxplay?.child !== child ||
+        managed.stopping ||
+        this.stopping
+      )
+        return;
+      log.warn("UxPlay process failed to start or exited with an error", {
+        error: String(error),
+      });
+      handleProcessEnd();
     });
+    child.once("exit", handleProcessEnd);
   }
 
   private async startReceiver(
@@ -774,20 +805,29 @@ export class AirplayManager {
     };
     this.receiver = managed;
     this.attachOutput(managed);
-    child.once("error", (error) => {
-      if (this.receiver?.child !== child || managed.stopping || this.stopping)
-        return;
-      log.warn("GStreamer receiver failed to start or exited with an error", {
-        error: String(error),
-      });
-      void this.handleReceiverExit(decoder);
-    });
-    child.once("exit", () => {
+    let processEnded = false;
+    const handleProcessEnd = () => {
+      if (processEnded) return;
+      processEnded = true;
       if (this.receiver?.child !== child) return;
       this.receiver = null;
       if (!managed.stopping && !this.stopping)
         void this.handleReceiverExit(decoder);
+    };
+    child.once("error", (error) => {
+      if (
+        processEnded ||
+        this.receiver?.child !== child ||
+        managed.stopping ||
+        this.stopping
+      )
+        return;
+      log.warn("GStreamer receiver failed to start or exited with an error", {
+        error: String(error),
+      });
+      handleProcessEnd();
     });
+    child.once("exit", handleProcessEnd);
   }
 
   private attachOutput(managed: ManagedProcess): void {
@@ -855,6 +895,10 @@ export class AirplayManager {
   }
 
   private async handleSenderDisconnect(): Promise<void> {
+    await this.runExclusive(() => this.handleSenderDisconnectInternal());
+  }
+
+  private async handleSenderDisconnectInternal(): Promise<void> {
     const current = this.status;
     if (!current || this.stopping) return;
     this.setStatus({
@@ -871,16 +915,30 @@ export class AirplayManager {
       this.receiver = null;
       await this.stopProcess(old);
       const decoder = await this.decoderForRecovery();
-      if (decoder && this.config && !this.stopping)
-        await this.startReceiver(this.config, decoder);
+      if (decoder && this.config && !this.stopping) {
+        try {
+          await this.startReceiver(this.config, decoder);
+        } catch (error) {
+          log.warn("receiver restart after sender disconnect failed", {
+            error: String(error),
+          });
+          await this.stopSessionInternal("receiver_restart_failed", true);
+        }
+      }
     }
   }
 
   private async handleGatewayExit(decoder: SupportedDecoder): Promise<void> {
+    await this.runExclusive(() => this.handleGatewayExitInternal(decoder));
+  }
+
+  private async handleGatewayExitInternal(
+    decoder: SupportedDecoder,
+  ): Promise<void> {
     const current = this.status;
     if (!current || this.stopping) return;
     if (current.connected || this.gatewayRestarts >= MAX_PROCESS_RESTARTS) {
-      await this.stopSession("gateway_failed");
+      await this.stopSessionInternal("gateway_failed", true);
       return;
     }
     this.gatewayRestarts += 1;
@@ -892,20 +950,32 @@ export class AirplayManager {
       failureMessage:
         "UxPlay stopped before a sender connected; restarting it.",
     });
-    if (this.config && !this.stopping)
-      await this.startUxplay(this.config, decoder);
+    if (this.config && !this.stopping) {
+      try {
+        await this.startUxplay(this.config, decoder);
+      } catch (error) {
+        log.warn("UxPlay restart failed", { error: String(error) });
+        await this.stopSessionInternal("gateway_restart_failed", true);
+      }
+    }
   }
 
   private async handleReceiverExit(decoder: SupportedDecoder): Promise<void> {
+    await this.runExclusive(() => this.handleReceiverExitInternal(decoder));
+  }
+
+  private async handleReceiverExitInternal(
+    decoder: SupportedDecoder,
+  ): Promise<void> {
     const current = this.status;
     if (!current || this.stopping) return;
     if (current.role === "gateway" && current.connected) {
-      await this.stopSession("gateway_receiver_failed");
+      await this.stopSessionInternal("gateway_receiver_failed", true);
       return;
     }
     if (this.receiverRestarts >= MAX_PROCESS_RESTARTS) {
       if (current.role === "gateway") {
-        await this.stopSession("gateway_receiver_failed");
+        await this.stopSessionInternal("gateway_receiver_failed", true);
         return;
       }
       this.setStatus({
@@ -926,16 +996,26 @@ export class AirplayManager {
       failureMessage:
         "The display receiver stopped; attempting a bounded restart.",
     });
-    if (this.config && !this.stopping)
-      await this.startReceiver(this.config, decoder);
+    if (this.config && !this.stopping) {
+      try {
+        await this.startReceiver(this.config, decoder);
+      } catch (error) {
+        log.warn("receiver restart failed", { error: String(error) });
+        await this.stopSessionInternal("receiver_restart_failed", true);
+      }
+    }
   }
 
   private async healthCheck(decoder: SupportedDecoder): Promise<void> {
+    await this.runExclusive(() => this.healthCheckInternal(decoder));
+  }
+
+  private async healthCheckInternal(decoder: SupportedDecoder): Promise<void> {
     const config = this.config;
     const current = this.status;
     if (!config || !current || this.stopping) return;
     if (isExpired(config.expiresAt, this.now())) {
-      await this.stopSession("expired");
+      await this.stopSessionInternal("expired", true);
       return;
     }
     const gatewayAlive = config.role !== "receiver" && this.uxplay !== null;
@@ -948,7 +1028,7 @@ export class AirplayManager {
     }
     if (current.connected && current.lastRtpAt) {
       const age = this.now() - Date.parse(current.lastRtpAt);
-      if (age > 5_000) await this.handleSenderDisconnect();
+      if (age > 5_000) await this.handleSenderDisconnectInternal();
     }
     if (
       config.role === "gateway" &&
@@ -964,7 +1044,7 @@ export class AirplayManager {
           "UxPlay has a sender, but the gateway display has not received RTP.",
       });
       if (config.transport !== "multicast") {
-        await this.stopSession("gateway_rtp_timeout");
+        await this.stopSessionInternal("gateway_rtp_timeout", true);
       }
     }
   }
@@ -994,6 +1074,15 @@ export class AirplayManager {
   private setStatus(status: ExternalPresentationStatus): void {
     this.status = { ...status };
     this.onStatus?.(this.status);
+  }
+
+  private runExclusive<T>(operation: () => Promise<T>): Promise<T> {
+    const next = this.operationTail.then(operation, operation);
+    this.operationTail = next.then(
+      () => undefined,
+      () => undefined,
+    );
+    return next;
   }
 }
 

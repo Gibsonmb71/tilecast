@@ -73,7 +73,7 @@ export function ScreenScopeEditor({
     <div className="screen-scope-editor">
       <p className="role-description">
         {selected.length === 0
-          ? "This account can operate every screen. Select buildings or sync groups to narrow it."
+          ? "This account can operate every screen. Select buildings or Display Groups to narrow it."
           : `This account can operate screens in ${selected.length} selected ${selected.length === 1 ? "place" : "places"} only. It still sees the whole content library.`}
       </p>
 
@@ -106,9 +106,11 @@ export function ScreenScopeEditor({
           </fieldset>
 
           <fieldset className="setting-control--checks">
-            <legend className="field__label">Sync groups</legend>
+            <legend className="field__label">Display Groups</legend>
             {!groups.data?.items?.length ? (
-              <span className="setting-dependency">No sync groups exist.</span>
+              <span className="setting-dependency">
+                No Display Groups exist.
+              </span>
             ) : (
               groups.data.items.map((group) => (
                 <label className="check-option" key={group.id}>

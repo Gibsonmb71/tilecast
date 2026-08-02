@@ -37,6 +37,7 @@ import { applyLowEndTuning } from "./hardware";
 import { LanDiscovery, type DiscoveredServer } from "./discovery";
 import { AirplayManager } from "./airplay";
 import type { SupportedDecoder } from "./airplay";
+import { LinuxDisplayControl } from "./display-control";
 
 const log = logger("main");
 
@@ -76,8 +77,26 @@ let lastPlugins: { plugins: ManifestPlugin[]; clockOffsetMs: number } = {
   clockOffsetMs: 0,
 };
 let quitting = false;
+let shutdownPromise: Promise<void> | null = null;
 let activeLinuxKioskPolicy = linuxKioskPolicy(null);
 let displaySleepBlockerId: number | null = null;
+
+function stopRuntime(): Promise<void> {
+  if (!shutdownPromise) {
+    const stop = runtime?.stop();
+    shutdownPromise =
+      stop?.catch((error) => {
+        log.warn("player shutdown cleanup failed", { error: String(error) });
+      }) ?? Promise.resolve();
+  }
+  return shutdownPromise;
+}
+
+function exitAfterRuntimeStop(code: number, relaunch: boolean): void {
+  quitting = true;
+  if (relaunch) app.relaunch();
+  void stopRuntime().finally(() => app.exit(code));
+}
 
 function argValue(flag: string): string | null {
   const index = process.argv.indexOf(flag);
@@ -369,6 +388,7 @@ async function startRuntime(serverUrl: string): Promise<void> {
     store,
     onStatus: (status) => runtime?.onExternalPresentationStatus(status),
   });
+  const displayControl = new LinuxDisplayControl();
   runtime = new PlayerRuntime(
     store,
     {
@@ -389,14 +409,11 @@ async function startRuntime(serverUrl: string): Promise<void> {
       recreateWindow,
       restartProcess: () => {
         log.info("relaunching player process");
-        quitting = true;
-        app.relaunch();
-        app.exit(0);
+        exitAfterRuntimeStop(0, true);
       },
       exitForUpdate: () => {
         log.info("exiting after AppImage update for systemd restart");
-        quitting = true;
-        app.exit(0);
+        exitAfterRuntimeStop(0, false);
       },
       clearWebsiteData: async () => {
         await session
@@ -462,6 +479,8 @@ async function startRuntime(serverUrl: string): Promise<void> {
       },
       getExternalPresentationStatus: () => airplay.getStatus(),
       probeAirplayCapabilities: () => airplay.probeCapabilities(),
+      probeDisplayControl: () => displayControl.probe(),
+      executeDisplayControl: (command) => displayControl.execute(command),
       screenSize: () => {
         // The server rejects any heartbeat whose screen size is < 1, which
         // silently freezes the screen's presence ("online" but never updating
@@ -615,9 +634,7 @@ app.whenReady().then(async () => {
     await store.writeJson(SERVER_URL_FILE, { serverUrl: result.url });
     discovery?.stop();
     // Restart cleanly into the configured state.
-    quitting = true;
-    app.relaunch();
-    app.exit(0);
+    exitAfterRuntimeStop(0, true);
     return { ok: true };
   });
 
@@ -642,9 +659,7 @@ app.whenReady().then(async () => {
       error: String(err),
     });
     setTimeout(() => {
-      quitting = true;
-      app.relaunch();
-      app.exit(1);
+      exitAfterRuntimeStop(1, true);
     }, 15_000);
   }
 });
@@ -658,19 +673,16 @@ app.on("window-all-closed", () => {
   }
 });
 
-app.on("before-quit", () => {
+app.on("before-quit", (event) => {
+  if (shutdownPromise) return;
+  event.preventDefault();
   quitting = true;
-  runtime?.stop();
+  void stopRuntime().finally(() => app.exit(0));
 });
 
 process.on("uncaughtException", (err) => {
   log.error("uncaught exception; relaunching", { error: String(err.stack) });
-  quitting = true;
-  try {
-    app.relaunch();
-  } finally {
-    app.exit(1);
-  }
+  exitAfterRuntimeStop(1, true);
 });
 process.on("unhandledRejection", (reason) => {
   // Never let an unawaited promise take the player down silently.

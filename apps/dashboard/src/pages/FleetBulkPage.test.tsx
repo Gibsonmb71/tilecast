@@ -48,7 +48,7 @@ const preview: BulkPreview = {
   blockedCount: 1,
   groupAddedCount: 1,
   warnings: [
-    "1 more screens are included because they share a sync group (North Wing). A sync group plays one assignment on every member.",
+    "1 more screens are included because they share a Display Group (North Wing). A Display Group plays one assignment on every member.",
   ],
   reversible: true,
   undoWindowMinutes: 15,
@@ -116,7 +116,7 @@ describe("Fleet bulk changes", () => {
     expect(button.hasAttribute("disabled")).toBe(true);
   });
 
-  it("names the screens pulled in by a sync group before anything is applied", async () => {
+  it("names the screens pulled in by a Display Group before anything is applied", async () => {
     const build = vi
       .spyOn(api, "previewBulkOperation")
       .mockResolvedValue(preview);
@@ -133,7 +133,7 @@ describe("Fleet bulk changes", () => {
 
     await waitFor(() => expect(build).toHaveBeenCalled());
     expect(await screen.findByText(/Gym \(via North Wing\)/)).toBeTruthy();
-    expect(screen.getByText(/share a sync group/)).toBeTruthy();
+    expect(screen.getByText(/share a Display Group/)).toBeTruthy();
   });
 
   it("reports a blocked screen as skipped rather than dropping it", async () => {
