@@ -47,8 +47,9 @@ moves through:
 
 `in_review` → `changes_requested` or `approved` → `scheduled` or `published`.
 
-Older submissions may become `superseded`, `cancelled`, or
-`publication_failed`. A submission that is still active is unique per content
+Older submissions may become `superseded` or `publication_failed`. Cancelling a
+scheduled publication returns that immutable submission to `approved`; it does
+not create a separate cancelled submission state. A submission that is still active is unique per content
 object, while its immutable record remains available in the submission list.
 
 Authors may continue editing after submitting. If revision 21 is in review and

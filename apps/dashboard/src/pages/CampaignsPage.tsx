@@ -63,7 +63,11 @@ function snapshotForEdit(campaign: Campaign): CampaignSnapshot {
 const weekdayLabels = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 function dateTimeInput(value?: string) {
-  return value ? value.slice(0, 16) : "";
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  const pad = (part: number) => String(part).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
 function dateTimeValue(value: string) {
@@ -281,10 +285,16 @@ function CampaignEditor({ campaignId }: { campaignId: string }) {
         publicationId,
         csrf,
       ),
-    onSuccess: () => {
-      void queryClient.invalidateQueries({
+    onSuccess: async () => {
+      setDraft(undefined);
+      await queryClient.invalidateQueries({
         queryKey: ["campaign", campaignId],
       });
+      const restored = queryClient.getQueryData<Campaign>([
+        "campaign",
+        campaignId,
+      ]);
+      if (restored) setDraft(snapshotForEdit(restored));
       void queryClient.invalidateQueries({
         queryKey: ["campaign-preflight", campaignId],
       });
@@ -336,10 +346,10 @@ function CampaignEditor({ campaignId }: { campaignId: string }) {
       : (groups.data?.items.map((item) => ({ id: item.id, name: item.name })) ??
         []);
 
-  if (campaignQuery.isLoading || !draft)
-    return <div className="table-loading">Loading campaign…</div>;
   if (campaignQuery.error)
     return <Notice variant="danger">{campaignQuery.error.message}</Notice>;
+  if (campaignQuery.isLoading || !draft)
+    return <div className="table-loading">Loading campaign…</div>;
   const campaign = campaignQuery.data;
   if (!campaign) return <Notice variant="danger">Campaign not found.</Notice>;
 

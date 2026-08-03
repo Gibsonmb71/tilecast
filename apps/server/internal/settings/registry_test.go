@@ -18,6 +18,20 @@ func TestRegistryRejectsUnknownAndUnsafeValues(t *testing.T) {
 	}
 }
 
+func TestLegacyApprovalRequiredStillEnforcesReviewPolicy(t *testing.T) {
+	merged := mergeOrganizationDefaults(map[string]any{"content.approval_required": true})
+	if merged["content.review_policy"] != "everyone" {
+		t.Fatalf("legacy approval requirement did not migrate to everyone: %#v", merged["content.review_policy"])
+	}
+	explicit := mergeOrganizationDefaults(map[string]any{
+		"content.approval_required": true,
+		"content.review_policy":     "off",
+	})
+	if explicit["content.review_policy"] != "off" {
+		t.Fatalf("explicit review policy was overridden: %#v", explicit["content.review_policy"])
+	}
+}
+
 func TestLegacyLocalTimesNormalizeAndFixedTimezoneNamesFail(t *testing.T) {
 	normalized, err := Validate(map[string]any{
 		"power.active_hours_start": "06:30:00",

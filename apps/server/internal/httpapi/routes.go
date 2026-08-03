@@ -329,7 +329,7 @@ func (s *server) routes() http.Handler {
 				dashboard.Get("/campaigns/{id}/releases", s.listCampaignReleases)
 				dashboard.With(s.requireRoles(contentManagers...), s.requireCSRF).Post("/campaigns", s.createCampaign)
 				dashboard.With(s.requireRoles(contentManagers...), s.requireCSRF).Patch("/campaigns/{id}/draft", s.updateCampaignDraft)
-				dashboard.With(s.requireRoles(contentAuthors...), s.requireCSRF).Post("/campaigns/{id}/releases/{releaseId}/restore", s.restoreCampaignRelease)
+				dashboard.With(s.requireRoles(contentManagers...), s.requireCSRF).Post("/campaigns/{id}/releases/{releaseId}/restore", s.restoreCampaignRelease)
 				dashboard.With(s.requireRoles("owner", "administrator"), s.requireCSRF).Post("/campaigns/{id}/publish", s.publishCampaign)
 				dashboard.With(s.requireRoles(contentManagers...), s.requireCSRF).Delete("/campaigns/{id}", s.archiveCampaign)
 			}
