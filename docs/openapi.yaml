@@ -2115,7 +2115,7 @@ paths:
       operationId: cancelContentPublicationSchedule
       parameters: [{ $ref: "#/components/parameters/CSRFToken" }]
       responses:
-        "200": { description: Scheduled publication cancelled }
+        "200": { description: Schedule cancelled; submission is approved again }
   /api/v1/content-history/{type}/{id}/publications:
     parameters:
       - name: type

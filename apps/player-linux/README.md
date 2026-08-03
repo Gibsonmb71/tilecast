@@ -38,7 +38,7 @@ Everything after the initial pairing is remote or automatic:
   five minutes and commands are polled every seven seconds regardless of
   socket state. A lost notification delays a change by minutes, never
   strands it.
-- **Seamless content swaps.** A new manifest is downloaded, hash-verified,
+- **Safe content swaps.** A new manifest is downloaded, hash-verified,
   and only then activated — at the next item boundary, so the screen never
   flashes or shows a half-prepared playlist. Failed preparation leaves the
   current content untouched and retries. Emergencies interrupt immediately
@@ -72,6 +72,10 @@ Everything after the initial pairing is remote or automatic:
   or reboot; after that, systemd owns the player. Generated units explicitly
   include `/usr/local/bin:/usr/bin:/bin` so provisioned UxPlay is visible to
   display-manager, kiosk, SSH, and systemd launches.
+- **AirPlay provisioning is optional.** The server installer downloads the
+  UxPlay 1.73.6 source archive from Tilecast Server and uses Debian package
+  mirrors for build dependencies. Use `--without-airplay` to skip this setup.
+  A failed AirPlay setup does not stop Player installation or pairing.
 - **Rests overnight on its own.** Active-hours configuration darks the screen
   (true black, media torn down, no decoding) outside operating hours and
   wakes it at the next window with no operator action. An emergency always
