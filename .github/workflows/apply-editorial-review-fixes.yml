@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - gibby/fix-editorial-major-review
+  pull_request:
+    branches:
+      - main
 
 permissions:
   contents: write
@@ -16,6 +19,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          ref: gibby/fix-editorial-major-review
 
       - name: Install dashboard dependencies
         run: npm ci
@@ -58,4 +62,4 @@ jobs:
           git add apps docs
           git diff --cached --stat
           git commit -m "fix: address editorial workflow review findings"
-          git push
+          git push origin HEAD:gibby/fix-editorial-major-review
