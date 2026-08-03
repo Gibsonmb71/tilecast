@@ -73,6 +73,12 @@ type PlayerConfig struct {
 	LinuxKiosk     map[string]any `json:"linuxKiosk"`
 	Accessibility  map[string]any `json:"accessibility"`
 	Updates        map[string]any `json:"updates"`
+	// PresentationNetwork is the Linux Presentation Network assignment, filled in
+	// by the request layer because the records live in their own domain package.
+	// It carries safe identifiers and a configuration revision only: the Wi-Fi
+	// credential is never part of a configuration document, which is cached on
+	// disk by every player that reads it.
+	PresentationNetwork map[string]any `json:"presentationNetwork,omitempty"`
 }
 
 func NewService(db *pgxpool.Pool, notifier Notifier, limits HardLimits) *Service {
@@ -471,6 +477,35 @@ func (s *Service) PlayerConfiguration(ctx context.Context, screen uuid.UUID) (Pl
 		Accessibility: map[string]any{"controlAssistEnabled": v("accessibility.control_assist_enabled"), "returnDelaySeconds": v("accessibility.return_delay_seconds"), "allowedPackages": v("accessibility.allowed_packages"), "pauseDuringUpdates": v("accessibility.pause_during_updates"), "pauseDuringAdminSession": v("accessibility.pause_during_admin_session"), "reportForegroundPackage": v("accessibility.report_foreground_package"), "maximumReturns": v("accessibility.maximum_returns"), "returnWindowMinutes": v("accessibility.return_window_minutes")},
 		Updates:       map[string]any{"channel": v("player.update.channel")}}
 	return config, fmt.Sprintf(`"config-%s-%d"`, screen, effective.ConfigRevision), nil
+}
+
+// BumpScreens advances the configuration revision for a set of screens and
+// notifies them, for features whose own tables are the source of a
+// player-visible configuration change.
+//
+// A Presentation Network assignment is the case this exists for. The desired
+// state a player must converge on — which network it should have provisioned, or
+// that it should have none — belongs in durable configuration rather than in a
+// command, because a command expires and an offline player would then keep an
+// obsolete Tilecast-managed Wi-Fi profile indefinitely.
+func (s *Service) BumpScreens(ctx context.Context, screens []uuid.UUID, reason string) error {
+	if len(screens) == 0 {
+		return nil
+	}
+	tx, err := s.db.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck
+	notes, err := bumpScreens(ctx, tx, screens, reason)
+	if err != nil {
+		return err
+	}
+	if err = tx.Commit(ctx); err != nil {
+		return err
+	}
+	s.notify(notes)
+	return nil
 }
 
 type note struct {

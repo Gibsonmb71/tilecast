@@ -1,7 +1,7 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Airplay, Radio, ShieldCheck } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { api } from "../api/client";
+import { api, ApiError } from "../api/client";
 import type { AirplaySession, ReliabilityStatus } from "../api/types";
 import { airplayCapabilityBlockDetail } from "./airplayCapability";
 import { Button, Dialog, Field, Select } from "./ui";
@@ -29,6 +29,48 @@ function sessionStatus(session: AirplaySession) {
   if (session.status === "waiting")
     return `Waiting · ${session.readyCount}/${session.screenCount} displays ready`;
   return `Preparing · ${session.readyCount}/${session.screenCount} displays ready`;
+}
+
+function presentationNetworkProgress(
+  session: AirplaySession,
+): string | undefined {
+  if (!session.presentationNetworkId) return undefined;
+  const gateway = session.screens.find(
+    (screen) => screen.role === "gateway" || screen.role === "single",
+  );
+  const networkName = session.presentationNetworkName ?? "Presentation Network";
+  const state = gateway?.presentationNetworkState;
+  if (state === "joining") return `Joining ${networkName} Wi-Fi…`;
+  if (state === "connected" && session.status !== "active")
+    return `Connected to ${networkName}. Preparing AirPlay…`;
+  if (state === "failed") {
+    switch (gateway?.failureCode) {
+      case "authentication_failed":
+        return "Presentation Network authentication failed.";
+      case "ssid_not_found":
+        return `${networkName} was not found near the gateway.`;
+      case "dhcp_timeout":
+        return "The gateway joined Wi-Fi but did not receive an address.";
+      case "ethernet_default_route_lost":
+        return "Ethernet stopped being the default route; Wi-Fi was disconnected.";
+      default:
+        return "The gateway could not prepare the Presentation Network.";
+    }
+  }
+  if (session.status === "preparing" || session.status === "waiting")
+    return `Preparing ${networkName} for AirPlay…`;
+  return undefined;
+}
+
+function airplayCreateError(error: unknown): string {
+  if (
+    error instanceof ApiError &&
+    error.code === "airplay_presentation_network_gateway_unavailable"
+  )
+    return "No eligible Wi-Fi gateway is available for this AirPlay target.";
+  return error instanceof Error
+    ? error.message
+    : "AirPlay could not be started.";
 }
 
 export function AirPlayPresentDialog({
@@ -325,7 +367,9 @@ export function AirPlayPresentDialog({
             </Field>
           </div>
           {create.error && (
-            <div className="notice notice--error">{create.error.message}</div>
+            <div className="notice notice--error">
+              {airplayCreateError(create.error)}
+            </div>
           )}
           <footer className="dialog-actions">
             <Button onClick={onClose}>Cancel</Button>
@@ -345,7 +389,9 @@ export function AirPlayPresentDialog({
             className={`airplay-present-dialog__status airplay-present-dialog__status--${live.status}`}
           >
             <Radio size={18} aria-hidden="true" />
-            <strong>{sessionStatus(live)}</strong>
+            <strong>
+              {presentationNetworkProgress(live) ?? sessionStatus(live)}
+            </strong>
           </div>
           <div className="airplay-present-dialog__pin-card">
             <span>AirPlay receiver</span>
@@ -386,6 +432,9 @@ export function AirPlayPresentDialog({
                 className={`airplay-screen-state airplay-screen-state--${screen.state}`}
               >
                 {screen.screenName}: {screen.state.replaceAll("_", " ")}
+                {screen.presentationNetworkState
+                  ? ` · Wi-Fi ${screen.presentationNetworkState.replaceAll("_", " ")}`
+                  : ""}
               </span>
             ))}
           </div>

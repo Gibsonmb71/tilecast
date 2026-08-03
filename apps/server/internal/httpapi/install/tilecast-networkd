@@ -1,0 +1,922 @@
+#!/usr/bin/env python3
+"""Tilecast Presentation Network helper (tilecast-networkd).
+
+The privilege boundary
+----------------------
+The Tilecast Player is an unprivileged Electron process running as the kiosk
+account. Managing a NetworkManager connection needs root. Giving the kiosk
+account sudo, or a polkit rule for arbitrary NetworkManager operations, would
+mean anything that compromises the browser-facing player can reconfigure the
+machine's networking. So this file exists instead:
+
+    Tilecast Player (unprivileged) -> this helper (root) -> NetworkManager
+
+It is root-owned, not writable by the kiosk account, and installed to
+/usr/local/lib/tilecast by the Tilecast installer. It is deliberately *not* the
+AppImage: the AppImage lives in the kiosk user's home directory and is replaced
+by player self-update, and a root service must never execute a file its target
+user can rewrite.
+
+What it will do, and nothing else
+---------------------------------
+Five operations, each fully validated before anything is touched:
+
+    status      report capability and current state
+    install     write or replace ONE validated Tilecast profile
+    activate    bring ONE Tilecast profile up
+    deactivate  bring ONE Tilecast profile down and restore prior radio state
+    delete      remove ONE Tilecast-managed profile
+
+There is no generic command, no shell, no arbitrary file write, no arbitrary
+NetworkManager property, and no interface configuration. Every profile this
+helper can name is `tilecast-presentation-<uuid>`, so an operator's own Wi-Fi
+profile and the machine's Ethernet connection are outside its reach by
+construction. `nmcli` is invoked with a fixed argument list and never through a
+shell, so no value from the server or the player can become a command.
+
+Credentials
+-----------
+A PSK or Enterprise password arrives over the unix socket — kernel memory, not a
+process argument, so it never appears in `ps`. It is written directly into
+NetworkManager's protected system connection store at mode 0600, owned by root.
+It is never logged, never echoed in a response, and never written anywhere else.
+
+Sidecar semantics
+-----------------
+Profiles are written with autoconnect off, `never-default` on for both address
+families, and automatically supplied DNS ignored. Ethernet keeps the default
+route and keeps carrying Tilecast server traffic, downloads, heartbeats, and
+group AirPlay RTP; the Wi-Fi connection exists only so senders on that VLAN can
+reach the AirPlay receiver. The on-link route for the Wi-Fi subnet is preserved —
+that is what lets a local sender reach UxPlay. Nothing here routes, bridges, or
+forwards between the two networks.
+"""
+
+from __future__ import annotations
+
+import errno
+import grp
+import json
+import os
+import re
+import socket
+import subprocess
+import sys
+import tempfile
+import uuid
+
+HELPER_VERSION = "1"
+
+# The protocol version the player negotiates against. A player that speaks a
+# newer protocol than the installed helper must report a capability limitation
+# rather than guessing, which is what this number is for.
+PROTOCOL_VERSION = 1
+
+SOCKET_PATH = os.environ.get("TILECAST_NETWORKD_SOCKET", "/run/tilecast/networkd.sock")
+SOCKET_GROUP = os.environ.get("TILECAST_NETWORKD_GROUP", "tilecast-network")
+STATE_DIR = os.environ.get("TILECAST_NETWORKD_STATE", "/var/lib/tilecast/presentation-networks")
+NMCLI = os.environ.get("TILECAST_NETWORKD_NMCLI", "nmcli")
+
+PROFILE_PREFIX = "tilecast-presentation-"
+
+# One request is a single JSON object on one line. The cap is generous enough for
+# a CA certificate chain and small enough that a hostile local write cannot make
+# the helper allocate without bound.
+MAX_REQUEST_BYTES = 256 * 1024
+NMCLI_TIMEOUT_SECONDS = 20
+
+# Everything below is validated before a single byte is written. A value that
+# fails is rejected with a stable code; nothing is coerced, truncated, or escaped
+# into acceptability, because a silently-adjusted SSID or identity would produce
+# a profile that does not match what Studio displays.
+UUID_PATTERN = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
+IDENTITY_PATTERN = re.compile(r"^[A-Za-z0-9._@\\/+=-]{1,253}$")
+DOMAIN_PATTERN = re.compile(r"^[A-Za-z0-9]([A-Za-z0-9.-]{0,251}[A-Za-z0-9])?$")
+INTERFACE_PATTERN = re.compile(r"^[A-Za-z0-9._:-]{1,15}$")
+IPV4_PATTERN = re.compile(r"^(?:\d{1,3}\.){3}\d{1,3}$")
+
+SECURITY_PSK = "wpa_psk"
+SECURITY_PEAP = "wpa_eap_peap_mschapv2"
+SUPPORTED_SECURITY = (SECURITY_PSK, SECURITY_PEAP)
+
+MAX_SSID_BYTES = 32
+MAX_SECRET_LENGTH = 128
+MAX_CA_CERTIFICATE_BYTES = 32 * 1024
+
+
+class RequestError(Exception):
+    """A rejected request. `code` is stable; `message` never quotes a secret."""
+
+    def __init__(self, code: str, message: str) -> None:
+        super().__init__(message)
+        self.code = code
+        self.message = message
+
+
+# --------------------------------------------------------------------- validation
+
+
+def printable_ascii(value: str) -> bool:
+    return all(0x20 <= ord(character) <= 0x7E for character in value)
+
+
+def require_string(payload: dict, key: str, *, optional: bool = False) -> str:
+    value = payload.get(key)
+    if value is None and optional:
+        return ""
+    if not isinstance(value, str):
+        raise RequestError("invalid_request", f"{key} must be a string")
+    return value
+
+
+def require_network_id(payload: dict) -> str:
+    value = require_string(payload, "networkId").strip().lower()
+    if not UUID_PATTERN.match(value):
+        raise RequestError("invalid_request", "networkId must be a UUID")
+    return value
+
+
+def require_revision(payload: dict) -> int:
+    value = payload.get("revision")
+    if not isinstance(value, int) or isinstance(value, bool) or value < 1:
+        raise RequestError("invalid_request", "revision must be a positive integer")
+    return value
+
+
+def require_timeout(payload: dict, default: int, maximum: int) -> int:
+    value = payload.get("timeoutSeconds", default)
+    if not isinstance(value, int) or isinstance(value, bool) or not 5 <= value <= maximum:
+        raise RequestError("invalid_request", f"timeoutSeconds must be 5 to {maximum}")
+    return value
+
+
+def validate_profile(payload: dict) -> dict:
+    """Normalize an install request into exactly the fields a profile needs."""
+    network_id = require_network_id(payload)
+    revision = require_revision(payload)
+
+    ssid = require_string(payload, "ssid")
+    if not ssid or len(ssid.encode("utf-8")) > MAX_SSID_BYTES or not printable_ascii(ssid):
+        raise RequestError("invalid_ssid", "ssid must be 1-32 printable ASCII bytes")
+
+    security = require_string(payload, "security").strip().lower()
+    if security not in SUPPORTED_SECURITY:
+        raise RequestError("invalid_security", "security is not a supported authentication type")
+
+    hidden = payload.get("hidden", False)
+    if not isinstance(hidden, bool):
+        raise RequestError("invalid_request", "hidden must be a boolean")
+
+    secret = require_string(payload, "secret")
+    if not secret or len(secret) > MAX_SECRET_LENGTH or not printable_ascii(secret):
+        # The message describes the rule, never the value.
+        raise RequestError("invalid_secret", "the credential must be 1-128 printable ASCII characters")
+
+    profile = {
+        "networkId": network_id,
+        "revision": revision,
+        "ssid": ssid,
+        "hidden": hidden,
+        "security": security,
+        "secret": secret,
+        "identity": "",
+        "anonymousIdentity": "",
+        "domainSuffixMatch": "",
+        "caCertificatePem": "",
+    }
+
+    if security == SECURITY_PEAP:
+        identity = require_string(payload, "identity").strip()
+        if not IDENTITY_PATTERN.match(identity):
+            raise RequestError("invalid_identity", "identity contains unsupported characters")
+        profile["identity"] = identity
+
+        anonymous = require_string(payload, "anonymousIdentity", optional=True).strip()
+        if anonymous:
+            if not IDENTITY_PATTERN.match(anonymous):
+                raise RequestError("invalid_identity", "anonymousIdentity contains unsupported characters")
+            profile["anonymousIdentity"] = anonymous
+
+        certificate = require_string(payload, "caCertificatePem", optional=True).strip()
+        if certificate:
+            profile["caCertificatePem"] = validate_certificate(certificate)
+
+        domain = require_string(payload, "domainSuffixMatch", optional=True).strip().lower()
+        if domain:
+            if not DOMAIN_PATTERN.match(domain):
+                raise RequestError("invalid_domain", "domainSuffixMatch must be a hostname")
+            if not profile["caCertificatePem"]:
+                # NetworkManager can only check a server name against a
+                # certificate it can validate. Writing the field without a CA
+                # would claim a protection that is not in effect.
+                raise RequestError("invalid_domain", "domainSuffixMatch requires a CA certificate")
+            profile["domainSuffixMatch"] = domain
+    return profile
+
+
+def validate_certificate(value: str) -> str:
+    """Accept concatenated PEM CERTIFICATE blocks and nothing else.
+
+    This value becomes a file NetworkManager reads. A private key or arbitrary
+    text here would be a way to have the helper write attacker-chosen bytes into
+    a root-owned path, so the contents are checked rather than trusted.
+    """
+    if len(value.encode("utf-8")) > MAX_CA_CERTIFICATE_BYTES:
+        raise RequestError("invalid_certificate", "the CA certificate is too large")
+    normalized = value.replace("\r\n", "\n").replace("\r", "\n").strip()
+    if not normalized.startswith("-----BEGIN CERTIFICATE-----"):
+        raise RequestError("invalid_certificate", "the CA certificate must be PEM")
+    if not normalized.endswith("-----END CERTIFICATE-----"):
+        raise RequestError("invalid_certificate", "the CA certificate is incomplete")
+    blocks = 0
+    for line in normalized.split("\n"):
+        line = line.strip()
+        if not line:
+            continue
+        if line == "-----BEGIN CERTIFICATE-----":
+            blocks += 1
+            continue
+        if line == "-----END CERTIFICATE-----":
+            continue
+        if line.startswith("-----"):
+            raise RequestError("invalid_certificate", "the CA certificate must contain certificates only")
+        if not re.fullmatch(r"[A-Za-z0-9+/=]+", line):
+            raise RequestError("invalid_certificate", "the CA certificate is not valid PEM")
+    if blocks == 0:
+        raise RequestError("invalid_certificate", "the CA certificate is incomplete")
+    return normalized + "\n"
+
+
+# ------------------------------------------------------------------ keyfile output
+
+
+def keyfile_escape(value: str) -> str:
+    r"""Escape a value for a NetworkManager keyfile (GKeyFile) string.
+
+    Inputs are already restricted to printable ASCII, so newlines and control
+    characters cannot appear. What remains is GKeyFile's own syntax: a backslash
+    introduces an escape, and leading or trailing whitespace is stripped unless
+    escaped. Both are handled here rather than being rejected, because a
+    backslash is legitimate in a DOMAIN\\user identity and a trailing space is a
+    legitimate (if unwise) part of a passphrase.
+    """
+    escaped = value.replace("\\", "\\\\")
+    if escaped.startswith(" "):
+        escaped = "\\s" + escaped[1:]
+    if escaped.endswith(" ") and not escaped.endswith("\\\\ "):
+        escaped = escaped[:-1] + "\\s"
+    return escaped
+
+
+def profile_name(network_id: str) -> str:
+    return PROFILE_PREFIX + network_id
+
+
+def connection_uuid(network_id: str) -> str:
+    """A stable connection UUID derived from the Tilecast network identifier.
+
+    Deterministic on purpose: reinstalling a profile after a revision change
+    replaces the existing connection instead of accumulating a second one that
+    NetworkManager might autoconnect or that cleanup would miss.
+    """
+    return str(uuid.uuid5(uuid.NAMESPACE_URL, "tilecast-presentation-network:" + network_id))
+
+
+def render_keyfile(profile: dict, ca_path: str) -> str:
+    """Build the NetworkManager keyfile for one Tilecast sidecar connection.
+
+    Every property here is fixed by Tilecast. There is no pass-through of
+    arbitrary NetworkManager settings, which is what keeps this from becoming a
+    remote network-configuration tool.
+
+    The sidecar guarantees, in the file itself:
+      autoconnect=false   Tilecast decides when this connection is up, and a
+                          reboot never brings it up on its own.
+      never-default=true  Ethernet keeps the default route, for both families.
+      ignore-auto-dns     the presentation network's DNS servers do not replace
+                          the machine's normal resolution.
+      route-metric high   even if something else changes, the wired path wins.
+    The on-link subnet route is untouched, which is what lets a sender on this
+    Wi-Fi network actually reach UxPlay.
+    """
+    name = profile_name(profile["networkId"])
+    lines = [
+        "[connection]",
+        f"id={keyfile_escape(name)}",
+        f"uuid={connection_uuid(profile['networkId'])}",
+        "type=wifi",
+        "autoconnect=false",
+        "autoconnect-priority=-999",
+        "",
+        "[wifi]",
+        "mode=infrastructure",
+        f"ssid={keyfile_escape(profile['ssid'])}",
+    ]
+    if profile["hidden"]:
+        lines.append("hidden=true")
+    lines.append("")
+    lines.append("[wifi-security]")
+    if profile["security"] == SECURITY_PSK:
+        lines.append("key-mgmt=wpa-psk")
+        lines.append(f"psk={keyfile_escape(profile['secret'])}")
+    else:
+        lines.append("key-mgmt=wpa-eap")
+        lines.append("")
+        lines.append("[802-1x]")
+        lines.append("eap=peap")
+        lines.append("phase2-auth=mschapv2")
+        lines.append(f"identity={keyfile_escape(profile['identity'])}")
+        if profile["anonymousIdentity"]:
+            lines.append(f"anonymous-identity={keyfile_escape(profile['anonymousIdentity'])}")
+        lines.append(f"password={keyfile_escape(profile['secret'])}")
+        if profile["caCertificatePem"]:
+            lines.append(f"ca-cert={keyfile_escape(ca_path)}")
+        if profile["domainSuffixMatch"]:
+            lines.append(f"domain-suffix-match={keyfile_escape(profile['domainSuffixMatch'])}")
+    lines += [
+        "",
+        "[ipv4]",
+        "method=auto",
+        "never-default=true",
+        "ignore-auto-dns=true",
+        "route-metric=1200",
+        "",
+        "[ipv6]",
+        "method=auto",
+        "never-default=true",
+        "ignore-auto-dns=true",
+        "route-metric=1200",
+        "addr-gen-mode=stable-privacy",
+        "",
+        "[proxy]",
+        "",
+    ]
+    return "\n".join(lines)
+
+
+# ------------------------------------------------------------------------- nmcli
+
+
+class NetworkManagerError(Exception):
+    def __init__(self, code: str, message: str) -> None:
+        super().__init__(message)
+        self.code = code
+        self.message = message
+
+
+def run_nmcli(arguments: list[str], timeout: int = NMCLI_TIMEOUT_SECONDS) -> tuple[int, str, str]:
+    """Run nmcli with a fixed argument list.
+
+    No shell, ever: `subprocess.run` with a list means no value reaching this
+    function can be interpreted as a command, a redirection, or a second
+    argument. Secrets are never passed here — they only go into the keyfile.
+    """
+    try:
+        completed = subprocess.run(  # noqa: S603 - fixed argv, no shell
+            [NMCLI] + arguments,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            check=False,
+            env={"LC_ALL": "C", "PATH": "/usr/sbin:/usr/bin:/sbin:/bin"},
+        )
+    except FileNotFoundError:
+        raise NetworkManagerError("network_manager_unavailable", "nmcli is not installed") from None
+    except subprocess.TimeoutExpired:
+        raise NetworkManagerError("network_manager_timeout", "nmcli did not respond") from None
+    return completed.returncode, completed.stdout, completed.stderr
+
+
+def nmcli_records(arguments: list[str]) -> list[list[str]]:
+    """Terse nmcli output split into fields.
+
+    `-t` escapes a literal colon as `\\:`, so splitting has to respect that or a
+    connection name containing a colon would silently shift every later field.
+    """
+    code, out, _ = run_nmcli(arguments)
+    if code != 0:
+        return []
+    records = []
+    for line in out.splitlines():
+        if not line:
+            continue
+        fields, current, index = [], "", 0
+        while index < len(line):
+            character = line[index]
+            if character == "\\" and index + 1 < len(line):
+                current += line[index + 1]
+                index += 2
+                continue
+            if character == ":":
+                fields.append(current)
+                current = ""
+                index += 1
+                continue
+            current += character
+            index += 1
+        fields.append(current)
+        records.append(fields)
+    return records
+
+
+def network_manager_running() -> bool:
+    code, out, _ = run_nmcli(["-t", "-f", "RUNNING", "general"])
+    return code == 0 and "running" in out.strip().lower()
+
+
+def wifi_device() -> tuple[str, str]:
+    """The first usable Wi-Fi interface and its state, or ("", "")."""
+    for record in nmcli_records(["-t", "-f", "DEVICE,TYPE,STATE", "device", "status"]):
+        if len(record) < 3:
+            continue
+        device, kind, state = record[0], record[1], record[2]
+        if kind == "wifi" and state != "unmanaged" and INTERFACE_PATTERN.match(device):
+            return device, state
+    return "", ""
+
+
+def wired_device() -> tuple[str, str]:
+    for record in nmcli_records(["-t", "-f", "DEVICE,TYPE,STATE", "device", "status"]):
+        if len(record) < 3:
+            continue
+        device, kind, state = record[0], record[1], record[2]
+        if kind == "ethernet" and state != "unmanaged" and INTERFACE_PATTERN.match(device):
+            return device, state
+    return "", ""
+
+
+def device_ipv4(device: str) -> str:
+    if not device or not INTERFACE_PATTERN.match(device):
+        return ""
+    for record in nmcli_records(["-t", "-f", "IP4.ADDRESS", "device", "show", device]):
+        if len(record) >= 2 and record[1]:
+            address = record[1].split("/")[0]
+            if IPV4_PATTERN.match(address):
+                return address
+    return ""
+
+
+def radio_enabled() -> bool:
+    code, out, _ = run_nmcli(["-t", "radio", "wifi"])
+    return code == 0 and out.strip().lower() == "enabled"
+
+
+def default_route_interface() -> str:
+    """The interface carrying the IPv4 default route, read from procfs.
+
+    procfs rather than nmcli because this is the fact the whole sidecar design
+    rests on, and it should be read from the kernel rather than inferred from a
+    connection's configuration.
+    """
+    try:
+        with open("/proc/net/route", "r", encoding="utf-8") as handle:
+            for line in handle.read().splitlines()[1:]:
+                fields = line.split()
+                if len(fields) >= 2 and fields[1] == "00000000":
+                    return fields[0]
+    except OSError:
+        return ""
+    return ""
+
+
+def tilecast_connections() -> dict[str, str]:
+    """Tilecast-managed connections, by network id.
+
+    The prefix match is the safety property: nothing outside this namespace is
+    ever listed, and therefore nothing outside it can be activated or deleted.
+    """
+    found = {}
+    for record in nmcli_records(["-t", "-f", "NAME", "connection", "show"]):
+        if not record:
+            continue
+        name = record[0]
+        if not name.startswith(PROFILE_PREFIX):
+            continue
+        candidate = name[len(PROFILE_PREFIX):].lower()
+        if UUID_PATTERN.match(candidate):
+            found[candidate] = name
+    return found
+
+
+def active_tilecast_connection() -> str:
+    for record in nmcli_records(["-t", "-f", "NAME", "connection", "show", "--active"]):
+        if not record:
+            continue
+        name = record[0]
+        if name.startswith(PROFILE_PREFIX):
+            candidate = name[len(PROFILE_PREFIX):].lower()
+            if UUID_PATTERN.match(candidate):
+                return candidate
+    return ""
+
+
+# ------------------------------------------------------------------- local state
+
+
+def state_path(network_id: str) -> str:
+    return os.path.join(STATE_DIR, network_id + ".json")
+
+
+def certificate_path(network_id: str) -> str:
+    return os.path.join(STATE_DIR, network_id + "-ca.pem")
+
+
+def read_state(network_id: str) -> dict:
+    try:
+        with open(state_path(network_id), "r", encoding="utf-8") as handle:
+            value = json.load(handle)
+        return value if isinstance(value, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def write_state(network_id: str, revision: int, security: str) -> None:
+    """Record the installed revision. Never the credential.
+
+    This file is what lets the player tell "the profile is current" from "the
+    profile is stale and must be replaced" without reading the connection's
+    secrets back out of NetworkManager.
+    """
+    os.makedirs(STATE_DIR, mode=0o700, exist_ok=True)
+    write_file(
+        state_path(network_id),
+        json.dumps({"networkId": network_id, "revision": revision, "security": security}) + "\n",
+        0o600,
+    )
+
+
+def write_file(path: str, contents: str, mode: int) -> None:
+    """Atomically write a root-owned file at an exact mode.
+
+    The temporary file is created in the destination directory with the final
+    mode already applied, so a credential is never briefly world-readable and
+    never lands on a different filesystem.
+    """
+    directory = os.path.dirname(path)
+    os.makedirs(directory, mode=0o700, exist_ok=True)
+    handle, temporary = tempfile.mkstemp(dir=directory, prefix=".tilecast-", suffix=".tmp")
+    try:
+        # The mode is applied to the descriptor before anything is written, so a
+        # credential is never briefly readable by another account.
+        os.fchmod(handle, mode)
+        if os.geteuid() == 0:
+            # Redundant in production — the service runs as root, so the file is
+            # already root-owned — but explicit, because NetworkManager refuses a
+            # keyfile it does not consider root-owned. Skipped when not root so the
+            # helper remains testable without privilege.
+            os.fchown(handle, 0, 0)
+        with os.fdopen(handle, "w", encoding="utf-8") as stream:
+            stream.write(contents)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, path)
+        temporary = ""
+    finally:
+        if temporary:
+            # A failed write must not leave a partial credential behind.
+            try:
+                os.unlink(temporary)
+            except OSError:
+                pass
+
+
+def remove_file(path: str) -> None:
+    try:
+        os.unlink(path)
+    except OSError as error:
+        if error.errno != errno.ENOENT:
+            raise
+
+
+def keyfile_path(network_id: str) -> str:
+    return os.path.join(
+        os.environ.get("TILECAST_NETWORKD_KEYFILE_DIR", "/etc/NetworkManager/system-connections"),
+        profile_name(network_id) + ".nmconnection",
+    )
+
+
+# -------------------------------------------------------------------- operations
+
+
+def operation_status(_: dict) -> dict:
+    """Report capability and current state. Never guesses.
+
+    A fact this cannot establish is absent or false, not invented: the server
+    turns "no Wi-Fi adapter" and "NetworkManager not running" into different
+    operator instructions, and a fabricated healthy answer would send someone
+    looking in the wrong place.
+    """
+    running = network_manager_running()
+    if not running:
+        return {
+            "ok": True,
+            "helperVersion": HELPER_VERSION,
+            "protocolVersion": PROTOCOL_VERSION,
+            "networkManagerAvailable": False,
+            "wifiAdapter": False,
+            "radioEnabled": False,
+            "wiredInterfaceAvailable": False,
+            "wiredIpv4": "",
+            "defaultRouteInterface": default_route_interface(),
+            "activeNetworkId": "",
+            "profiles": [],
+            "limitation": "NetworkManager is not available or not running, so Tilecast cannot manage a temporary Wi-Fi connection.",
+        }
+    wifi, _ = wifi_device()
+    wired, _ = wired_device()
+    profiles = []
+    for network_id in sorted(tilecast_connections()):
+        state = read_state(network_id)
+        revision = state.get("revision")
+        profiles.append({
+            "networkId": network_id,
+            # A connection with no metadata is a profile from a previous install
+            # whose state file is gone. Reporting revision 0 makes the player
+            # treat it as stale and replace it, which is the safe direction.
+            "revision": revision if isinstance(revision, int) else 0,
+        })
+    result = {
+        "ok": True,
+        "helperVersion": HELPER_VERSION,
+        "protocolVersion": PROTOCOL_VERSION,
+        "networkManagerAvailable": True,
+        "wifiAdapter": bool(wifi),
+        "radioEnabled": radio_enabled(),
+        "wiredInterfaceAvailable": bool(wired),
+        "wiredIpv4": device_ipv4(wired),
+        "defaultRouteInterface": default_route_interface(),
+        "activeNetworkId": active_tilecast_connection(),
+        "profiles": profiles,
+    }
+    if not wifi:
+        result["limitation"] = "This player has no usable Wi-Fi adapter, so it cannot join a Presentation Network."
+    return result
+
+
+def operation_install(payload: dict) -> dict:
+    """Write or replace exactly one validated Tilecast profile."""
+    profile = validate_profile(payload)
+    if not network_manager_running():
+        raise NetworkManagerError("network_manager_unavailable", "NetworkManager is not running")
+    network_id = profile["networkId"]
+
+    ca_path = ""
+    if profile["caCertificatePem"]:
+        ca_path = certificate_path(network_id)
+        # A public certificate, so 0644 is correct: wpa_supplicant may read it as
+        # a different user than root depending on the distribution's packaging.
+        write_file(ca_path, profile["caCertificatePem"], 0o644)
+    else:
+        remove_file(certificate_path(network_id))
+
+    # 0600 root:root is what NetworkManager requires of a keyfile that carries
+    # secrets, and it refuses to load one with looser permissions.
+    write_file(keyfile_path(network_id), render_keyfile(profile, ca_path), 0o600)
+
+    code, _, stderr = run_nmcli(["connection", "reload"])
+    if code != 0:
+        remove_file(keyfile_path(network_id))
+        raise NetworkManagerError("profile_reload_failed", first_line(stderr) or "NetworkManager rejected the profile")
+    if network_id not in tilecast_connections():
+        remove_file(keyfile_path(network_id))
+        raise NetworkManagerError("profile_rejected", "NetworkManager did not accept the Tilecast profile")
+    write_state(network_id, profile["revision"], profile["security"])
+    return {"ok": True, "networkId": network_id, "revision": profile["revision"]}
+
+
+def operation_activate(payload: dict) -> dict:
+    """Bring one Tilecast profile up and verify it is usable as a sidecar."""
+    network_id = require_network_id(payload)
+    timeout = require_timeout(payload, 60, 180)
+    if not network_manager_running():
+        raise NetworkManagerError("network_manager_unavailable", "NetworkManager is not running")
+    if network_id not in tilecast_connections():
+        raise NetworkManagerError("profile_missing", "the Tilecast profile is not installed")
+    device, _ = wifi_device()
+    if not device:
+        raise NetworkManagerError("wifi_adapter_unavailable", "no usable Wi-Fi adapter")
+
+    # Whether Tilecast is the reason the radio is on decides whether Tilecast may
+    # turn it off again afterwards. Recording it before touching anything is the
+    # only point at which the prior state is knowable.
+    radio_was_enabled = radio_enabled()
+    if not radio_was_enabled:
+        code, _, stderr = run_nmcli(["radio", "wifi", "on"])
+        if code != 0 or not radio_enabled():
+            raise NetworkManagerError("radio_unavailable", first_line(stderr) or "the Wi-Fi radio could not be enabled")
+
+    code, _, stderr = run_nmcli(
+        ["connection", "up", "id", profile_name(network_id), "ifname", device],
+        timeout=timeout,
+    )
+    if code != 0:
+        if not radio_was_enabled:
+            run_nmcli(["radio", "wifi", "off"])
+        raise NetworkManagerError(activation_failure_code(stderr), first_line(stderr) or "the connection could not be activated")
+
+    address = device_ipv4(device)
+    if not address:
+        run_nmcli(["connection", "down", "id", profile_name(network_id)])
+        if not radio_was_enabled:
+            run_nmcli(["radio", "wifi", "off"])
+        raise NetworkManagerError("dhcp_timeout", "the connection associated but did not obtain an IPv4 address")
+
+    wired, _ = wired_device()
+    return {
+        "ok": True,
+        "networkId": network_id,
+        "ipv4": address,
+        "radioWasEnabled": radio_was_enabled,
+        # The caller checks this: Ethernet must still be the default route, and a
+        # sidecar that captured it has to be torn down rather than tolerated.
+        "defaultRouteInterface": default_route_interface(),
+        "wifiInterface": device,
+        "wiredInterface": wired,
+        "wiredIpv4": device_ipv4(wired),
+    }
+
+
+def operation_deactivate(payload: dict) -> dict:
+    """Bring one Tilecast profile down, optionally restoring the radio state.
+
+    Only the Tilecast connection is touched. `nmcli radio wifi off` is issued
+    only when `restoreRadioDisabled` says Tilecast is the reason the radio came
+    on, so a machine whose Wi-Fi was already enabled keeps it enabled and an
+    unrelated Wi-Fi profile is never torn down. The saved profile itself is left
+    in place with autoconnect off, so the next session is fast.
+    """
+    network_id = require_network_id(payload)
+    restore_disabled = payload.get("restoreRadioDisabled", False)
+    if not isinstance(restore_disabled, bool):
+        raise RequestError("invalid_request", "restoreRadioDisabled must be a boolean")
+    if not network_manager_running():
+        # Idempotent: with no NetworkManager there is nothing up to bring down.
+        return {"ok": True, "networkId": network_id, "radioRestored": False}
+    if network_id in tilecast_connections():
+        run_nmcli(["connection", "down", "id", profile_name(network_id)])
+    radio_restored = False
+    if restore_disabled and not active_tilecast_connection():
+        code, _, _ = run_nmcli(["radio", "wifi", "off"])
+        radio_restored = code == 0
+    return {"ok": True, "networkId": network_id, "radioRestored": radio_restored}
+
+
+def operation_delete(payload: dict) -> dict:
+    """Remove one Tilecast-managed profile and its local material.
+
+    Idempotent: deleting a profile that is already gone succeeds, because this
+    runs from a reconciliation loop that must converge rather than error.
+    """
+    network_id = require_network_id(payload)
+    if network_manager_running() and network_id in tilecast_connections():
+        run_nmcli(["connection", "down", "id", profile_name(network_id)])
+        run_nmcli(["connection", "delete", "id", profile_name(network_id)])
+    remove_file(keyfile_path(network_id))
+    remove_file(certificate_path(network_id))
+    remove_file(state_path(network_id))
+    if network_manager_running():
+        run_nmcli(["connection", "reload"])
+    return {"ok": True, "networkId": network_id}
+
+
+def activation_failure_code(stderr: str) -> str:
+    """Map nmcli's message onto a stable code.
+
+    The player and Studio report the code, never this text: raw nmcli output is
+    not an operator instruction, and it varies between NetworkManager versions.
+    """
+    lowered = (stderr or "").lower()
+    if "secrets were required" in lowered or "802.1x supplicant" in lowered or "no secrets" in lowered:
+        return "authentication_failed"
+    # NetworkManager's SSID_NOT_FOUND reason reaches nmcli with several different
+    # wordings across releases, so all of them are matched rather than one.
+    for phrase in ("could not be found", "no suitable network", "ssid not found",
+                   "network not found", "not found"):
+        if phrase in lowered:
+            return "ssid_not_found"
+    if "ip configuration could not be reserved" in lowered or "dhcp" in lowered:
+        return "dhcp_timeout"
+    if "timeout" in lowered or "timed out" in lowered:
+        return "association_timeout"
+    return "activation_failed"
+
+
+def first_line(value: str) -> str:
+    for line in (value or "").splitlines():
+        line = line.strip()
+        if line:
+            return line[:200]
+    return ""
+
+
+OPERATIONS = {
+    "status": operation_status,
+    "install": operation_install,
+    "activate": operation_activate,
+    "deactivate": operation_deactivate,
+    "delete": operation_delete,
+}
+
+
+def handle_request(raw: bytes) -> dict:
+    """Dispatch one request. Every failure is a typed response, never a crash."""
+    try:
+        payload = json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, ValueError):
+        return {"ok": False, "code": "invalid_request", "message": "request must be one JSON object"}
+    if not isinstance(payload, dict):
+        return {"ok": False, "code": "invalid_request", "message": "request must be one JSON object"}
+    operation = payload.get("op")
+    if not isinstance(operation, str) or operation not in OPERATIONS:
+        return {"ok": False, "code": "unsupported_operation", "message": "unsupported operation"}
+    try:
+        return OPERATIONS[operation](payload)
+    except RequestError as error:
+        return {"ok": False, "code": error.code, "message": error.message}
+    except NetworkManagerError as error:
+        return {"ok": False, "code": error.code, "message": error.message}
+    except Exception:  # noqa: BLE001 - a helper crash must not take networking with it
+        # Deliberately no exception text: it could quote a validated value, and a
+        # generic code is what the caller acts on anyway.
+        return {"ok": False, "code": "helper_error", "message": "the presentation-network helper failed"}
+
+
+def read_request(connection: socket.socket) -> bytes:
+    """Read one newline-terminated request, bounded."""
+    chunks, total = [], 0
+    while True:
+        chunk = connection.recv(8192)
+        if not chunk:
+            break
+        total += len(chunk)
+        if total > MAX_REQUEST_BYTES:
+            raise RequestError("request_too_large", "request is too large")
+        chunks.append(chunk)
+        if b"\n" in chunk:
+            break
+    return b"".join(chunks).split(b"\n", 1)[0]
+
+
+def bind_socket() -> socket.socket:
+    """Create the listening socket, reachable only by the kiosk group.
+
+    0660 root:tilecast-network is the access boundary: the kiosk account may ask
+    for the five operations above and nothing else, and no other unprivileged
+    account on the box can talk to the helper at all.
+    """
+    directory = os.path.dirname(SOCKET_PATH)
+    os.makedirs(directory, mode=0o750, exist_ok=True)
+    try:
+        gid = grp.getgrnam(SOCKET_GROUP).gr_gid
+    except KeyError:
+        gid = -1
+    if gid >= 0:
+        try:
+            os.chown(directory, 0, gid)
+            os.chmod(directory, 0o750)
+        except OSError:
+            pass
+    if os.path.exists(SOCKET_PATH):
+        os.unlink(SOCKET_PATH)
+    listener = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    listener.bind(SOCKET_PATH)
+    if gid >= 0:
+        os.chown(SOCKET_PATH, 0, gid)
+    os.chmod(SOCKET_PATH, 0o660)
+    listener.listen(8)
+    return listener
+
+
+def serve() -> int:
+    if os.geteuid() != 0 and not os.environ.get("TILECAST_NETWORKD_ALLOW_UNPRIVILEGED"):
+        print("tilecast-networkd must run as root", file=sys.stderr)
+        return 1
+    os.makedirs(STATE_DIR, mode=0o700, exist_ok=True)
+    listener = bind_socket()
+    while True:
+        try:
+            connection, _ = listener.accept()
+        except OSError:
+            continue
+        # Requests are short and serialized. A queue of at most a few operations
+        # from one player does not justify concurrency, and serializing them
+        # removes any chance of two activations racing on the same adapter.
+        with connection:
+            connection.settimeout(200)
+            try:
+                raw = read_request(connection)
+                response = handle_request(raw)
+            except RequestError as error:
+                response = {"ok": False, "code": error.code, "message": error.message}
+            except (OSError, socket.timeout):
+                continue
+            except Exception:  # noqa: BLE001
+                response = {"ok": False, "code": "helper_error", "message": "the presentation-network helper failed"}
+            try:
+                connection.sendall((json.dumps(response) + "\n").encode("utf-8"))
+            except OSError:
+                pass
+
+
+if __name__ == "__main__":
+    sys.exit(serve())

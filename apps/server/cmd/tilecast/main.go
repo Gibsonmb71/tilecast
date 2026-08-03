@@ -35,6 +35,7 @@ import (
 	"github.com/tilecast/tilecast/apps/server/internal/playlists"
 	"github.com/tilecast/tilecast/apps/server/internal/plugins"
 	"github.com/tilecast/tilecast/apps/server/internal/presentations"
+	"github.com/tilecast/tilecast/apps/server/internal/presentnet"
 	"github.com/tilecast/tilecast/apps/server/internal/previews"
 	"github.com/tilecast/tilecast/apps/server/internal/scheduling"
 	"github.com/tilecast/tilecast/apps/server/internal/settings"
@@ -144,6 +145,22 @@ func serve() {
 	playlistService.SetScheduling(schedulingService)
 	settingsService := settings.NewService(db, deviceService, settings.HardLimits{MaxUploadBytes: cfg.Media.MaxUploadBytes, MaxTakeoverMinutes: cfg.Operations.MaxTakeoverDurationHours * 60, MaxWebsiteTimeout: cfg.Website.MaxTimeoutSeconds, MaxPrefetchDays: cfg.Scheduling.PrefetchDays, PrivateHTTPAllowed: cfg.Website.AllowPrivateHTTP})
 	schedulingService.SetOrganizationSettingsProvider(settingsService)
+	// Presentation Networks seal Wi-Fi credentials with an environment-backed
+	// key. A missing key must not stop the server: signage, AirPlay without a
+	// Presentation Network, and every other feature keep working, and Studio
+	// reports a specific operator-facing limitation for the one capability that
+	// cannot function. A key that is present but malformed *is* fatal, because
+	// ignoring it would leave an operator believing credentials were protected.
+	presentationNetworkCipher, cipherErr := presentnet.LoadCipher(cfg.PresentationNetworkKey)
+	if cipherErr != nil {
+		fail("load "+presentnet.KeyEnvironmentVariable, cipherErr)
+	}
+	presentationNetworkService := presentnet.NewService(db, presentationNetworkCipher)
+	presentationNetworkService.SetConfigBumper(settingsService)
+	if !presentationNetworkService.CredentialsAvailable() {
+		logger.Info("Presentation Network credentials are unavailable",
+			"reason", presentnet.KeyEnvironmentVariable+" is not set")
+	}
 	campaignService := campaigns.NewService(db, deviceService)
 	campaignService.SetPresentationChecker(playlistService)
 	campaignService.SetScheduler(schedulingService)
@@ -269,35 +286,36 @@ func serve() {
 		}
 	}
 	handler := httpapi.New(httpapi.Dependencies{
-		Auth:                authService,
-		PublicURL:           cfg.PublicURL,
-		Devices:             deviceService,
-		Media:               mediaService,
-		Forms:               formService,
-		Playlists:           playlistService,
-		Campaigns:           campaignService,
-		Presentations:       presentationService,
-		Plugins:             pluginService,
-		Layouts:             layoutService,
-		Scheduling:          schedulingService,
-		Settings:            settingsService,
-		Updates:             updateService,
-		Alerts:              alertService,
-		Notifications:       notifyService,
-		ContentHealth:       contentHealthService,
-		Fleet:               fleetService,
-		Integrations:        integrationService,
-		Approvals:           approvalService,
-		Snapshots:           snapshotService,
-		Span:                spanService,
-		DB:                  db,
-		Logger:              logger,
-		CookieName:          cfg.CookieName,
-		SecureCookies:       cfg.CookieSecure,
-		ReleasePublishToken: cfg.Updates.PublishToken,
-		Backups:             backupService,
-		BackupWorker:        backupWorker,
-		BackupLimits:        backup.Limits{MaxFiles: cfg.Backup.MaxArchiveFiles, MaxExpandedBytes: cfg.Backup.MaxArchiveBytes},
+		Auth:                 authService,
+		PublicURL:            cfg.PublicURL,
+		Devices:              deviceService,
+		Media:                mediaService,
+		Forms:                formService,
+		Playlists:            playlistService,
+		Campaigns:            campaignService,
+		Presentations:        presentationService,
+		Plugins:              pluginService,
+		Layouts:              layoutService,
+		Scheduling:           schedulingService,
+		Settings:             settingsService,
+		Updates:              updateService,
+		Alerts:               alertService,
+		Notifications:        notifyService,
+		ContentHealth:        contentHealthService,
+		Fleet:                fleetService,
+		Integrations:         integrationService,
+		Approvals:            approvalService,
+		Snapshots:            snapshotService,
+		Span:                 spanService,
+		PresentationNetworks: presentationNetworkService,
+		DB:                   db,
+		Logger:               logger,
+		CookieName:           cfg.CookieName,
+		SecureCookies:        cfg.CookieSecure,
+		ReleasePublishToken:  cfg.Updates.PublishToken,
+		Backups:              backupService,
+		BackupWorker:         backupWorker,
+		BackupLimits:         backup.Limits{MaxFiles: cfg.Backup.MaxArchiveFiles, MaxExpandedBytes: cfg.Backup.MaxArchiveBytes},
 		Operations: httpapi.OperationsConfig{
 			MaxTakeoverDurationHours:    cfg.Operations.MaxTakeoverDurationHours,
 			MaxTakeoverTargets:          cfg.Operations.MaxTakeoverTargets,

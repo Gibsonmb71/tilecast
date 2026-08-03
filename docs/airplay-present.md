@@ -106,6 +106,35 @@ Wi-Fi clients and signage players are on separate VLANs, the network may need
 an mDNS/Bonjour gateway or reflector. Tilecast does not attempt to route
 district VLANs.
 
+### Presentation Network gateway
+
+When a Linux screen has a Presentation Network assignment, Tilecast can
+temporarily join that Wi-Fi network for AirPlay discovery while keeping the
+existing Ethernet connection as the default route. For a group, only the
+chosen gateway joins Wi-Fi; followers remain Ethernet-only and receive
+compressed H.264 RTP from the gateway over their explicit wired IPv4 addresses.
+
+```text
+AirPlay sender
+      |
+    Wi-Fi
+      |
+Tilecast gateway
+ Wi-Fi + Ethernet
+      |
+      | compressed H.264 RTP over Ethernet
+      +--------> follower
+      +--------> follower
+      +--------> follower
+```
+
+Presentation Networks do not bridge VLANs, route between VLANs, enable NAT or
+IP forwarding, provide an mDNS reflector, or bypass access-point client
+isolation. A successful Wi-Fi connection therefore does not guarantee that a
+sender can discover the gateway. See [Presentation Networks](presentation-networks.md)
+for encryption-key handling, the root-owned `tilecast-networkd` helper, and
+troubleshooting.
+
 ## Single-screen flow
 
 1. Studio requests a temporary session and the server verifies the current

@@ -38,6 +38,10 @@ var commandTypes = map[string]bool{
 	"display_set_input": true, "display_set_volume": true,
 	"display_mute": true, "display_unmute": true,
 	"display_set_brightness": true, "display_probe": true,
+	// Presentation Networks. Both payloads carry identifiers and a timeout only:
+	// the Wi-Fi credential is fetched by the player over its own authenticated
+	// channel and never enters a durable command row.
+	"provision_presentation_network": true, "test_presentation_network": true,
 }
 
 type takeoverInput struct {
@@ -391,6 +395,13 @@ func (s *server) createPlayerCommand(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 422, "command_invalid_payload", err.Error())
 		return
 	}
+	if input.Type == "test_presentation_network" {
+		// The Presentation Network test API is what verifies that the named
+		// network is actually assigned to this screen, and that the screen is not
+		// mid-AirPlay. A generic command escape hatch would skip both checks.
+		writeError(w, http.StatusForbidden, "presentation_network_api_required", "Use the Presentation Network test API to run a connection test.")
+		return
+	}
 	if input.Type == "prepare_airplay_session" || input.Type == "stop_airplay_session" {
 		// AirPlay commands carry a temporary PIN/device identity and must be
 		// issued only by the session coordinator after it has resolved the target
@@ -676,6 +687,28 @@ func (s *server) validateCommand(typ string, raw json.RawMessage) ([]byte, error
 	case "test_airplay_support":
 		if len(object) > 0 {
 			return nil, errors.New("AirPlay support test does not accept a payload")
+		}
+	case "provision_presentation_network":
+		// "Reconcile your Presentation Network state now." The desired state is
+		// durable configuration; this command only makes a player act promptly,
+		// so it deliberately carries nothing that could be used to point a player
+		// at a network it was not assigned.
+		if len(object) > 0 {
+			return nil, errors.New("presentation network provisioning does not accept a payload")
+		}
+	case "test_presentation_network":
+		allowed := map[string]bool{"presentationNetworkId": true, "timeoutSeconds": true}
+		for key := range object {
+			if !allowed[key] {
+				return nil, errors.New("presentation network test payload contains an unsupported field")
+			}
+		}
+		if _, err := uuid.Parse(fmt.Sprint(object["presentationNetworkId"])); err != nil {
+			return nil, errors.New("presentation network ID is invalid")
+		}
+		timeout, ok := object["timeoutSeconds"].(float64)
+		if !ok || timeout < 15 || timeout > 180 || timeout != float64(int(timeout)) {
+			return nil, errors.New("presentation network test timeout must be 15 to 180 seconds")
 		}
 	case "display_power_on", "display_power_off", "display_set_input", "display_set_volume", "display_mute", "display_unmute", "display_set_brightness", "display_probe":
 		if err := displaycontrol.ValidateCommandPayload(typ, object); err != nil {

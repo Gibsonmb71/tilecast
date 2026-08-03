@@ -38,6 +38,12 @@ import { applyLowEndTuning } from "./hardware";
 import { LanDiscovery, type DiscoveredServer } from "./discovery";
 import { AirplayManager } from "./airplay";
 import type { SupportedDecoder } from "./airplay";
+import { PresentationNetworkManager } from "./presentation-network";
+import {
+  PresentationNetworkError,
+  parsePresentationNetworkProvisioning,
+  validIpv4,
+} from "../core/presentation-network";
 import { LinuxDisplayControl } from "./display-control";
 
 const log = logger("main");
@@ -465,8 +471,31 @@ function guardWebContents(): void {
 }
 
 async function startRuntime(serverUrl: string): Promise<void> {
+  // The Presentation Network manager is constructed before the AirPlay manager
+  // because AirPlay depends on it: a session with an assigned network must have
+  // the Wi-Fi connection up before UxPlay can advertise.
+  //
+  // fetchProvisioning goes through the runtime's own authenticated client, so the
+  // credential travels on the existing device-credential channel and nowhere
+  // else. It is never cached, persisted, or logged.
+  const presentationNetwork = new PresentationNetworkManager({
+    store,
+    fetchProvisioning: async () => {
+      if (!runtime) {
+        throw new PresentationNetworkError(
+          "credential_unavailable",
+          "The player is not connected to Tilecast yet.",
+        );
+      }
+      return parsePresentationNetworkProvisioning(
+        await runtime.fetchPresentationNetworkProvisioning(),
+      );
+    },
+    onStatus: (status) => airplay.onPresentationNetworkStatus(status),
+  });
   const airplay = new AirplayManager({
     store,
+    presentationNetwork,
     onStatus: (status) => runtime?.onExternalPresentationStatus(status),
   });
   const displayControl = new LinuxDisplayControl();
@@ -572,6 +601,84 @@ async function startRuntime(serverUrl: string): Promise<void> {
       },
       getExternalPresentationStatus: () => airplay.getStatus(),
       probeAirplayCapabilities: () => airplay.probeCapabilities(),
+      probePresentationNetwork: () => presentationNetwork.probe(),
+      applyPresentationNetworkAssignment: (assignment) =>
+        presentationNetwork.applyAssignment(assignment),
+      reconcilePresentationNetwork: () => presentationNetwork.reconcile(),
+      getPresentationNetworkState: () => {
+        const status = presentationNetwork.getStatus();
+        return {
+          state: status.state,
+          networkId: status.networkId,
+          activeNetworkId: status.activeNetworkId,
+          installedNetworkId: status.installedNetworkId,
+          installedRevision: status.installedRevision,
+          ...(status.failureCode ? { failureCode: status.failureCode } : {}),
+          ...(status.lastConnectedAt
+            ? { lastConnectedAt: status.lastConnectedAt }
+            : {}),
+          ...(status.lastFailureAt
+            ? { lastFailureAt: status.lastFailureAt }
+            : {}),
+        };
+      },
+      // The bounded Test connection action. It joins, confirms an address, confirms
+      // Ethernet is still the default route, then disconnects and restores the prior
+      // radio state. It deliberately does not start UxPlay, create an AirPlay
+      // session, or interrupt signage beyond the system-level network work itself.
+      testPresentationNetwork: async (networkId, timeoutSeconds) => {
+        const assignment = presentationNetwork.getAssignment();
+        if (!assignment || assignment.presentationNetworkId !== networkId) {
+          return {
+            success: false,
+            code: "presentation_network_not_assigned",
+            message:
+              "This player has not received that Presentation Network assignment yet.",
+          };
+        }
+        try {
+          const status = await presentationNetwork.connect("connection_test");
+          const capability = presentationNetwork.getCapability();
+          if (status.state !== "connected") {
+            return {
+              success: false,
+              code: status.failureCode ?? "presentation_network_failed",
+              message:
+                status.failureMessage ??
+                `Tilecast could not join ${assignment.name}.`,
+            };
+          }
+          // A precise result, not raw nmcli output: the operator needs to know that
+          // authentication worked, an address arrived, and Ethernet stayed in
+          // charge.
+          const ethernetOk =
+            capability?.wiredInterfaceAvailable === true &&
+            validIpv4(capability.wiredIpv4);
+          return {
+            success: ethernetOk,
+            code: ethernetOk
+              ? "presentation_network_test_passed"
+              : "ethernet_default_route_lost",
+            message: ethernetOk
+              ? `Joined ${assignment.name}: authentication succeeded, an IPv4 address was obtained, and Ethernet remains this player's primary connection.`
+              : `Joined ${assignment.name}, but Ethernet is no longer usable as this player's primary connection.`,
+          };
+        } catch (error) {
+          const status = presentationNetwork.getStatus();
+          return {
+            success: false,
+            code: status.failureCode ?? "presentation_network_failed",
+            message:
+              status.failureMessage ??
+              (error instanceof Error ? error.message : "The test failed."),
+          };
+        } finally {
+          // Always leave the player as it was found, whichever way the test went.
+          await presentationNetwork
+            .disconnect("connection_test_complete")
+            .catch(() => undefined);
+        }
+      },
       probeDisplayControl: () => displayControl.probe(),
       executeDisplayControl: (command) => displayControl.execute(command),
       screenSize: () => {

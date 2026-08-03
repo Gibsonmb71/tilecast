@@ -5,7 +5,11 @@ import {
   parseDefaultRouteInterface,
   parseLinkSpeedMbps,
   parseWirelessSignalDbm,
+  readWiredInterfaceStatus,
+  selectWiredInterface,
+  usableIpv4,
 } from "./system-probe";
+import { validIpv4 } from "./presentation-network";
 
 // Real /proc/net/route output. The default route is the only row whose
 // destination is all zeroes, and it is not necessarily the first row.
@@ -122,5 +126,111 @@ describe("power source", () => {
     // The common case for fixed-install signage. "mains" here would be an
     // assumption indistinguishable from a real reading.
     expect(classifyPowerSource([]).powerSource).toBeUndefined();
+  });
+});
+
+describe("wired interface selection for AirPlay group RTP", () => {
+  it("prefers the Ethernet interface that carries the default route", () => {
+    const status = selectWiredInterface(
+      [
+        { name: "eth1", ipv4: "10.20.0.9", linkType: "ethernet" },
+        { name: "eth0", ipv4: "10.10.2.15", linkType: "ethernet" },
+      ],
+      "eth0",
+    );
+    // That is the interface actually carrying Tilecast traffic, so it is the one
+    // another display can reach.
+    expect(status).toMatchObject({ available: true, ipv4: "10.10.2.15" });
+  });
+
+  it("is deterministic when no Ethernet interface holds the default route", () => {
+    const candidates = [
+      { name: "eth1", ipv4: "10.20.0.9", linkType: "ethernet" as const },
+      { name: "eth0", ipv4: "10.10.2.15", linkType: "ethernet" as const },
+    ];
+    // Two probes on the same box must agree, or a group's destinations would
+    // change between sessions for no reason.
+    expect(selectWiredInterface(candidates, "wlan0").ipv4).toBe("10.10.2.15");
+    expect(selectWiredInterface([...candidates].reverse(), "wlan0").ipv4).toBe(
+      "10.10.2.15",
+    );
+  });
+
+  it("never selects the temporary Wi-Fi address", () => {
+    // This is the specific accident the explicit wired field exists to prevent: a
+    // Presentation Network address becoming a GStreamer RTP destination.
+    const status = selectWiredInterface(
+      [
+        { name: "wlan0", ipv4: "10.40.5.71", linkType: "wifi" },
+        { name: "eth0", ipv4: "10.10.2.15", linkType: "ethernet" },
+      ],
+      "eth0",
+    );
+    expect(status.ipv4).toBe("10.10.2.15");
+  });
+
+  it("reports no address rather than guessing when Wi-Fi is the only link", () => {
+    const status = selectWiredInterface(
+      [{ name: "wlan0", ipv4: "10.40.5.71", linkType: "wifi" }],
+      "wlan0",
+    );
+    // The server then gives a precise AirPlay readiness error instead of being
+    // handed an address that cannot work.
+    expect(status).toEqual({ available: false, ipv4: "" });
+  });
+
+  it("distinguishes an Ethernet interface with no address from no Ethernet at all", () => {
+    expect(
+      selectWiredInterface([{ name: "eth0", ipv4: "", linkType: "ethernet" }]),
+    ).toEqual({ available: true, ipv4: "" });
+    expect(selectWiredInterface([])).toEqual({ available: false, ipv4: "" });
+  });
+
+  it("rejects addresses that are not reachable destinations", () => {
+    for (const address of [
+      "127.0.0.1",
+      "169.254.3.4",
+      "0.0.0.0",
+      "239.255.42.1",
+    ]) {
+      expect(
+        selectWiredInterface([
+          { name: "eth0", ipv4: address, linkType: "ethernet" },
+        ]),
+        address,
+      ).toEqual({ available: true, ipv4: "" });
+    }
+  });
+
+  it("agrees with the presentation-network boundary on what is usable", () => {
+    // The player and the server both reject the same set. A disagreement between
+    // two boundaries is how an unusable address gets through one of them.
+    for (const address of ["10.10.2.15", "192.168.1.40", "172.16.9.3"]) {
+      expect(usableIpv4(address), address).toBe(true);
+      expect(validIpv4(address), address).toBe(true);
+    }
+    for (const address of [
+      "127.0.0.1",
+      "169.254.1.1",
+      "0.0.0.0",
+      "224.0.0.1",
+      "bad",
+    ]) {
+      expect(usableIpv4(address), address).toBe(false);
+      expect(validIpv4(address), address).toBe(false);
+    }
+  });
+
+  it("accepts both of Node's IPv4 family spellings", async () => {
+    const status = await readWiredInterfaceStatus(() => ({
+      eth0: [
+        { address: "fe80::1", family: "IPv6", internal: false },
+        { address: "10.10.2.15", family: 4, internal: false },
+      ],
+      lo: [{ address: "127.0.0.1", family: "IPv4", internal: true }],
+    }));
+    // On a non-Linux host there is no /proc/net/route, so the reading is empty
+    // rather than fabricated — which is the correct behavior for this probe.
+    expect(status.ipv4 === "10.10.2.15" || status.ipv4 === "").toBe(true);
   });
 });

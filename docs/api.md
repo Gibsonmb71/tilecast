@@ -30,10 +30,64 @@ verified artifacts selected by the operator.
 - `GET|HEAD /api/v1/install/linux/artifact` — that verified AppImage.
 - `GET|HEAD /api/v1/install/airplay/uxplay` — embedded UxPlay 1.73.6 source archive.
 - `GET /api/v1/install/airplay/uxplay.sha256` — pinned SHA-256 for that archive.
+- `GET /install-presentation-network.sh` — Linux installer for the root-owned
+  `tilecast-networkd` helper.
+- `GET /install/tilecast-networkd.service` — the helper's systemd unit.
+- `GET|HEAD /api/v1/install/presentation-network/helper` and
+  `GET /api/v1/install/presentation-network/helper.sha256` — the embedded,
+  checksum-pinned helper and its checksum.
 
 The AirPlay installer verifies the published checksum against its own pinned
 value before downloading and again against the archive bytes before building.
 It does not direct the signage player to GitHub or any other source-code host.
+
+## Presentation Networks
+
+Presentation Networks are organization-level Wi-Fi definitions for supported
+Linux Players. The normal dashboard routes require an Owner or Administrator;
+every mutation requires the session's `X-CSRF-Token`. Responses contain SSID,
+authentication metadata, revision, assignment count, and `credentialSet`, but
+never the PSK/password or its encrypted database envelope.
+
+- `GET /api/v1/presentation-networks` — list redacted networks, whether the
+  server encryption key is available, and the supported authentication types.
+- `POST /api/v1/presentation-networks` — create a network. The body requires
+  `name`, `ssid`, `hidden`, `security`, and a write-only `secret`.
+- `GET /api/v1/presentation-networks/{id}` — read redacted network detail and
+  assignments.
+- `PATCH /api/v1/presentation-networks/{id}` — update metadata. Include
+  `secret` only to rotate the credential; omitting it retains the saved value.
+- `DELETE /api/v1/presentation-networks/{id}` — delete the network, cascade its
+  assignments, and revise affected player configuration.
+- `PUT /api/v1/presentation-networks/{id}/screens` — replace the assigned
+  Linux screen IDs (at most 500).
+- `GET /api/v1/screens/{id}/presentation-network` — read server-derived
+  readiness, helper, Wi-Fi, revision, failure, and wired-address state.
+- `PUT /api/v1/screens/{id}/presentation-network` — assign one network to a
+  Linux screen.
+- `DELETE /api/v1/screens/{id}/presentation-network` — remove that assignment.
+- `POST /api/v1/presentation-networks/{id}/test` — queue a bounded connection
+  test for an assigned Linux screen. Its durable command carries only the
+  network ID, timeout, and screen ID; it never carries a credential.
+
+Readiness states include `not_applicable`, `network_manager_unavailable`,
+`helper_missing`, `helper_unhealthy`, `unsupported`,
+`wifi_adapter_unavailable`, `unassigned`, `reporting_pending`, `connected`,
+`failed`, `configuration_pending`, and `ready`. Failure codes such as
+`authentication_failed`, `ssid_not_found`, `dhcp_timeout`, and
+`ethernet_default_route_lost` are safe, bounded identifiers from the Linux
+Player and are translated into operator-facing detail by the server.
+
+The only secret-bearing route is `GET /api/v1/player/presentation-network`.
+It requires the permanent device Bearer credential, derives the network from
+the authenticated screen's assignment, accepts no network ID, and returns
+`Cache-Control: no-store` and `Pragma: no-cache`. A dashboard cookie is not a
+player credential, and a player credential is not a dashboard session. The
+plaintext credential is returned only to that assigned player so it can create
+the temporary NetworkManager profile; it is never included in `/player/config`,
+AirPlay commands, audit metadata, logs, or Studio responses. See
+[Presentation Networks](presentation-networks.md) for the external encryption
+key and recovery implications.
 
 ## Authentication
 

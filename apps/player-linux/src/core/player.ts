@@ -65,7 +65,10 @@ import {
 } from "./content-availability";
 import { cacheIdentityMatches, makeCacheIdentity } from "./cache-identity";
 import { downloadVerified } from "./download";
-import { readSystemDiagnostics } from "./system-probe";
+import {
+  readSystemDiagnostics,
+  readWiredInterfaceStatus,
+} from "./system-probe";
 import { SelfUpdater, parseVersionCode, promoteAppImage } from "./self-update";
 import {
   AutostartInstaller,
@@ -115,6 +118,11 @@ import type {
   ExternalPresentationStatus,
 } from "./external-presentation";
 import { parseExternalPresentationConfig } from "./external-presentation";
+import {
+  parsePresentationNetworkAssignment,
+  type PresentationNetworkAssignment,
+  type PresentationNetworkCapability,
+} from "./presentation-network";
 import {
   parseDisplayControlCommand,
   unsupportedDisplayControlStatus,
@@ -260,6 +268,16 @@ export type Presentation =
       role: "single" | "gateway" | "receiver";
       transport: "unicast" | "multicast";
       audioMode: AirplayAudioMode;
+      /**
+       * Presentation Network progress, so the ready page says something useful
+       * while the gateway authenticates instead of sitting on "Preparing".
+       *
+       * Deliberately generic: the TV shows "Connecting to the presentation
+       * network…" rather than the network's name, and never the SSID or the
+       * credential. Studio, where an operator is already authenticated, gets the
+       * named version.
+       */
+      presentationNetwork?: "joining" | "connected" | "failed";
     };
 
 export function presentationIdentity(presentation: Presentation): string {
@@ -329,6 +347,38 @@ export interface PlayerHost extends DisplayControlHost {
   } | null>;
   getExternalPresentationStatus?(): ExternalPresentationStatus | null;
   probeAirplayCapabilities?(): Promise<AirplayCapabilities>;
+  /**
+   * Presentation Networks are a Linux capability behind the root-owned helper.
+   * The generic runtime owns only policy and reporting; the host owns the
+   * NetworkManager lifecycle. All optional, so a host without them — a preview
+   * host, or an Android build — simply reports nothing.
+   */
+  probePresentationNetwork?(): Promise<PresentationNetworkCapability>;
+  applyPresentationNetworkAssignment?(
+    assignment: PresentationNetworkAssignment | null,
+  ): Promise<void>;
+  /** Reported state for the heartbeat, without re-probing the helper. */
+  getPresentationNetworkState?(): {
+    state: string;
+    networkId: string | null;
+    activeNetworkId: string | null;
+    installedNetworkId: string | null;
+    installedRevision: number | null;
+    failureCode?: string;
+    lastConnectedAt?: string;
+    lastFailureAt?: string;
+  } | null;
+  /** Reconcile provisioned profiles against the assignment, now. */
+  reconcilePresentationNetwork?(): Promise<void>;
+  /** Bounded connection test: join, verify, disconnect, restore radio state. */
+  testPresentationNetwork?(
+    networkId: string,
+    timeoutSeconds: number,
+  ): Promise<{
+    success: boolean;
+    code: string;
+    message: string;
+  }>;
 }
 
 interface PlaybackFlags {
@@ -393,6 +443,11 @@ export class PlayerRuntime {
   private installationId = "";
   private config: PlayerConfig | null = null;
   private airplayCapabilities: AirplayCapabilities | null = null;
+  private presentationNetworkCapability: PresentationNetworkCapability | null =
+    null;
+  private presentationNetworkAssignment: PresentationNetworkAssignment | null =
+    null;
+  private wiredInterface: { available: boolean; ipv4: string } | null = null;
   private displayControlStatus: DisplayControlStatus | null = null;
   private externalPresentation: ExternalPresentationConfig | null = null;
   private externalPresentationStatus: ExternalPresentationStatus | null = null;
@@ -524,6 +579,12 @@ export class PlayerRuntime {
           this.numberConfig(config.sync, "manifestReconciliationSeconds", 300),
         );
         this.host.applyPlayerConfiguration?.(config);
+        // The Presentation Network assignment is durable configuration, so
+        // applying it here is what makes an assignment change converge — including
+        // for a player that was offline when the change happened. A section that
+        // says "not assigned" is an instruction to remove any Tilecast-managed
+        // Wi-Fi profile, not an absence of one.
+        void this.applyPresentationNetworkConfiguration(config);
         if (this.pairedTimersStarted) {
           this.rescheduleRuntimeTimers();
           this.evaluatePresentation();
@@ -838,6 +899,11 @@ export class PlayerRuntime {
     // 2012-class target should not spawn vainfo/gst-inspect on every heartbeat.
     void this.refreshAirplayCapabilities().then(() => void this.reportStatus());
     void this.refreshDisplayControl().then(() => void this.reportStatus());
+    // The Presentation Network probe is one unix-socket call, so it is cheap
+    // enough for the reporting cadence on the 2012-class target. Studio cannot
+    // offer the feature on a screen whose capability it has never seen, which is
+    // why the first heartbeat should already carry it.
+    void this.refreshPresentationNetwork().then(() => void this.reportStatus());
 
     this.sessions = new PlaybackSessionTracker(
       (event) => void this.activity?.record(event),
@@ -1059,6 +1125,9 @@ export class PlayerRuntime {
       role: config.role,
       transport: config.transport,
       audioMode: config.audioMode,
+      ...(status.presentationNetwork
+        ? { presentationNetwork: status.presentationNetwork }
+        : {}),
     };
   }
 
@@ -1133,7 +1202,8 @@ export class PlayerRuntime {
       previous.receiverAlive !== status.receiverAlive ||
       previous.gatewayAlive !== status.gatewayAlive ||
       previous.failureCode !== status.failureCode ||
-      previous.failureMessage !== status.failureMessage;
+      previous.failureMessage !== status.failureMessage ||
+      previous.presentationNetwork !== status.presentationNetwork;
     this.externalPresentationStatus = status;
     if (changed && presentationChanged) {
       this.renderExternalPresentation();
@@ -1150,6 +1220,56 @@ export class PlayerRuntime {
     }
     const status = this.host.getExternalPresentationStatus?.() ?? null;
     this.onExternalPresentationStatus(status);
+  }
+
+  /**
+   * Apply the Presentation Network section of a configuration document.
+   *
+   * A malformed section is logged and ignored rather than being coerced: acting
+   * on a half-understood assignment would provision a profile that does not match
+   * what Studio displays. Ignoring it leaves the previous state in place and the
+   * next sync corrects it.
+   */
+  private async applyPresentationNetworkConfiguration(
+    config: PlayerConfig,
+  ): Promise<void> {
+    if (!this.host.applyPresentationNetworkAssignment) return;
+    let assignment: PresentationNetworkAssignment | null = null;
+    const section = (config as unknown as Record<string, unknown>)[
+      "presentationNetwork"
+    ];
+    // An absent section means a server that predates the feature. Leave whatever
+    // the player has alone rather than deleting a profile a newer server assigned.
+    if (section === undefined) return;
+    try {
+      assignment = parsePresentationNetworkAssignment(section);
+    } catch (error) {
+      log.warn("presentation network configuration was rejected", {
+        error: String(error),
+      });
+      return;
+    }
+    this.presentationNetworkAssignment = assignment;
+    try {
+      await this.host.applyPresentationNetworkAssignment(assignment);
+    } catch (error) {
+      log.warn("failed to apply the presentation network assignment", {
+        error: String(error),
+      });
+    }
+    await this.refreshPresentationNetwork();
+  }
+
+  private async refreshPresentationNetwork(): Promise<PresentationNetworkCapability | null> {
+    if (!this.host.probePresentationNetwork) return null;
+    try {
+      this.presentationNetworkCapability =
+        await this.host.probePresentationNetwork();
+      return this.presentationNetworkCapability;
+    } catch (error) {
+      log.warn("presentation network probe failed", { error: String(error) });
+      return null;
+    }
   }
 
   private async refreshAirplayCapabilities(): Promise<AirplayCapabilities | null> {
@@ -1271,6 +1391,19 @@ export class PlayerRuntime {
     );
     this.evaluatePresentation(true);
     if (reportCleared) void this.reportStatus();
+  }
+
+  /**
+   * Fetch Presentation Network provisioning material over the authenticated
+   * player channel.
+   *
+   * Exposed on the runtime rather than given to the host directly so the request
+   * uses the same credential, timeout, and telemetry path as every other player
+   * call. The response is not stored, not cached, and not logged; the caller hands
+   * it straight to the root helper and drops it.
+   */
+  fetchPresentationNetworkProvisioning(): Promise<Record<string, unknown>> {
+    return this.client.presentationNetworkProvisioning();
   }
 
   /** Renderer reported an item boundary. */
@@ -2496,6 +2629,18 @@ export class PlayerRuntime {
 
   /** Refreshed on the reporting cadence: every field here is a sysfs read. */
   private async refreshSystemDiagnostics(): Promise<void> {
+    // The wired Ethernet facts are read on the same cadence, from procfs and
+    // sysfs with no subprocess. This is the fallback for a box with no helper;
+    // when the helper is present its own view of NetworkManager wins, because it
+    // is what actually manages the interfaces.
+    try {
+      this.wiredInterface = await readWiredInterfaceStatus();
+    } catch {
+      // Nothing is guessed. An unreadable probe means the fields go absent, and
+      // the server then gives a precise AirPlay readiness error rather than being
+      // handed an address that cannot work.
+      this.wiredInterface = null;
+    }
     try {
       this.systemDiagnostics = await readSystemDiagnostics();
     } catch (error) {
@@ -2645,6 +2790,62 @@ export class PlayerRuntime {
           0,
           240,
         );
+      }
+    }
+    // Presentation Network capability and the wired address group AirPlay RTP
+    // uses. Reported unconditionally when probed, like AirPlay capability: Studio
+    // cannot offer the feature on a screen whose capability it has never seen.
+    if (this.presentationNetworkCapability) {
+      const capability = this.presentationNetworkCapability;
+      heartbeat.presentationNetworkSupported = capability.supported;
+      heartbeat.presentationNetworkHelperState = capability.helperState;
+      heartbeat.presentationNetworkManagerAvailable =
+        capability.networkManagerAvailable;
+      heartbeat.presentationNetworkWifiAdapter = capability.wifiAdapter;
+      heartbeat.presentationNetworkRadioEnabled = capability.radioEnabled;
+      if (capability.limitation) {
+        heartbeat.presentationNetworkLimitation = capability.limitation.slice(
+          0,
+          240,
+        );
+      }
+      // The wired facts come from the helper's own view of NetworkManager, with
+      // the direct procfs/sysfs reading below as the fallback for a box where the
+      // helper is absent. Ordinary telemetry's networkLinkType is untouched and
+      // still describes the default-route path.
+      if (capability.wiredInterfaceAvailable) {
+        heartbeat.wiredInterfaceAvailable = true;
+        if (capability.wiredIpv4) heartbeat.wiredIpv4 = capability.wiredIpv4;
+      }
+    }
+    if (this.wiredInterface && heartbeat.wiredIpv4 === undefined) {
+      heartbeat.wiredInterfaceAvailable = this.wiredInterface.available;
+      if (this.wiredInterface.ipv4)
+        heartbeat.wiredIpv4 = this.wiredInterface.ipv4;
+    }
+    const networkState = this.host.getPresentationNetworkState?.() ?? null;
+    if (networkState) {
+      heartbeat.presentationNetworkState = networkState.state;
+      if (networkState.installedNetworkId) {
+        heartbeat.presentationNetworkInstalledId =
+          networkState.installedNetworkId;
+      }
+      if (networkState.installedRevision !== null) {
+        heartbeat.presentationNetworkInstalledRevision =
+          networkState.installedRevision;
+      }
+      if (networkState.activeNetworkId) {
+        heartbeat.presentationNetworkActiveId = networkState.activeNetworkId;
+      }
+      if (networkState.failureCode) {
+        heartbeat.presentationNetworkLastFailureCode = networkState.failureCode;
+      }
+      if (networkState.lastConnectedAt) {
+        heartbeat.presentationNetworkLastConnectedAt =
+          networkState.lastConnectedAt;
+      }
+      if (networkState.lastFailureAt) {
+        heartbeat.presentationNetworkLastFailureAt = networkState.lastFailureAt;
       }
     }
     if (this.displayControlStatus) {
@@ -2992,6 +3193,76 @@ export class PlayerRuntime {
             ? `AirPlay ready with ${capabilities.decoder}.`
             : "Required UxPlay or GStreamer support is unavailable."),
       };
+    });
+    handlers.set("provision_presentation_network", async () => {
+      if (!this.host.reconcilePresentationNetwork) {
+        return {
+          success: false,
+          code: "presentation_network_unsupported",
+          message: "This player does not support Presentation Networks.",
+        };
+      }
+      await this.host.reconcilePresentationNetwork();
+      const capability = await this.refreshPresentationNetwork();
+      void this.reportStatus();
+      const state = this.host.getPresentationNetworkState?.() ?? null;
+      if (capability && !capability.networkManagerAvailable) {
+        return {
+          success: false,
+          code: "presentation_network_unsupported",
+          message:
+            capability.limitation ??
+            "NetworkManager is not available on this player.",
+        };
+      }
+      if (state?.state === "failed") {
+        return {
+          success: false,
+          code: state.failureCode ?? "presentation_network_failed",
+          message: "The Presentation Network could not be provisioned.",
+        };
+      }
+      return {
+        success: true,
+        code: "presentation_network_reconciled",
+        message: "Presentation Network configuration is up to date.",
+      };
+    });
+    handlers.set("test_presentation_network", async (command) => {
+      if (!this.host.testPresentationNetwork) {
+        return {
+          success: false,
+          code: "presentation_network_unsupported",
+          message: "This player does not support Presentation Networks.",
+        };
+      }
+      // An AirPlay session must not be interrupted by a test of the network it is
+      // using. The server refuses this too; checking locally covers the race where
+      // a session started between the two.
+      if (this.externalPresentation) {
+        return {
+          success: false,
+          code: "presentation_network_airplay_active",
+          message:
+            "An AirPlay session is active on this player. Stop it before testing.",
+        };
+      }
+      const networkId = command.payload["presentationNetworkId"];
+      const timeout = command.payload["timeoutSeconds"];
+      if (typeof networkId !== "string") {
+        return {
+          success: false,
+          code: "presentation_network_invalid",
+          message: "The Presentation Network test payload is invalid.",
+        };
+      }
+      const result = await this.host.testPresentationNetwork(
+        networkId,
+        typeof timeout === "number" ? timeout : 90,
+      );
+      await this.refreshPresentationNetwork();
+      void this.reportStatus();
+      return result;
     });
     handlers.set("prepare_airplay_session", async (command) => {
       const phase = command.payload["phase"];

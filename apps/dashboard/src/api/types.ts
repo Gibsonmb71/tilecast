@@ -122,6 +122,118 @@ export type LocationInput = Omit<
   "id" | "screenCount" | "createdAt" | "updatedAt"
 >;
 
+export type PresentationNetworkSecurity = "wpa_psk" | "wpa_eap_peap_mschapv2";
+
+export type PresentationNetworkAuth = {
+  identity?: string;
+  anonymousIdentity?: string;
+  caCertificatePem?: string;
+  domainSuffixMatch?: string;
+};
+
+/** Public Presentation Network data. Credentials are never part of this type. */
+export type PresentationNetwork = {
+  id: string;
+  name: string;
+  ssid: string;
+  hidden: boolean;
+  security: PresentationNetworkSecurity;
+  securityLabel: string;
+  auth: PresentationNetworkAuth;
+  credentialSet: boolean;
+  secretUpdatedAt?: string;
+  configRevision: number;
+  assignedScreens: number;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type PresentationNetworkAssignment = {
+  screenId: string;
+  screenName: string;
+  platform: string;
+  presentationNetworkId?: string;
+  presentationNetworkName?: string;
+  assignedAt?: string;
+};
+
+export type PresentationNetworkSecurityOption = {
+  value: PresentationNetworkSecurity;
+  label: string;
+  enterprise: boolean;
+};
+
+export type PresentationNetworkList = {
+  items: PresentationNetwork[];
+  credentialsAvailable: boolean;
+  credentialsUnavailableReason: string;
+  supportedSecurity: PresentationNetworkSecurityOption[];
+};
+
+export type PresentationNetworkDetail = {
+  network: PresentationNetwork;
+  assignments: PresentationNetworkAssignment[];
+};
+
+export type PresentationNetworkInput = {
+  name: string;
+  ssid: string;
+  hidden: boolean;
+  security: PresentationNetworkSecurity;
+  /** Write-only. Omit to retain the stored credential while editing. */
+  secret?: string;
+  identity?: string;
+  anonymousIdentity?: string;
+  caCertificatePem?: string;
+  domainSuffixMatch?: string;
+};
+
+export type PresentationNetworkReadinessStatus =
+  | "not_applicable"
+  | "network_manager_unavailable"
+  | "helper_missing"
+  | "helper_unhealthy"
+  | "unsupported"
+  | "wifi_adapter_unavailable"
+  | "unassigned"
+  | "reporting_pending"
+  | "connected"
+  | "failed"
+  | "configuration_pending"
+  | "ready";
+
+export type PresentationNetworkReadiness = {
+  screenId: string;
+  platform: string;
+  presentationNetworkId?: string;
+  presentationNetworkName?: string;
+  assignedAt?: string;
+  applicable: boolean;
+  status: PresentationNetworkReadinessStatus;
+  detail: string;
+  helperState?: string;
+  networkManagerAvailable?: boolean;
+  wifiAdapterPresent?: boolean;
+  radioEnabled?: boolean;
+  reportedState?: string;
+  installedNetworkId?: string;
+  installedRevision?: number;
+  activeNetworkId?: string;
+  lastConnectedAt?: string;
+  lastFailureAt?: string;
+  lastFailureCode?: string;
+  limitation?: string;
+  wiredInterfaceAvailable?: boolean;
+  wiredIpv4?: string;
+  credentialsAvailable: boolean;
+};
+
+export type PresentationNetworkTestResult = {
+  commandId: string;
+  screenId: string;
+  timeoutSeconds: number;
+};
+
 export type Screen = {
   id: string;
   name: string;
@@ -520,6 +632,21 @@ export type ReliabilityStatus = {
   airplayMulticastSupported?: boolean;
   airplayMulticastTestStatus?: string;
   airplayLimitation?: string;
+  presentationNetworkSupported?: boolean;
+  presentationNetworkHelperState?: string;
+  presentationNetworkManagerAvailable?: boolean;
+  presentationNetworkWifiAdapter?: boolean;
+  presentationNetworkRadioEnabled?: boolean;
+  presentationNetworkState?: string;
+  presentationNetworkInstalledId?: string;
+  presentationNetworkInstalledRevision?: number;
+  presentationNetworkActiveId?: string;
+  presentationNetworkLastConnectedAt?: string;
+  presentationNetworkLastFailureAt?: string;
+  presentationNetworkLastFailureCode?: string;
+  presentationNetworkLimitation?: string;
+  wiredInterfaceAvailable?: boolean;
+  wiredIpv4?: string;
   externalPresentationState?: string;
   externalPresentationSessionId?: string;
   externalPresentationRole?: string;
@@ -565,6 +692,7 @@ export type AirplaySessionScreenState = {
   lastUpdatedAt: string;
   failureCode?: string;
   failureMessage?: string;
+  presentationNetworkState?: string;
 };
 
 export type AirplaySession = {
@@ -589,6 +717,8 @@ export type AirplaySession = {
   transport: AirplayString<"unicast" | "multicast">;
   videoProfile: AirplayString<"1080p30" | "720p30">;
   audioMode: AirplayString<"gateway_only" | "none">;
+  presentationNetworkId?: string;
+  presentationNetworkName?: string;
   screenCount: number;
   readyCount: number;
   connectedCount: number;

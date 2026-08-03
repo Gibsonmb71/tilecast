@@ -296,6 +296,13 @@ export interface PlayerConfig {
   managedKiosk: Record<string, unknown>;
   /** Absent in configurations generated before Linux kiosk policy existed. */
   linuxKiosk?: Record<string, unknown>;
+  /**
+   * The Linux Presentation Network assignment. Absent from a server that predates
+   * the feature; a section saying `assigned: false` is the instruction to remove
+   * any Tilecast-managed Wi-Fi profile. Never contains a credential — this
+   * document is cached on disk.
+   */
+  presentationNetwork?: Record<string, unknown>;
   accessibility: Record<string, unknown>;
   updates: Record<string, unknown>;
 }
@@ -451,6 +458,29 @@ export interface Heartbeat {
   displayPowerStateObservedAt?: string;
   displayControlPolicyState?: "normal" | "powered_off_by_policy" | "unknown";
   displayControlError?: string;
+
+  // Presentation Network capability and state. Booleans, enumerated states,
+  // identifiers, and revisions only: nothing here can carry a Wi-Fi credential.
+  presentationNetworkSupported?: boolean;
+  presentationNetworkHelperState?: string;
+  presentationNetworkManagerAvailable?: boolean;
+  presentationNetworkWifiAdapter?: boolean;
+  presentationNetworkRadioEnabled?: boolean;
+  presentationNetworkState?: string;
+  presentationNetworkInstalledId?: string;
+  presentationNetworkInstalledRevision?: number;
+  presentationNetworkActiveId?: string;
+  presentationNetworkLastConnectedAt?: string;
+  presentationNetworkLastFailureAt?: string;
+  presentationNetworkLastFailureCode?: string;
+  presentationNetworkLimitation?: string;
+  /**
+   * The explicitly reported Ethernet facts group AirPlay RTP fan-out needs.
+   * Deliberately narrower than the server's last_known_ip, which stops being an
+   * unambiguous answer once this player can hold a temporary Wi-Fi address too.
+   */
+  wiredInterfaceAvailable?: boolean;
+  wiredIpv4?: string;
 }
 
 // ---------------------------------------------------------------------------

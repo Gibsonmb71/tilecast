@@ -22,6 +22,7 @@ import {
   Siren,
   SlidersHorizontal,
   Users,
+  Wifi,
   Wrench,
 } from "lucide-react";
 export type SettingsSectionId =
@@ -37,6 +38,7 @@ export type SettingsSectionId =
   | "power"
   | "accessibility"
   | "player-updates"
+  | "presentation-networks"
   | "takeover"
   | "retention"
   | "backups"
@@ -97,6 +99,11 @@ export const settingsNavigation: SettingsNavigationGroup[] = [
         path: "player/accessibility",
       },
       { id: "player-updates", label: "Player updates", path: "player/updates" },
+      {
+        id: "presentation-networks",
+        label: "Presentation Networks",
+        path: "player/presentation-networks",
+      },
     ],
   },
   {
@@ -225,6 +232,12 @@ export const sectionDetails: Record<
     icon: DownloadCloud,
     title: "Player updates",
     description: "Verified Tilecast Player releases and update deployments.",
+  },
+  "presentation-networks": {
+    icon: Wifi,
+    title: "Presentation Networks",
+    description:
+      "Temporarily connect supported Linux players to Wi-Fi for AirPlay and other local presentation features while keeping Ethernet as their primary Tilecast connection.",
   },
   takeover: {
     icon: Siren,

@@ -9,11 +9,13 @@ Tilecast begins as a modular monolith. The server compiles into one Go binary, s
 - `internal/database` owns the connection pool and Goose migrations.
 - `internal/auth` owns password hashing, first-owner setup, users, opaque sessions, and multi-factor authentication.
 - `internal/httpapi` translates versioned HTTP contracts to application operations. Database rows are not serialized directly.
+- `internal/presentnet` owns Presentation Network validation, AES-256-GCM credential envelopes, organization network definitions, Linux screen assignments, and player provisioning material. Its only plaintext-secret path is the authenticated player endpoint; Studio, audit, command, and configuration contracts use redacted metadata.
 - `internal/media` owns resumable upload state, generated storage keys, local storage, trusted inspection, compatibility decisions, persistent jobs, and delivery metadata.
 - `internal/playlists` owns ordered playlists, direct assignments, per-screen manifest versions, manifest contracts, and summarized synchronization status.
 - `internal/plugins` owns the closed built-in plugin registry, Countdown Bar and Brand Bug / Watermark instances and targets, the projection of live Emergency Alerts tickers, and per-screen plugin projection. Media a plugin references is resolved by manifest assembly in `internal/playlists`, so a Brand Bug logo is verified and cached like any other asset. The registry also surfaces bounded workflow plugins such as Forms, whose approved records continue through the ordinary Data Source projection. Plugins do not load third-party code and reach the Linux renderer on a channel independent of presentation playback.
 - `internal/web` serves immutable dashboard assets and the SPA fallback.
 - `apps/dashboard/src/api` owns browser API types and transport behavior.
+- Presentation Network Wi-Fi is a sidecar to the Linux Player's Ethernet path. The unprivileged Electron process talks to the narrowly scoped root-owned `tilecast-networkd` helper over a Unix socket; the helper owns only Tilecast-named NetworkManager profiles and never changes the existing Ethernet profile.
 - `packages/*-schema` are reserved for stable, versioned cross-application contracts as those protocols are introduced.
 
 ## Authentication model

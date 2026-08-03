@@ -20,6 +20,17 @@ Players using a Tunnel normally enter its public HTTPS hostname manually. LAN di
 
 The dashboard CSP permits Cloudflare Web Analytics' beacon when a proxied deployment injects it. Automatic injection reports to the same origin. Keep `script-src` free of `unsafe-inline` when applying a custom CSP.
 
+## Presentation Networks
+
+If the installation uses Presentation Networks, set
+`TILECAST_PRESENTATION_NETWORK_KEY` in the server environment. It must decode
+to exactly 32 bytes as 64-character hex or standard/raw URL-safe Base64. Keep
+the key in the deployment secret store and outside the Compose file, database
+backup, and settings export; the example environment file includes the empty
+placeholder for clarity. The database stores only AES-256-GCM ciphertext, so a
+database restore without the same external key requires every saved Wi-Fi
+credential to be entered again in Studio. See [Presentation Networks](presentation-networks.md).
+
 ## Data and upgrades
 
 The `postgres_data` volume stores relational state. The `tilecast_data` volume stores originals, playback variants, thumbnails, posters, and temporary resumable uploads beneath `/data/media`. It must remain mounted across server/container recreation. The media tree is never served directly by the container.
@@ -32,6 +43,11 @@ A complete backup requires:
 - `/data/media/originals`.
 - `/data/media/variants` and `/data/media/thumbnails` (or time to regenerate them in a future recovery tool).
 - deployment configuration, excluding copied secrets from documentation or source control.
+
+Also preserve the external `TILECAST_PRESENTATION_NETWORK_KEY` separately when
+Presentation Networks are in use. It is not stored in Tilecast backups. A
+database/media restore is incomplete until the key is restored and assigned
+players have reconciled their current network revision.
 
 The database holds every enrolled authenticator secret. Unlike a password or a device credential, a TOTP secret cannot be hashed, so anyone who can read a database backup can generate codes for any enrolled account. Protect backup archives accordingly. Passkeys store only a public key and do not carry this risk.
 

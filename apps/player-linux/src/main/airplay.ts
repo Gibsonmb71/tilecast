@@ -33,6 +33,14 @@ import {
   type ExternalPresentationStatus,
 } from "../core/external-presentation";
 import type { StateStore } from "../core/storage";
+import {
+  PresentationNetworkError,
+  type PresentationNetworkFailureCode,
+} from "../core/presentation-network";
+import type {
+  PresentationNetworkManager,
+  PresentationNetworkStatus,
+} from "./presentation-network";
 
 const log = logger("airplay");
 const SESSION_FILE = "airplay-session.json";
@@ -91,6 +99,12 @@ export interface AirplayManagerOptions {
   resolveExecutable?: ExecutableResolver;
   now?: () => number;
   onStatus?: (status: ExternalPresentationStatus | null) => void;
+  /**
+   * Owns the temporary Wi-Fi connection when the session has a Presentation
+   * Network. Optional: a build without one, or a screen with no assignment,
+   * follows exactly the Ethernet-only path this manager always had.
+   */
+  presentationNetwork?: PresentationNetworkManager;
 }
 
 const SUPPORTED_DECODERS = ["vah264dec", "vaapih264dec", "avdec_h264"] as const;
@@ -417,6 +431,13 @@ export class AirplayManager {
   private gatewayStarted = false;
   private stopping = false;
   private operationTail: Promise<void> = Promise.resolve();
+  private readonly presentationNetwork?: PresentationNetworkManager;
+  /**
+   * Whether *this* session brought the Presentation Network up. It decides
+   * whether stopping the session should disconnect it, so a session that never
+   * needed Wi-Fi never tears down a connection it did not create.
+   */
+  private presentationNetworkJoined = false;
 
   constructor(options: AirplayManagerOptions) {
     this.store = options.store;
@@ -425,6 +446,7 @@ export class AirplayManager {
       options.resolveExecutable ?? ((name) => resolveLinuxExecutable(name));
     this.now = options.now ?? Date.now;
     this.onStatus = options.onStatus;
+    this.presentationNetwork = options.presentationNetwork;
   }
 
   async probeCapabilities(): Promise<AirplayCapabilities> {
@@ -587,6 +609,7 @@ export class AirplayManager {
     // Preparing does not grant permission to advertise. Only startGateway does,
     // and only recovery of an already-started session resumes it.
     this.gatewayStarted = resumeGatewayStarted && config.role !== "receiver";
+    this.presentationNetworkJoined = false;
     try {
       await this.persistSession(config, this.gatewayStarted);
       this.setStatus({
@@ -598,6 +621,17 @@ export class AirplayManager {
         receiverAlive: false,
         gatewayAlive: false,
       });
+      // The Presentation Network comes first, before any receiver process and
+      // long before UxPlay can advertise.
+      //
+      // Ordering is the whole contract: an AirPlay receiver must never be
+      // discoverable before the network it is meant to be discoverable *on* is
+      // up. A gateway that advertised first would appear in a sender's picker and
+      // then fail to connect, which is worse than taking a few more seconds.
+      //
+      // A follower never reaches this: the server does not put a Presentation
+      // Network in a receiver's payload, and the parser rejects one that appears.
+      await this.joinPresentationNetwork(config);
       if (config.role !== "single") {
         await this.startReceiver(config, decoder);
       }
@@ -612,6 +646,91 @@ export class AirplayManager {
       await this.stopSessionInternal("prepare_failed", true);
       throw error;
     }
+  }
+
+  /**
+   * Bring the session's Presentation Network up, if it has one.
+   *
+   * Returns quietly when there is nothing to do — no Presentation Network in the
+   * payload, or no manager on this build — which is what preserves the existing
+   * Ethernet-only behavior byte for byte.
+   *
+   * A failure here fails preparation. That is deliberate: the server's
+   * all-or-nothing group preparation then reports a precise reason and never
+   * releases the gateway to advertise, rather than presenting into a VLAN nobody
+   * can see it from.
+   */
+  private async joinPresentationNetwork(
+    config: ExternalPresentationConfig,
+  ): Promise<void> {
+    if (!config.presentationNetworkId || config.role === "receiver") return;
+    if (!this.presentationNetwork) {
+      throw new PresentationNetworkError(
+        "helper_unavailable",
+        "This player cannot join a Presentation Network. Re-run the player installer to add the presentation-network helper.",
+      );
+    }
+    const assignment = this.presentationNetwork.getAssignment();
+    if (
+      !assignment ||
+      assignment.presentationNetworkId !== config.presentationNetworkId
+    ) {
+      // The server asked for a network this player has not been assigned, or has
+      // not yet synchronized. Refusing beats provisioning something unassigned.
+      throw new PresentationNetworkError(
+        "credential_unavailable",
+        "This player has not received the assigned Presentation Network configuration yet.",
+      );
+    }
+    this.setStatus({
+      ...this.status!,
+      presentationNetwork: "joining",
+      presentationNetworkName: assignment.name,
+    });
+    try {
+      await this.presentationNetwork.connect(`airplay:${config.sessionId}`);
+    } catch (error) {
+      const status = this.presentationNetwork.getStatus();
+      this.setStatus({
+        ...this.status!,
+        state: "degraded",
+        presentationNetwork: "failed",
+        presentationNetworkName: assignment.name,
+        failureCode: status.failureCode ?? "presentation_network_failed",
+        failureMessage:
+          status.failureMessage ??
+          `Tilecast could not join ${assignment.name} for this AirPlay session.`,
+      });
+      throw error;
+    }
+    this.presentationNetworkJoined = true;
+    this.setStatus({
+      ...this.status!,
+      presentationNetwork: "connected",
+      presentationNetworkName: assignment.name,
+    });
+  }
+
+  /** Mirror the manager's own status into the session status, for Studio. */
+  onPresentationNetworkStatus(status: PresentationNetworkStatus): void {
+    const current = this.status;
+    if (!current || !this.config?.presentationNetworkId) return;
+    if (current.role === "receiver") return;
+    const mapped: ExternalPresentationStatus["presentationNetwork"] =
+      status.state === "connected"
+        ? "connected"
+        : status.state === "failed"
+          ? "failed"
+          : status.state === "joining"
+            ? "joining"
+            : current.presentationNetwork;
+    if (mapped === current.presentationNetwork) return;
+    this.setStatus({
+      ...current,
+      presentationNetwork: mapped,
+      presentationNetworkName:
+        status.networkName || current.presentationNetworkName,
+    });
   }
 
   async startGateway(
@@ -641,6 +760,14 @@ export class AirplayManager {
       throw error;
     }
     if (this.uxplay) return this.status!;
+    // A session with a Presentation Network may not advertise until the network
+    // is actually up. Normally joinPresentationNetwork already did this during
+    // preparation; this covers restart recovery, where a previously-started
+    // gateway comes back and must reconnect its network *before* UxPlay is
+    // restored rather than after.
+    if (config.presentationNetworkId && !this.presentationNetworkJoined) {
+      await this.joinPresentationNetwork(config);
+    }
     try {
       await this.startUxplay(config, decoder);
     } catch (error) {
@@ -675,10 +802,24 @@ export class AirplayManager {
     this.uxplay = null;
     this.receiver = null;
     await Promise.all(processes.map((managed) => this.stopProcess(managed)));
+    const releaseNetwork = this.presentationNetworkJoined;
+    this.presentationNetworkJoined = false;
     this.config = null;
     this.status = null;
     this.gatewayStarted = false;
     await this.store.delete(SESSION_FILE).catch(() => undefined);
+    // Only disconnect a network this session brought up, and only after the
+    // media processes are gone. Cleanup is idempotent, so an overlapping stop
+    // path (expiry racing a manual stop, a takeover racing a failure) is safe.
+    if (releaseNetwork && this.presentationNetwork) {
+      await this.presentationNetwork
+        .disconnect(`airplay_stopped:${reason}`)
+        .catch((error) => {
+          log.warn("failed to leave the presentation network", {
+            error: String(error),
+          });
+        });
+    }
     log.info("AirPlay session stopped", { reason });
     if (notify) this.onStatus?.(null);
   }
@@ -693,15 +834,32 @@ export class AirplayManager {
     decoder: SupportedDecoder | null,
   ): Promise<ExternalPresentationStatus | null> {
     const persisted = await this.readPersistedSession();
-    if (!persisted) return null;
+    if (!persisted) {
+      // No session at all. A Tilecast presentation network connection that is
+      // still up is leftover state from a crash: it holds the radio on and keeps
+      // the player on a VLAN it has no reason to be on. Unrelated Wi-Fi profiles
+      // are untouched, because the helper can only name Tilecast's own namespace.
+      await this.presentationNetwork?.cleanupOrphaned().catch((error) => {
+        log.warn(
+          "failed to clean up an orphaned presentation network connection",
+          {
+            error: String(error),
+          },
+        );
+      });
+      return null;
+    }
     const { config, gatewayStarted } = persisted;
     if (isExpired(config.expiresAt)) {
+      // An expired session must never reconnect Wi-Fi. Clean up instead.
       await this.store.delete(SESSION_FILE);
+      await this.presentationNetwork?.cleanupOrphaned().catch(() => undefined);
       return null;
     }
     if (!decoder) {
       log.warn("cannot recover AirPlay session without an H.264 decoder");
       await this.store.delete(SESSION_FILE);
+      await this.presentationNetwork?.cleanupOrphaned().catch(() => undefined);
       return null;
     }
     try {

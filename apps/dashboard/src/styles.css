@@ -1897,6 +1897,189 @@ button.organizer-chip:disabled {
   justify-content: space-between;
   gap: 18px;
 }
+
+.presentation-networks-settings__intro {
+  padding-top: 0;
+}
+.presentation-networks-settings__intro header p,
+.presentation-networks-settings__toolbar p {
+  max-width: 760px;
+  margin: 5px 0 0;
+  color: var(--tc-ink-muted);
+}
+.presentation-networks-settings__toolbar {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 24px 0 12px;
+  border-bottom: 1px solid var(--tc-border);
+}
+.presentation-networks-settings__toolbar h3 {
+  margin: 0;
+}
+.presentation-networks-settings__toolbar .button,
+.presentation-network-row__actions .button,
+.screen-presentation-network-panel__actions .button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.presentation-network-list {
+  display: grid;
+}
+.presentation-network-row {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) auto;
+  gap: 13px;
+  align-items: center;
+  padding: 15px 0;
+  border-bottom: 1px solid var(--tc-border);
+}
+.presentation-network-row__icon {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  color: var(--tc-brand);
+  background: var(--tc-brand-soft);
+  border: 1px solid var(--tc-border);
+  border-radius: var(--tc-radius-sm);
+}
+.presentation-network-row__details {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+.presentation-network-row__details strong {
+  overflow-wrap: anywhere;
+}
+.presentation-network-row__details > span,
+.presentation-network-row__details small {
+  color: var(--tc-ink-muted);
+  font-size: 12px;
+}
+.presentation-network-row__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 7px;
+}
+.presentation-networks-empty {
+  display: grid;
+  justify-items: start;
+  gap: 8px;
+  padding: 34px 0;
+  color: var(--tc-ink-muted);
+}
+.presentation-networks-empty svg {
+  color: var(--tc-brand);
+}
+.presentation-networks-empty h3,
+.presentation-networks-empty p {
+  margin: 0;
+}
+.presentation-networks-empty h3 {
+  color: var(--tc-ink);
+}
+.presentation-network-dialog {
+  width: min(780px, calc(100% - 28px));
+}
+.presentation-network-form {
+  display: grid;
+  gap: 18px;
+}
+.presentation-network-form textarea {
+  width: 100%;
+  min-height: 120px;
+  padding: 8px 10px;
+  color: var(--tc-input-text);
+  background: var(--tc-input-bg);
+  border: 1px solid var(--tc-input-border);
+  border-radius: var(--tc-radius-sm);
+  resize: vertical;
+  font-family: var(--tc-font-mono, monospace);
+  font-size: 12px;
+}
+.presentation-network-form__checkbox {
+  display: flex;
+  align-items: end;
+  min-height: 67px;
+}
+.presentation-network-assignments {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 14px;
+  border: 1px solid var(--tc-border);
+  background: var(--tc-surface-muted);
+}
+.presentation-network-assignments legend {
+  padding: 0 5px;
+  font-weight: 650;
+}
+.presentation-network-assignments p {
+  margin: 0;
+  color: var(--tc-ink-muted);
+  font-size: 12px;
+}
+.presentation-network-assignments__list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 16px;
+}
+.presentation-network-assignments .checkbox-control {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+.screen-presentation-network-panel {
+  margin: 22px 0;
+  padding: 18px;
+  border: 1px solid var(--tc-border);
+  background: var(--tc-surface);
+}
+.screen-presentation-network-panel .readiness-panel__heading {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 18px;
+}
+.screen-presentation-network-panel .readiness-panel__heading h4,
+.screen-presentation-network-panel .readiness-panel__heading p {
+  margin: 0;
+}
+.screen-presentation-network-panel .readiness-panel__heading p {
+  margin-top: 5px;
+  color: var(--tc-ink-muted);
+  font-size: 12px;
+}
+.screen-presentation-network-panel .detail-list {
+  margin: 16px 0 0;
+}
+.screen-presentation-network-panel__controls {
+  display: flex;
+  align-items: end;
+  gap: 12px;
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--tc-border);
+}
+.screen-presentation-network-panel__controls > .field {
+  flex: 1 1 320px;
+}
+.screen-presentation-network-panel__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.screen-presentation-network-panel .field__hint {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 10px;
+}
 .takeover-settings .notice {
   margin: 14px 0;
 }

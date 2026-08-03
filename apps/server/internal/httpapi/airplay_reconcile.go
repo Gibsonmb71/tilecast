@@ -3,11 +3,11 @@ package httpapi
 import (
 	"context"
 	"errors"
-	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/tilecast/tilecast/apps/server/internal/airplay"
 )
 
 // Group AirPlay preparation is a durable state machine, not a goroutine.
@@ -118,9 +118,12 @@ func (s *server) advanceAirplayPreparation(ctx context.Context, sessionID uuid.U
 	var status, targetType string
 	var createdBy *uuid.UUID
 	var expired, preparationExpired bool
+	// The fallback window applies only to a session created before
+	// prepare_deadline_at existed. Every session created since carries its own
+	// durable deadline, which already accounts for a Presentation Network.
 	err = tx.QueryRow(ctx, `SELECT status,target_type,created_by,expires_at<=now(),
 		COALESCE(prepare_deadline_at,created_at+make_interval(secs=>$2))<=now()
-		FROM external_presentation_sessions WHERE id=$1 FOR UPDATE`, sessionID, airplayPreparationWait.Seconds()).
+		FROM external_presentation_sessions WHERE id=$1 FOR UPDATE`, sessionID, airplay.PreparationWait.Seconds()).
 		Scan(&status, &targetType, &createdBy, &expired, &preparationExpired)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return airplayReconcileOutcome{}, nil
@@ -226,12 +229,4 @@ func insertAirplayGatewayStart(ctx context.Context, tx pgx.Tx, record airplaySes
 func airplayPreparationCountsFrom(ctx context.Context, q airplayQuerier, sessionID uuid.UUID) (ready, failed, total int, err error) {
 	err = q.QueryRow(ctx, `SELECT count(*),count(*) FILTER(WHERE state IN ('waiting','connected')),count(*) FILTER(WHERE state IN ('failed','degraded','stopped')) FROM external_presentation_screen_states WHERE session_id=$1`, sessionID).Scan(&total, &ready, &failed)
 	return
-}
-
-// airplayPreparationDeadline is the durable bound reconciliation enforces. It is
-// stamped once when the session is created and re-stamped when a multicast
-// fallback restarts preparation, so restarting the server neither loses it nor
-// grants the session a fresh window.
-func airplayPreparationDeadline(from time.Time) time.Time {
-	return from.Add(airplayPreparationWait)
 }

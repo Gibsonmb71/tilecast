@@ -62,6 +62,17 @@ export interface ExternalPresentationConfig {
    * server rejects any other value before a command is ever queued.
    */
   audioMode: AirplayAudioMode;
+  /**
+   * The Presentation Network the *gateway* must join for this session, by
+   * identifier only. Absent for an ordinary Ethernet-only session, and absent
+   * from a follower's payload entirely: exactly one display joins Wi-Fi, and a
+   * follower neither needs the network nor ever receives its credentials.
+   *
+   * The credential is deliberately not here. This value is persisted in
+   * `airplay-session.json` and stored in a durable server command row, neither of
+   * which may ever contain a Wi-Fi password.
+   */
+  presentationNetworkId?: string;
 }
 
 function stringField(value: Record<string, unknown>, key: string): string {
@@ -136,7 +147,27 @@ export function parseExternalPresentationConfig(
         : undefined,
     profile: raw["profile"] as AirplayVideoProfile,
     audioMode: audioMode as AirplayAudioMode,
+    ...(typeof raw["presentationNetworkId"] === "string"
+      ? { presentationNetworkId: raw["presentationNetworkId"] }
+      : {}),
   };
+  if (config.presentationNetworkId !== undefined) {
+    if (
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+        config.presentationNetworkId,
+      )
+    ) {
+      throw new Error("AirPlay Presentation Network ID is invalid");
+    }
+    if (config.role === "receiver") {
+      // A follower must never be asked to join Wi-Fi. The server does not send
+      // this field to a receiver; rejecting it here means a malformed or tampered
+      // command cannot make a follower try.
+      throw new Error(
+        "an AirPlay group receiver must not be given a Presentation Network",
+      );
+    }
+  }
   if (config.provider !== "airplay")
     throw new Error("AirPlay provider is invalid");
   if (!isAirplayProfile(config.profile))
@@ -158,6 +189,14 @@ export interface ExternalPresentationStatus {
   lastRtpAt?: string;
   failureCode?: string;
   failureMessage?: string;
+  /**
+   * Where the gateway's Presentation Network stands. Absent for a session with no
+   * Presentation Network and for every follower, which is what makes it visible
+   * evidence that followers stay Ethernet-only.
+   */
+  presentationNetwork?: "joining" | "connected" | "failed";
+  /** Display name, for Studio progress copy. Never the SSID's credential. */
+  presentationNetworkName?: string;
 }
 
 export function profileDimensions(profile: AirplayVideoProfile): {
@@ -240,18 +279,38 @@ export interface GatewayCandidate {
   airplaySupported: boolean;
   hardwareH264Decode: boolean;
   wired: boolean;
+  /**
+   * Presentation Network eligibility, mirroring the server's authoritative
+   * policy in internal/airplay. These only matter when the target uses
+   * Presentation Networks; a room with no assignment ranks exactly as before.
+   */
+  presentationNetworkAssigned?: boolean;
+  presentationNetworkReady?: boolean;
+  wifiAdapterPresent?: boolean;
+}
+
+export interface GatewayRequirement {
+  presentationNetwork?: boolean;
 }
 
 /** Stable gateway selection: capability order first, screen identity last. */
 export function chooseAirplayGateway(
   candidates: readonly GatewayCandidate[],
   preferredId?: string | null,
+  requirement: GatewayRequirement = {},
 ): GatewayCandidate | null {
   const eligible = candidates.filter(
     (candidate) =>
       candidate.online &&
       candidate.platform === "linux" &&
-      candidate.airplaySupported,
+      candidate.airplaySupported &&
+      // Exactly one display joins Wi-Fi. A candidate that cannot is filtered out
+      // of eligibility rather than ranked lower, so a preferred-but-incapable
+      // gateway falls back to one that works instead of failing the room.
+      (!requirement.presentationNetwork ||
+        (candidate.presentationNetworkAssigned === true &&
+          candidate.wifiAdapterPresent === true &&
+          candidate.presentationNetworkReady === true)),
   );
   const preferred = eligible.find((candidate) => candidate.id === preferredId);
   if (preferred) return preferred;

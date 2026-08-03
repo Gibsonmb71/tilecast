@@ -2419,6 +2419,280 @@ paths:
       responses:
         "200": { description: Takeover cancelled }
         "409": { description: Takeover already ended }
+  /api/v1/presentation-networks:
+    get:
+      operationId: listPresentationNetworks
+      summary: List Presentation Networks
+      description: >-
+        Owner and Administrator read. Responses include only redacted network
+        metadata and credentialSet; encrypted credentials and plaintext secrets
+        are never returned to Studio.
+      responses:
+        "200":
+          description: Presentation Networks and supported authentication types
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PresentationNetworkListResponse"
+        "403": { description: Owner or Administrator access is required }
+    post:
+      operationId: createPresentationNetwork
+      summary: Create a Presentation Network
+      parameters:
+        - $ref: "#/components/parameters/CSRFToken"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PresentationNetworkCreateInput"
+      responses:
+        "201":
+          description: Network created; the credential is accepted but not returned
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PresentationNetworkResponse"
+        "403": { description: Insufficient role or CSRF failure }
+        "409":
+          {
+            description: Encryption key unavailable or network name already exists,
+          }
+        "422":
+          {
+            description: Network,
+            authentication,
+            or credential validation failed,
+          }
+  /api/v1/presentation-networks/{id}:
+    parameters:
+      - $ref: "#/components/parameters/ResourceID"
+    get:
+      operationId: getPresentationNetwork
+      summary: Read a redacted Presentation Network and its assignments
+      responses:
+        "200":
+          description: Network metadata and assigned Linux screens
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PresentationNetworkDetailResponse"
+        "403": { description: Owner or Administrator access is required }
+        "404": { description: Presentation Network not found }
+    patch:
+      operationId: updatePresentationNetwork
+      summary: Update a Presentation Network
+      description: >-
+        The secret field is write-only. Omitting it retains the saved
+        credential; providing a new value rotates it and increments
+        configRevision. No response contains the secret or ciphertext.
+      parameters:
+        - $ref: "#/components/parameters/CSRFToken"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PresentationNetworkUpdateInput"
+      responses:
+        "200":
+          description: Redacted network after the update
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PresentationNetworkResponse"
+        "403": { description: Insufficient role or CSRF failure }
+        "404": { description: Presentation Network not found }
+        "409":
+          {
+            description: Encryption key unavailable or stored credential unreadable,
+          }
+        "422":
+          {
+            description: Network,
+            authentication,
+            or credential validation failed,
+          }
+    delete:
+      operationId: deletePresentationNetwork
+      summary: Delete a Presentation Network
+      description: Assignments cascade and affected screens receive a durable configuration bump.
+      parameters:
+        - $ref: "#/components/parameters/CSRFToken"
+      responses:
+        "200":
+          description: Deleted redacted network
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PresentationNetworkResponse"
+        "403": { description: Insufficient role or CSRF failure }
+        "404": { description: Presentation Network not found }
+  /api/v1/presentation-networks/{id}/screens:
+    parameters:
+      - $ref: "#/components/parameters/ResourceID"
+    put:
+      operationId: replacePresentationNetworkAssignments
+      summary: Replace the Linux screen assignments for a Presentation Network
+      parameters:
+        - $ref: "#/components/parameters/CSRFToken"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PresentationNetworkAssignmentsInput"
+      responses:
+        "200":
+          description: Exact assignment set after replacement
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PresentationNetworkAssignmentsResponse"
+        "403":
+          {
+            description: Insufficient role,
+            CSRF failure,
+            or screen outside scope,
+          }
+        "404": { description: Presentation Network or screen not found }
+        "422": { description: Screen is not Linux or assignment limit exceeded }
+  /api/v1/presentation-networks/{id}/test:
+    parameters:
+      - $ref: "#/components/parameters/ResourceID"
+    post:
+      operationId: testPresentationNetwork
+      summary: Queue a bounded Presentation Network connection test
+      description: >-
+        The selected assigned Linux player joins and leaves the network without
+        starting AirPlay. The durable command contains only the network ID and
+        timeout; credentials are fetched separately by the authenticated player.
+      parameters:
+        - $ref: "#/components/parameters/CSRFToken"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PresentationNetworkTestInput"
+      responses:
+        "202":
+          description: Connection test command queued
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PresentationNetworkTestResponse"
+        "403":
+          {
+            description: Insufficient role,
+            CSRF failure,
+            or screen outside scope,
+          }
+        "404": { description: Presentation Network or screen not found }
+        "409":
+          {
+            description: Encryption key unavailable or AirPlay is active on the screen,
+          }
+        "422": { description: Screen is not the assigned Linux player }
+  /api/v1/screens/{id}/presentation-network:
+    parameters:
+      - $ref: "#/components/parameters/ResourceID"
+    get:
+      operationId: getScreenPresentationNetwork
+      summary: Read a Linux screen's Presentation Network readiness
+      description: >-
+        Readiness is server-derived from the assignment and the player's
+        reported helper, NetworkManager, Wi-Fi, revision, and connection facts.
+      responses:
+        "200":
+          description: Assignment and operator-facing readiness state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PresentationNetworkReadinessResponse"
+        "403": { description: Screen is outside the caller's scope }
+        "404": { description: Screen not found }
+    put:
+      operationId: assignScreenPresentationNetwork
+      summary: Assign one Presentation Network to a Linux screen
+      parameters:
+        - $ref: "#/components/parameters/CSRFToken"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ScreenPresentationNetworkInput"
+      responses:
+        "200":
+          description: Assignment after replacement
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PresentationNetworkAssignmentResponse"
+        "403":
+          {
+            description: Insufficient role,
+            CSRF failure,
+            or screen outside scope,
+          }
+        "404": { description: Screen or Presentation Network not found }
+        "422": { description: Screen is not Linux }
+    delete:
+      operationId: unassignScreenPresentationNetwork
+      summary: Remove a screen's Presentation Network assignment
+      parameters:
+        - $ref: "#/components/parameters/CSRFToken"
+      responses:
+        "200":
+          description: Screen assignment after removal
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PresentationNetworkAssignmentResponse"
+        "403":
+          {
+            description: Insufficient role,
+            CSRF failure,
+            or screen outside scope,
+          }
+        "404": { description: Screen not found }
+  /api/v1/player/presentation-network:
+    get:
+      operationId: getPlayerPresentationNetwork
+      summary: Fetch the assigned network provisioning material
+      description: >-
+        Device-authenticated only. The server derives the assignment from the
+        authenticated screen and accepts no network ID. The response is marked
+        Cache-Control: no-store and contains the plaintext credential only for
+        the player to build its temporary NetworkManager profile.
+      security:
+        - deviceBearer: []
+      responses:
+        "200":
+          description: Assigned network and credential; never log or persist this response
+          headers:
+            Cache-Control:
+              schema: { type: string, const: no-store }
+            Pragma:
+              schema: { type: string, const: no-cache }
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PresentationNetworkProvisioningResponse"
+        "401":
+          {
+            description: Permanent player credential missing,
+            invalid,
+            or revoked,
+          }
+        "404": { description: Authenticated screen has no assignment }
+        "409":
+          {
+            description: Stored credential cannot be decrypted with the configured key,
+          }
+        "503":
+          { description: Presentation Network encryption key is not configured }
   /api/v1/presentation-overrides:
     get:
       operationId: listPresentationOverrides
@@ -2835,6 +3109,316 @@ components:
       scheme: bearer
       bearerFormat: Tilecast device credential
   schemas:
+    PresentationNetworkSecurity:
+      type: string
+      enum: [wpa_psk, wpa_eap_peap_mschapv2]
+      description: WPA2/WPA3 Personal PSK or WPA2-Enterprise PEAP/MSCHAPv2.
+    PresentationNetworkAuth:
+      type: object
+      additionalProperties: false
+      properties:
+        identity: { type: string, maxLength: 253 }
+        anonymousIdentity: { type: string, maxLength: 253 }
+        caCertificatePem:
+          type: string
+          maxLength: 32768
+          description: Public CA certificate chain for Enterprise server validation.
+        domainSuffixMatch:
+          type: string
+          maxLength: 253
+          description: Expected RADIUS server domain; requires caCertificatePem.
+    PresentationNetwork:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          id,
+          name,
+          ssid,
+          hidden,
+          security,
+          securityLabel,
+          auth,
+          credentialSet,
+          configRevision,
+          assignedScreens,
+          createdAt,
+          updatedAt,
+        ]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string, minLength: 1, maxLength: 120 }
+        ssid: { type: string, minLength: 1, maxLength: 32 }
+        hidden: { type: boolean }
+        security: { $ref: "#/components/schemas/PresentationNetworkSecurity" }
+        securityLabel: { type: string }
+        auth: { $ref: "#/components/schemas/PresentationNetworkAuth" }
+        credentialSet:
+          type: boolean
+          description: True means a credential exists; its value is never returned.
+        secretUpdatedAt: { type: string, format: date-time }
+        configRevision: { type: integer, format: int64, minimum: 1 }
+        assignedScreens: { type: integer, minimum: 0 }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    PresentationNetworkSecret:
+      type: string
+      format: password
+      minLength: 1
+      maxLength: 128
+      writeOnly: true
+      description: >-
+        WPA PSK/passphrase or Enterprise password. Write-only; never returned
+        by Studio, logged, audited, or placed in a player command.
+    PresentationNetworkCreateInput:
+      type: object
+      additionalProperties: false
+      required: [name, ssid, hidden, security, secret]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 120 }
+        ssid: { type: string, minLength: 1, maxLength: 32 }
+        hidden: { type: boolean, default: false }
+        security: { $ref: "#/components/schemas/PresentationNetworkSecurity" }
+        secret: { $ref: "#/components/schemas/PresentationNetworkSecret" }
+        identity: { type: string, maxLength: 253 }
+        anonymousIdentity: { type: string, maxLength: 253 }
+        caCertificatePem: { type: string, maxLength: 32768 }
+        domainSuffixMatch: { type: string, maxLength: 253 }
+    PresentationNetworkUpdateInput:
+      type: object
+      additionalProperties: false
+      required: [name, ssid, hidden, security]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 120 }
+        ssid: { type: string, minLength: 1, maxLength: 32 }
+        hidden: { type: boolean }
+        security: { $ref: "#/components/schemas/PresentationNetworkSecurity" }
+        secret: { $ref: "#/components/schemas/PresentationNetworkSecret" }
+        identity: { type: string, maxLength: 253 }
+        anonymousIdentity: { type: string, maxLength: 253 }
+        caCertificatePem: { type: string, maxLength: 32768 }
+        domainSuffixMatch: { type: string, maxLength: 253 }
+    PresentationNetworkAssignment:
+      type: object
+      additionalProperties: false
+      required: [screenId, screenName, platform]
+      properties:
+        screenId: { type: string, format: uuid }
+        screenName: { type: string }
+        platform: { type: string }
+        presentationNetworkId: { type: string, format: uuid }
+        presentationNetworkName: { type: string }
+        assignedAt: { type: string, format: date-time }
+    PresentationNetworkListResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: object
+          required:
+            [
+              items,
+              credentialsAvailable,
+              credentialsUnavailableReason,
+              supportedSecurity,
+            ]
+          properties:
+            items:
+              type: array
+              items: { $ref: "#/components/schemas/PresentationNetwork" }
+            credentialsAvailable: { type: boolean }
+            credentialsUnavailableReason: { type: string }
+            supportedSecurity:
+              type: array
+              items:
+                type: object
+                required: [value, label, enterprise]
+                properties:
+                  value:
+                    { $ref: "#/components/schemas/PresentationNetworkSecurity" }
+                  label: { type: string }
+                  enterprise: { type: boolean }
+    PresentationNetworkResponse:
+      type: object
+      required: [data]
+      properties:
+        data: { $ref: "#/components/schemas/PresentationNetwork" }
+    PresentationNetworkDetailResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: object
+          required: [network, assignments]
+          properties:
+            network: { $ref: "#/components/schemas/PresentationNetwork" }
+            assignments:
+              type: array
+              items:
+                { $ref: "#/components/schemas/PresentationNetworkAssignment" }
+    PresentationNetworkAssignmentsInput:
+      type: object
+      additionalProperties: false
+      required: [screenIds]
+      properties:
+        screenIds:
+          type: array
+          maxItems: 500
+          items: { type: string, format: uuid }
+    PresentationNetworkAssignmentsResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: object
+          required: [assignments]
+          properties:
+            assignments:
+              type: array
+              items:
+                { $ref: "#/components/schemas/PresentationNetworkAssignment" }
+    ScreenPresentationNetworkInput:
+      type: object
+      additionalProperties: false
+      required: [presentationNetworkId]
+      properties:
+        presentationNetworkId: { type: string, format: uuid }
+    PresentationNetworkAssignmentResponse:
+      type: object
+      required: [data]
+      properties:
+        data: { $ref: "#/components/schemas/PresentationNetworkAssignment" }
+    PresentationNetworkReadinessStatus:
+      type: string
+      enum:
+        [
+          not_applicable,
+          network_manager_unavailable,
+          helper_missing,
+          helper_unhealthy,
+          unsupported,
+          wifi_adapter_unavailable,
+          unassigned,
+          reporting_pending,
+          connected,
+          failed,
+          configuration_pending,
+          ready,
+        ]
+    PresentationNetworkReadiness:
+      type: object
+      additionalProperties: false
+      required:
+        [screenId, platform, applicable, status, detail, credentialsAvailable]
+      properties:
+        screenId: { type: string, format: uuid }
+        platform: { type: string }
+        presentationNetworkId: { type: string, format: uuid }
+        presentationNetworkName: { type: string }
+        assignedAt: { type: string, format: date-time }
+        applicable: { type: boolean }
+        status:
+          { $ref: "#/components/schemas/PresentationNetworkReadinessStatus" }
+        detail: { type: string }
+        helperState:
+          { type: string, enum: [ok, missing, unhealthy, unsupported] }
+        networkManagerAvailable: { type: boolean }
+        wifiAdapterPresent: { type: boolean }
+        radioEnabled: { type: boolean }
+        reportedState:
+          {
+            type: string,
+            enum:
+              [
+                unsupported,
+                unassigned,
+                pending,
+                provisioned,
+                joining,
+                connected,
+                failed,
+              ],
+          }
+        installedNetworkId: { type: string, format: uuid }
+        installedRevision: { type: integer, format: int64 }
+        activeNetworkId: { type: string, format: uuid }
+        lastConnectedAt: { type: string, format: date-time }
+        lastFailureAt: { type: string, format: date-time }
+        lastFailureCode: { type: string }
+        limitation: { type: string }
+        wiredInterfaceAvailable: { type: boolean }
+        wiredIpv4: { type: string, format: ipv4 }
+        credentialsAvailable: { type: boolean }
+    PresentationNetworkReadinessResponse:
+      type: object
+      required: [data]
+      properties:
+        data: { $ref: "#/components/schemas/PresentationNetworkReadiness" }
+    PresentationNetworkTestInput:
+      type: object
+      additionalProperties: false
+      required: [screenId]
+      properties:
+        screenId: { type: string, format: uuid }
+    PresentationNetworkTestResult:
+      type: object
+      required: [commandId, screenId, timeoutSeconds]
+      properties:
+        commandId: { type: string, format: uuid }
+        screenId: { type: string, format: uuid }
+        timeoutSeconds: { type: integer, minimum: 15, maximum: 180 }
+    PresentationNetworkTestResponse:
+      type: object
+      required: [data]
+      properties:
+        data: { $ref: "#/components/schemas/PresentationNetworkTestResult" }
+    PresentationNetworkProvisioningMaterial:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          presentationNetworkId,
+          name,
+          ssid,
+          hidden,
+          security,
+          auth,
+          configRevision,
+          profileName,
+          secret,
+        ]
+      properties:
+        presentationNetworkId: { type: string, format: uuid }
+        name: { type: string }
+        ssid: { type: string }
+        hidden: { type: boolean }
+        security: { $ref: "#/components/schemas/PresentationNetworkSecurity" }
+        auth: { $ref: "#/components/schemas/PresentationNetworkAuth" }
+        configRevision: { type: integer, format: int64, minimum: 1 }
+        profileName: { type: string }
+        secret:
+          type: string
+          format: password
+          readOnly: true
+          description: Plaintext credential returned only to the authenticated player over a no-store response.
+    PresentationNetworkProvisioningResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          {
+            $ref: "#/components/schemas/PresentationNetworkProvisioningMaterial",
+          }
+    PresentationNetworkError:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code: { type: string }
+            message: { type: string }
     SubmitContentRequest:
       type: object
       additionalProperties: false

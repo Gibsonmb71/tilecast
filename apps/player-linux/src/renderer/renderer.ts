@@ -139,6 +139,11 @@ interface RendererPresentation {
   role?: string;
   transport?: string;
   audioMode?: string;
+  /**
+   * Presentation Network progress for the AirPlay ready page. Deliberately just a
+   * phase: the network's name, its SSID, and its credential never reach the TV.
+   */
+  presentationNetwork?: "joining" | "connected" | "failed";
 }
 
 interface TilecastBridge {
@@ -2133,6 +2138,33 @@ function present(presentation: RendererPresentation): void {
       const expires = presentation.expiresAt
         ? new Date(presentation.expiresAt).toLocaleString()
         : "the scheduled end time";
+      // While the gateway is joining its Presentation Network there is no PIN to
+      // offer yet: the receiver is deliberately not advertised until the network
+      // is up, so telling someone to pick it from their AirPlay list would be
+      // wrong. Say what is happening instead.
+      //
+      // The copy is deliberately generic. Neither the network's name, its SSID,
+      // nor anything resembling a credential belongs on a screen that a room full
+      // of people can see; Studio, where an operator is already signed in, shows
+      // the named progress.
+      if (presentation.presentationNetwork === "joining") {
+        showMessage(`
+          <h1>Preparing to Present</h1>
+          <h2>${escapeHtml(presentation.receiverName ?? "Tilecast AirPlay")}</h2>
+          <p>Connecting to the presentation network…</p>
+          <p>This display will appear in Screen Mirroring shortly.</p>
+        `);
+        break;
+      }
+      if (presentation.presentationNetwork === "failed") {
+        showMessage(`
+          <h1>Cannot Present</h1>
+          <h2>${escapeHtml(presentation.receiverName ?? "Tilecast AirPlay")}</h2>
+          <p>This display could not join the presentation network.</p>
+          <p>Ask an administrator to check Presentation Networks in Tilecast Studio.</p>
+        `);
+        break;
+      }
       showMessage(`
         <h1>Ready to Present</h1>
         <h2>${escapeHtml(presentation.receiverName ?? "Tilecast AirPlay")}</h2>

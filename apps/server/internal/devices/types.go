@@ -311,6 +311,33 @@ type Heartbeat struct {
 	DisplayPowerStateObservedAt       *time.Time        `json:"displayPowerStateObservedAt,omitempty"`
 	DisplayControlPolicyState         string            `json:"displayControlPolicyState,omitempty"`
 	DisplayControlError               string            `json:"displayControlError,omitempty"`
+
+	// Presentation Network capability and state, reported by the Linux probe.
+	//
+	// Deliberately separate from the ordinary telemetry gauges: NetworkLinkType
+	// keeps describing the interface that carries the default route, so a
+	// temporary Wi-Fi sidecar never makes the fleet's link-quality metrics
+	// describe the wrong path. Nothing here can carry a credential — the fields
+	// are booleans, enumerated states, identifiers, and revisions.
+	PresentationNetworkSupported        *bool      `json:"presentationNetworkSupported,omitempty"`
+	PresentationNetworkHelperState      string     `json:"presentationNetworkHelperState,omitempty"`
+	PresentationNetworkManagerAvailable *bool      `json:"presentationNetworkManagerAvailable,omitempty"`
+	PresentationNetworkWifiAdapter      *bool      `json:"presentationNetworkWifiAdapter,omitempty"`
+	PresentationNetworkRadioEnabled     *bool      `json:"presentationNetworkRadioEnabled,omitempty"`
+	PresentationNetworkState            string     `json:"presentationNetworkState,omitempty"`
+	PresentationNetworkInstalledID      *uuid.UUID `json:"presentationNetworkInstalledId,omitempty"`
+	PresentationNetworkInstalledRev     *int64     `json:"presentationNetworkInstalledRevision,omitempty"`
+	PresentationNetworkActiveID         *uuid.UUID `json:"presentationNetworkActiveId,omitempty"`
+	PresentationNetworkLastConnectedAt  *time.Time `json:"presentationNetworkLastConnectedAt,omitempty"`
+	PresentationNetworkLastFailureAt    *time.Time `json:"presentationNetworkLastFailureAt,omitempty"`
+	PresentationNetworkLastFailureCode  string     `json:"presentationNetworkLastFailureCode,omitempty"`
+	PresentationNetworkLimitation       string     `json:"presentationNetworkLimitation,omitempty"`
+	// The wired facts group AirPlay RTP fan-out needs. A player can hold two
+	// addresses once it joins a Presentation Network, at which point the address
+	// a request happened to arrive from is no longer an unambiguous answer for
+	// "where do I send this room's video".
+	WiredInterfaceAvailable *bool  `json:"wiredInterfaceAvailable,omitempty"`
+	WiredIPv4               string `json:"wiredIpv4,omitempty"`
 }
 
 func addressString(address netip.Addr) *string {

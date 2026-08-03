@@ -31,6 +31,7 @@ import (
 	"github.com/tilecast/tilecast/apps/server/internal/playlists"
 	"github.com/tilecast/tilecast/apps/server/internal/plugins"
 	"github.com/tilecast/tilecast/apps/server/internal/presentations"
+	"github.com/tilecast/tilecast/apps/server/internal/presentnet"
 	"github.com/tilecast/tilecast/apps/server/internal/scheduling"
 	"github.com/tilecast/tilecast/apps/server/internal/settings"
 	"github.com/tilecast/tilecast/apps/server/internal/snapshots"
@@ -39,36 +40,37 @@ import (
 )
 
 type Dependencies struct {
-	Auth                *auth.Service
-	Devices             *devices.Service
-	Media               *media.Service
-	Forms               *forms.Service
-	Playlists           *playlists.Service
-	Campaigns           *campaigns.Service
-	Presentations       *presentations.Service
-	Plugins             *plugins.Service
-	Layouts             *layouts.Service
-	Scheduling          *scheduling.Service
-	Settings            *settings.Service
-	Updates             *updates.Service
-	Alerts              *alerts.Service
-	Notifications       *notify.Service
-	ContentHealth       *contenthealth.Service
-	Fleet               *fleetops.Service
-	Integrations        *integrations.Service
-	Approvals           *approvals.Service
-	Snapshots           *snapshots.Service
-	Span                *span.Service
-	DB                  *pgxpool.Pool
-	Logger              *slog.Logger
-	CookieName          string
-	SecureCookies       bool
-	ReleasePublishToken string
-	PublicURL           string
-	Operations          OperationsConfig
-	Backups             *backup.Service
-	BackupWorker        *backup.Worker
-	BackupLimits        backup.Limits
+	Auth                 *auth.Service
+	Devices              *devices.Service
+	Media                *media.Service
+	Forms                *forms.Service
+	Playlists            *playlists.Service
+	Campaigns            *campaigns.Service
+	Presentations        *presentations.Service
+	Plugins              *plugins.Service
+	Layouts              *layouts.Service
+	Scheduling           *scheduling.Service
+	Settings             *settings.Service
+	Updates              *updates.Service
+	Alerts               *alerts.Service
+	Notifications        *notify.Service
+	ContentHealth        *contenthealth.Service
+	Fleet                *fleetops.Service
+	Integrations         *integrations.Service
+	Approvals            *approvals.Service
+	Snapshots            *snapshots.Service
+	Span                 *span.Service
+	PresentationNetworks *presentnet.Service
+	DB                   *pgxpool.Pool
+	Logger               *slog.Logger
+	CookieName           string
+	SecureCookies        bool
+	ReleasePublishToken  string
+	PublicURL            string
+	Operations           OperationsConfig
+	Backups              *backup.Service
+	BackupWorker         *backup.Worker
+	BackupLimits         backup.Limits
 }
 
 type OperationsConfig struct {
@@ -110,6 +112,7 @@ type server struct {
 	approvals                     *approvals.Service
 	snapshots                     *snapshots.Service
 	span                          *span.Service
+	presentationNetworks          *presentnet.Service
 	liveStreams                   *livestream.Service
 	releasePublishTokenHash       [32]byte
 	releasePublishTokenConfigured bool
@@ -176,6 +179,7 @@ func New(deps Dependencies) *API {
 		approvals:            deps.Approvals,
 		snapshots:            deps.Snapshots,
 		span:                 deps.Span,
+		presentationNetworks: deps.PresentationNetworks,
 		liveStreams:          livestream.NewService(deps.Devices),
 		startedAt:            time.Now(),
 		backups:              deps.Backups,

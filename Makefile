@@ -1,4 +1,4 @@
-.PHONY: android-build android-check bootstrap build check dev-dashboard dev-server docs-check format test
+.PHONY: android-build android-check bootstrap build check dev-dashboard dev-server docs-check format helper-check test
 
 bootstrap:
 	npm install
@@ -18,7 +18,14 @@ check:
 	npm run lint
 	npm test
 	cd apps/server && test -z "$$(gofmt -l .)" && go vet ./... && go test ./...
+	$(MAKE) helper-check
 	cd apps/player-android && ./gradlew testDebugUnitTest lintDebug
+
+# The root-owned Presentation Network helper. Its nmcli and NetworkManager
+# interaction is mocked, so this needs neither a Wi-Fi adapter nor a running
+# NetworkManager daemon.
+helper-check:
+	python3 -m unittest discover -s apps/player-linux/helper
 
 android-build:
 	cd apps/player-android && ./gradlew assembleDebug assembleRelease
@@ -39,6 +46,7 @@ format:
 test:
 	npm test
 	cd apps/server && go test ./...
+	python3 -m unittest discover -s apps/player-linux/helper
 
 docs-check:
 	bash scripts/check-docs-ste.sh

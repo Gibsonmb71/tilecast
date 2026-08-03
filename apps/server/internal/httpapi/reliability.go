@@ -68,6 +68,26 @@ func (s *server) screenReliability(w http.ResponseWriter, r *http.Request) {
 		'displayControlLastCommandSentAt',ps.display_control_last_command_sent_at,'displayControlLastStateConfirmedAt',ps.display_control_last_state_confirmed_at,
 		'displayControlError',ps.display_control_error,
 		'powerAssist',jsonb_build_object('deviceSleep',COALESCE(pa.device_sleep,'untested'),'tvStandby',COALESCE(pa.tv_standby,'untested'),'deviceWake',COALESCE(pa.device_wake,'untested'),'tvWake',COALESCE(pa.tv_wake,'untested'),'inputSelection',COALESCE(pa.input_selection,'untested'),'tilecastStartup',COALESCE(pa.tilecast_startup,'untested'),'lastTestedAt',pa.last_tested_at)
+	) || jsonb_build_object(
+		-- Presentation Network capability. Studio composes one operator-facing
+		-- status from these; the narrower wiredIpv4 is what AirPlay group RTP
+		-- fan-out uses, and it is deliberately not the same field as the screen's
+		-- last_known_ip.
+		'presentationNetworkSupported',ps.presentation_network_supported,
+		'presentationNetworkHelperState',ps.presentation_network_helper_state,
+		'presentationNetworkManagerAvailable',ps.presentation_network_manager_available,
+		'presentationNetworkWifiAdapter',ps.presentation_network_wifi_adapter,
+		'presentationNetworkRadioEnabled',ps.presentation_network_radio_enabled,
+		'presentationNetworkState',ps.presentation_network_state,
+		'presentationNetworkInstalledId',ps.presentation_network_installed_id,
+		'presentationNetworkInstalledRevision',ps.presentation_network_installed_revision,
+		'presentationNetworkActiveId',ps.presentation_network_active_id,
+		'presentationNetworkLastConnectedAt',ps.presentation_network_last_connected_at,
+		'presentationNetworkLastFailureAt',ps.presentation_network_last_failure_at,
+		'presentationNetworkLastFailureCode',ps.presentation_network_last_failure_code,
+		'presentationNetworkLimitation',ps.presentation_network_limitation,
+		'wiredInterfaceAvailable',ps.wired_interface_available,
+		'wiredIpv4',host(ps.wired_ipv4)
 	) FROM screens sc LEFT JOIN screen_player_status ps ON ps.screen_id=sc.id LEFT JOIN screen_power_assist_results pa ON pa.screen_id=sc.id WHERE sc.id=$1`, id, detailedDiagnostics(r)).Scan(&raw)
 	if errors.Is(err, pgx.ErrNoRows) {
 		writeError(w, 404, "screen_not_found", "Screen was not found.")
