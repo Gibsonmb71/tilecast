@@ -11,7 +11,25 @@ import {
   synchronizedPlaybackPosition,
   type SynchronizedPlayingPresentation,
 } from "./synchronized-playback";
-import type { Manifest, ManifestItem, ManifestSchedule } from "./types";
+import type {
+  Manifest,
+  ManifestAsset,
+  ManifestItem,
+  ManifestSchedule,
+} from "./types";
+
+const videoAsset = (
+  variantId: string,
+  durationSeconds: number,
+): ManifestAsset => ({
+  assetId: "video-asset",
+  variantId,
+  mimeType: "video/mp4",
+  sha256: "0".repeat(64),
+  fileSize: 1_024,
+  durationSeconds,
+  downloadPath: `/media/${variantId}`,
+});
 
 const image = (id: string, durationMs: number): PresentationItem => ({
   id,
@@ -248,6 +266,54 @@ describe("effectiveDurationMs", () => {
         undefined,
       ),
     ).toBe(20_000);
+  });
+
+  it("ignores a renderer fallback duration on video and uses the asset length", () => {
+    expect(
+      effectiveDurationMs(
+        // What the renderer would carry if the item delegated its duration:
+        // a generic fallback, not the length of the file.
+        {
+          ...video("video-2"),
+          durationMs: 30_000,
+          videoStartOffsetMs: null,
+          videoEndOffsetMs: null,
+        },
+        {
+          id: "video-2",
+          assetId: "video-asset",
+          variantId: "v-video-2",
+          assetType: "video",
+          fitMode: "contain",
+          transition: "none",
+          audioEnabled: true,
+          volume: 1,
+          deliveryPolicy: "download",
+        },
+        videoAsset("v-video-2", 92),
+      ),
+    ).toBe(92_000);
+  });
+
+  it("still honours a duration the manifest actually authored", () => {
+    expect(
+      effectiveDurationMs(
+        { ...video("video-3"), durationMs: 30_000 },
+        {
+          id: "video-3",
+          assetId: "video-asset",
+          variantId: "v-video-3",
+          assetType: "video",
+          durationMs: 8_000,
+          fitMode: "contain",
+          transition: "none",
+          audioEnabled: true,
+          volume: 1,
+          deliveryPolicy: "download",
+        },
+        undefined,
+      ),
+    ).toBe(8_000);
   });
 });
 

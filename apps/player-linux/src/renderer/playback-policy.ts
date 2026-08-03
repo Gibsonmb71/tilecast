@@ -218,6 +218,29 @@ function recordVideoSyncSeek(state: VideoSyncState, nowMs: number): void {
   state.lastSeekAtMs = nowMs;
 }
 
+// ------------------------------------------------------- crossfade decision
+//
+// Nothing needs to dissolve into itself. A shared timeline re-delivers the
+// same item every time a grouped playlist loops it — a single video looping on
+// a display group is the ordinary case — and each of those swaps mounts a
+// second decoder for the same file and fades it over the first. That is the
+// decoder contention the crossfade window exists to bound, spent on a
+// transition with nothing to show: both layers hold the same frame. An
+// ungrouped screen never pays it, because a looping single video restarts in
+// place on one element, which is why the same playlist judders in a group and
+// not out of it.
+
+function transitionForSwap(
+  configured: string | undefined,
+  outgoingItemId: string | null,
+  incomingItemId: string,
+): string {
+  if (outgoingItemId !== null && outgoingItemId === incomingItemId) {
+    return "none";
+  }
+  return configured || "fade";
+}
+
 // ------------------------------------------------------- crossfade cleanup
 //
 // The delayed teardown after a crossfade must act on the layer that actually
@@ -259,6 +282,7 @@ function shouldPauseOutgoingLayer(input: OutgoingLayerCleanup): boolean {
   recordVideoSyncSeek,
   shouldClearOutgoingLayer,
   shouldPauseOutgoingLayer,
+  transitionForSwap,
   videoSyncCorrection,
   zoneStepAllowed,
   SYNC_IGNORE_DRIFT_MS,

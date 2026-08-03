@@ -92,8 +92,14 @@ export function effectiveDurationMs(
   manifestItem: ManifestItem | undefined,
   asset: ManifestAsset | undefined,
 ): number {
+  // Only the manifest carries an authored duration. A video's rendered
+  // duration may be a renderer-side fallback rather than the file's length,
+  // and taking it as authored would hand every video the same slot on the
+  // shared timeline no matter how long it actually runs.
   const explicit = positiveDuration(
-    manifestItem?.durationMs ?? rendered.durationMs,
+    rendered.kind === "video"
+      ? manifestItem?.durationMs
+      : (manifestItem?.durationMs ?? rendered.durationMs),
   );
   if (explicit !== null) {
     return explicit;

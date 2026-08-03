@@ -408,12 +408,18 @@ function swapLayers(): void {
   // Two fullscreen decoders may overlap for the fade and no longer: on Intel
   // Gen7 with VA-API and a single-fullscreen overlay, that contention is what
   // makes a switch stutter or trip out. Pausing only once the incoming layer is
-  // fully opaque means the frame left behind is frozen, never black.
-  window.setTimeout(() => {
-    if (shouldPauseOutgoingLayer(state())) {
-      pauseLayerVideos(outgoing);
-    }
-  }, CROSSFADE_MS + 20);
+  // fully opaque means the frame left behind is frozen, never black — and with
+  // no fade to wait for, the incoming layer is already opaque, so the outgoing
+  // decoder is released on the next task instead of holding the GPU for the
+  // length of a transition that is not running.
+  window.setTimeout(
+    () => {
+      if (shouldPauseOutgoingLayer(state())) {
+        pauseLayerVideos(outgoing);
+      }
+    },
+    activeTransition === "none" ? 0 : CROSSFADE_MS + 20,
+  );
   // Free decoders/webviews shortly after the fade completes.
   window.setTimeout(() => {
     if (shouldClearOutgoingLayer(state())) {
@@ -1441,8 +1447,14 @@ async function renderItem(
   }
   clearTimers();
   renderToken += 1;
+  // Decided before `currentItem` moves on: the item leaving the screen is what
+  // says whether this swap has anything to dissolve.
+  activeTransition = transitionForSwap(
+    item.transition,
+    currentItem?.id ?? null,
+    item.id,
+  );
   currentItem = item;
-  activeTransition = item.transition || "fade";
   // Exactly one completion may act per occurrence. Only a single-video local
   // playlist restarts in place; everything else advances.
   completion = new ItemCompletion(
@@ -1778,8 +1790,11 @@ function renderVideo(
   video.volume = Math.min(Math.max(item.volume, 0), 1);
   video.playsInline = true;
   // A group timeline may update while the previous layer is fading out. The
-  // correction code uses this to avoid seeking that outgoing video.
+  // correction code uses these to find the newest mounted element and avoid
+  // seeking the outgoing one — the mount counter is what distinguishes two
+  // occurrences of the same item, which share an id.
   video.dataset.tilecastItemId = item.id;
+  video.dataset.tilecastMount = String(renderToken);
 
   const startS = (item.videoStartOffsetMs ?? 0) / 1_000;
   const endS =

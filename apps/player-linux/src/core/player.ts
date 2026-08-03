@@ -97,7 +97,10 @@ import { PlayerSocket } from "./socket";
 import { activeHoursFromConfig, evaluateActiveHours } from "./active-hours";
 import { renderWidget } from "./widget-render";
 import { renderLayout } from "./layout-render";
-import { resolvePlaybackItemSettings } from "./playback-defaults";
+import {
+  fallbackDurationMsFor,
+  resolvePlaybackItemSettings,
+} from "./playback-defaults";
 import type {
   ManifestDataSource,
   ManifestLayout,
@@ -2018,15 +2021,14 @@ export class PlayerRuntime {
     const maps = this.lookups(manifest);
     const settings = this.itemSettings(
       item,
-      item.assetType === "image"
-        ? this.numberConfig(
-            this.config?.playback,
-            "defaultImageDurationSeconds",
-            10,
-          ) * 1_000
-        : item.assetType === "website"
-          ? 60_000
-          : 30_000,
+      fallbackDurationMsFor(
+        item.assetType,
+        this.numberConfig(
+          this.config?.playback,
+          "defaultImageDurationSeconds",
+          10,
+        ) * 1_000,
+      ),
     );
 
     if (item.layoutId) {
@@ -2197,7 +2199,7 @@ export class PlayerRuntime {
 
   private itemSettings(
     item: ManifestItem,
-    fallbackDurationMs: number,
+    fallbackDurationMs: number | null,
   ): {
     durationMs: number | null;
     fitMode: string;
