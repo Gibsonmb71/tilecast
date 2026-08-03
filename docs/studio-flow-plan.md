@@ -10,7 +10,7 @@ definition catalog, the manifest contract, or the Player. The four-record split 
 cached dataset shared across consumers, offline playback, and the manifest v13 declarative
 boundary; it stays exactly as it is.
 
-Phases are ordered by leverage and are independently shippable. Each phase leaves the app in a
+Phases are ordered by value and are independently shippable. Each phase leaves the app in a
 releasable state.
 
 ## Friction this plan addresses, as it stood before Phase 1
@@ -141,7 +141,7 @@ wants a single pass over the `Field`/`Select` primitives rather than a local pat
 
 Goal: an author can trace `lunch.csv → Today's Lunch → Cafeteria Layout → Cafeteria TV` and back.
 This is the change that makes the app feel connected rather than segmented — the edges exist in the
-database already and are simply not rendered as paths.
+database already and are not rendered as paths.
 
 ### 2.1 Edges already available
 

@@ -92,4 +92,8 @@ The two overrides are needed only behind a proxy whose external hostname differs
 
 ## Backups and restore
 
-Factors live in the database and are included in a full backup. Restoring an archive restores the enrollments that existed when it was taken: a passkey added after the backup will no longer be recognized, and a recovery code spent after the backup becomes usable again. Treat a restore as a point in time for sign-in security as well as for content.
+Factors live in the database and are included in a full backup. Restoring an
+archive restores the enrollments that existed when it was taken. A passkey
+added after the backup is not recognized. A recovery code spent after the
+backup becomes usable again. Treat a restore as a point in time for sign-in
+security and content.

@@ -105,6 +105,7 @@ Useful checks:
 make format
 make check
 make build
+make docs-check
 ```
 
 ## Production notes

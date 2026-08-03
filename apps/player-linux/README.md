@@ -81,7 +81,7 @@ Everything after the initial pairing is remote or automatic:
   wakes it at the next window with no operator action. An emergency always
   overrides off-hours sleep.
 
-Player configuration is authoritative on Linux as well as Android. Cache
+Player configuration is authoritative on Linux and Android. Cache
 limits and free-space reserve, download concurrency and thresholds, sync
 intervals, website timeout/cookie/reload policy, the website first-render and
 playback stall thresholds, reliability and safe-mode limits, playback

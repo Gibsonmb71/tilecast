@@ -55,3 +55,13 @@ Example:
 
 Use the [official ASD-STE100 site](https://www.asd-ste100.org/) as the source
 for the complete rules and dictionary.
+
+## Conformance check
+
+Run `make docs-check` from the repository root. The check scans the root
+README, every `README.md`, `docs/`, and `wiki/`. It reports contractions, vague
+wording, `and/or`, `etc.`, and imprecise conjunctions.
+
+The check does not replace an editorial review. A qualified reviewer must still
+check sentence structure, approved dictionary terms, procedure order, and
+technical accuracy.

@@ -108,7 +108,10 @@ Players report bounded telemetry alongside heartbeats: latest gauge values and c
 
 Players report **measurements, not conclusions**. A player says its round-trip time was 2400 milliseconds; the server decides whether that is an incident. Thresholds, hysteresis and cooldowns live server-side so a restarted player cannot re-announce every condition it was already in, and so the policy can be corrected without shipping a player release.
 
-A measurement a player cannot take is omitted rather than sent as zero. A player with no luminance sensor reports no luminance, and the black-output condition simply never fires for it — which is honest, but means absence of those events is not evidence the screen is fine.
+A measurement a Player cannot take is omitted rather than sent as zero. A
+Player with no luminance sensor reports no luminance. The black-output
+condition does not run for that Player. The absence of the event does not prove
+that the screen is operating correctly.
 
 Telemetry samples are dropped rather than buffered when the server is unreachable. Activity events and proof of play _are_ buffered and retried; telemetry is not, because buffering it would trade a minute of lost detail for unbounded memory on a player that has been offline for hours. See [`activity.md`](activity.md#player-telemetry).
 
