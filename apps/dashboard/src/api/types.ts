@@ -342,6 +342,7 @@ export type Layout = {
   usage: {
     screens: { id: string; name: string }[];
     schedules: { id: string; name: string }[];
+    campaigns: { id: string; name: string }[];
   };
 };
 export type LayoutSummary = Omit<
@@ -2827,6 +2828,162 @@ export type ContentReviewItem = {
 export type ContentReviewQueue = {
   required: boolean;
   items: ContentReviewItem[];
+};
+
+export type EditorialContentType = "playlist" | "layout" | "campaign";
+export type SubmissionStatus =
+  | "in_review"
+  | "changes_requested"
+  | "approved"
+  | "scheduled"
+  | "published"
+  | "superseded"
+  | "cancelled"
+  | "publication_failed";
+
+export type ContentSubmission = {
+  id: string;
+  contentType: EditorialContentType;
+  contentId: string;
+  contentName?: string;
+  workingRevision: number;
+  snapshot: unknown;
+  snapshotSha256: string;
+  submittedBy?: string;
+  submitterName?: string;
+  submittedAt: string;
+  basedPublishedRevision?: number;
+  basedPublishedRevisionId?: string;
+  status: SubmissionStatus;
+  reviewRequired: boolean;
+  allowSelfApproval: boolean;
+  reviewNote?: string;
+  reviewedBy?: string;
+  reviewerName?: string;
+  reviewedAt?: string;
+  requestedPublicationAt?: string;
+  publicationFailureReason?: string;
+  publishedAt?: string;
+  newerWorkingDraft: boolean;
+  currentPublishedRevision?: number;
+  affectedScreenCount: number;
+  affectedLocationCount: number;
+};
+
+export type ContentSubmissionList = {
+  policy: "off" | "contributors" | "everyone";
+  allowSelfApproval: boolean;
+  autoPublishOnApproval: boolean;
+  items: ContentSubmission[];
+};
+
+export type PublicationHistoryItem = {
+  id: string;
+  revision: number;
+  nativeRevisionId?: string;
+  submissionId?: string;
+  campaignReleaseId?: string;
+  publishedBy?: string;
+  publisherName?: string;
+  publishedAt: string;
+  supersedesPublicationId?: string;
+  method:
+    | "manual"
+    | "automatic_after_approval"
+    | "scheduled"
+    | "rollback"
+    | "migration"
+    | "backfill";
+  affectedScreenCount: number;
+  snapshotSha256?: string;
+};
+
+export type CampaignDestination = {
+  type: "screen" | "group";
+  id: string;
+};
+
+export type CampaignBlock = {
+  id: string;
+  name: string;
+  contentType: "playlist" | "layout";
+  contentId: string;
+  contentRevision?: number;
+  priority: number;
+  type: "one_time" | "weekly";
+  timezone: string;
+  startDate?: string;
+  endDate?: string;
+  oneTimeStart?: string;
+  oneTimeEnd?: string;
+  dailyStart?: string;
+  dailyEnd?: string;
+  daysOfWeek?: number[];
+  enabled: boolean;
+};
+
+export type CampaignSnapshot = {
+  name: string;
+  description: string;
+  ownerId?: string;
+  timezone: string;
+  campaignStart?: string;
+  campaignEnd?: string;
+  destinations: CampaignDestination[];
+  blocks: CampaignBlock[];
+};
+
+export type Campaign = {
+  id: string;
+  name: string;
+  description: string;
+  ownerId?: string;
+  timezone: string;
+  campaignStart?: string;
+  campaignEnd?: string;
+  destinations: CampaignDestination[];
+  draft: CampaignSnapshot;
+  draftRevision: number;
+  status: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type CampaignList = {
+  items: Campaign[];
+  total: number;
+  page: number;
+  pageSize: number;
+};
+
+export type CampaignRelease = {
+  id: string;
+  campaignId: string;
+  releaseNumber: number;
+  submissionId?: string;
+  snapshot: CampaignSnapshot;
+  snapshotSha256: string;
+  status: SubmissionStatus;
+  basedReleaseId?: string;
+  publishedBy?: string;
+  publishedAt?: string;
+  requestedPublicationAt?: string;
+  failureReason?: string;
+  createdAt: string;
+};
+
+export type CampaignPreflight = {
+  valid: boolean;
+  issues: {
+    severity: string;
+    code: string;
+    message: string;
+    blockId?: string;
+  }[];
+  blockCount: number;
+  destinationCount: number;
+  screenCount: number;
+  locationCount: number;
 };
 
 export type ScreenScope = {
