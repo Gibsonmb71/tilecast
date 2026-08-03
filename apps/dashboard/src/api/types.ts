@@ -984,6 +984,7 @@ export type DependencyNodeType =
   | "widget"
   | "layout"
   | "playlist"
+  | "campaign"
   | "schedule"
   | "screen_group"
   | "screen";
