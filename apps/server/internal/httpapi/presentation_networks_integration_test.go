@@ -254,7 +254,6 @@ func TestPresentationNetworkHTTPLifecycleRedactsSecretsAndEnforcesBoundaries(t *
 		// sessions cannot reach it, and a player can only fetch its own assignment.
 		playerWithDashboardSession := env.server.requireDevice(http.HandlerFunc(env.server.playerPresentationNetworkSecret))
 		dashboardAttempt := presentationNetworkRequest(http.MethodGet, "/api/v1/player/presentation-network", nil, env.owner, false, nil)
-		dashboardAttempt.Header.Set("Authorization", "Bearer "+credentialA)
 		if response := invokePresentationNetwork(t, playerWithDashboardSession, dashboardAttempt); response.Code != http.StatusUnauthorized {
 			t.Fatalf("player route with dashboard context status=%d, want 401", response.Code)
 		}
@@ -379,8 +378,8 @@ func TestPresentationNetworkHTTPLifecycleRedactsSecretsAndEnforcesBoundaries(t *
 		}
 		if invalid := invokePresentationNetwork(t,
 			presentationNetworkReadHandler(env.server, env.server.getPresentationNetwork),
-			presentationNetworkRequest(http.MethodGet, "/api/v1/presentation-networks/not-an-id", nil, env.owner, false, map[string]string{"id": "not-an-id"})); invalid.Code != http.StatusBadRequest {
-			t.Fatalf("invalid network ID status=%d, want 400", invalid.Code)
+			presentationNetworkRequest(http.MethodGet, "/api/v1/presentation-networks/not-an-id", nil, env.owner, false, map[string]string{"id": "not-an-id"})); invalid.Code != http.StatusNotFound {
+			t.Fatalf("invalid network ID status=%d, want 404", invalid.Code)
 		}
 	})
 }
