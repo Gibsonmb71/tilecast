@@ -38,11 +38,8 @@ paths:
       operationId: installableLinuxPlayerRelease
       responses:
         "200":
-          {
-            description: Latest stable,
-            verified,
-            cached Linux Player release metadata,
-          }
+          { description: "Latest stable, verified, cached Linux Player release
+              metadata" }
         "404": { description: No installable Linux Player release is cached }
   /api/v1/install/linux/artifact:
     get:
@@ -347,8 +344,8 @@ paths:
         "204": { description: User permanently deleted }
         "403": { description: Insufficient role }
         "404": { description: User not found }
-        "409":
-          { description: User is active, is the current user, or changed state }
+        "409": { description: "User is active, is the current user, or changed
+              state" }
   /api/v1/auth/logout:
     post:
       operationId: logout
@@ -593,12 +590,8 @@ paths:
                   }
       responses:
         "200": { description: Screen approved }
-        "409":
-          {
-            description: Pairing recovery confirmation required,
-            hardware replacement conflict,
-            or pairing state conflict,
-          }
+        "409": { description: "Pairing recovery confirmation required, hardware
+              replacement conflict, or pairing state conflict" }
   /api/v1/locations:
     get:
       operationId: listLocations
@@ -1166,16 +1159,8 @@ paths:
       {
         operationId: getPlaylistAssignment,
         responses:
-          {
-            "200":
-              {
-                description: Assignment,
-                manifest,
-                download,
-                playback,
-                and cache status,
-              },
-          },
+          { "200": { description: "Assignment, manifest, download, playback, and
+                  cache status" } },
       }
     put:
       operationId: assignPresentation
@@ -1271,7 +1256,7 @@ paths:
       responses:
         {
           "200":
-            { description: Canvas, panel geometry, and preparation status },
+            { description: "Canvas, panel geometry, and preparation status" },
         }
     put:
       operationId: updateSpanGeometry
@@ -1425,12 +1410,8 @@ paths:
       responses:
         {
           "200":
-            {
-              description: Production resolution result,
-              conflicts,
-              fallback,
-              and next transition,
-            },
+            { description: "Production resolution result, conflicts, fallback,
+                and next transition" },
           "403": { description: Scheduling access required },
         }
   /api/v1/assets/websites:
@@ -1469,12 +1450,8 @@ paths:
             schema: { $ref: "#/components/schemas/WidgetInput" }
       responses:
         "201": { description: Widget created }
-        "422":
-          {
-            description: Provider unknown,
-            Data Source incompatible,
-            or a selected field does not exist,
-          }
+        "422": { description: "Provider unknown, Data Source incompatible, or a
+              selected field does not exist" }
   /api/v1/provider-catalog:
     get:
       operationId: providerCatalog
@@ -1545,15 +1522,9 @@ paths:
     get:
       operationId: getDataSource
       responses:
-        "200":
-          {
-            description: Data Source detail including status,
-            diagnostics,
-            cached record count,
-            typed fields,
-            date-selection policy,
-            and Widget and Layout-binding usage,
-          }
+        "200": { description: "Data Source detail including status, diagnostics,
+              cached record count, typed fields, date-selection policy, and
+              Widget and Layout-binding usage" }
         "404": { description: Data Source not found }
     patch:
       operationId: updateDataSource
@@ -1870,11 +1841,8 @@ paths:
       responses:
         "200": { description: The attachment image bytes }
         "404":
-          {
-            description: Attachment or record not found,
-            not visible,
-            or not yet servable,
-          }
+          { description: "Attachment or record not found, not visible, or not
+              yet servable" }
   /api/v1/approvals:
     get:
       operationId: listApprovals
@@ -1883,13 +1851,8 @@ paths:
         - { name: page, in: query, schema: { type: integer } }
         - { name: pageSize, in: query, schema: { type: integer } }
       responses:
-        "200":
-          {
-            description: Paginated approval page (items,
-            total,
-            page,
-            pageSize),
-          }
+        "200": { description: "Paginated approval page (items, total, page,
+              pageSize)" }
   /api/v1/data-sources/{id}/views/preview:
     post:
       operationId: previewFormView
@@ -1937,11 +1900,8 @@ paths:
         "200": { description: Updated access entries under data.entries }
         "403": { description: Manage capability required }
         "422":
-          {
-            description: Invalid capability,
-            creator edit,
-            or self-management removal,
-          }
+          { description: "Invalid capability, creator edit, or self-management
+              removal" }
   /api/v1/data-sources/{id}/user-directory:
     get:
       operationId: searchFormUsers
@@ -2155,7 +2115,8 @@ paths:
     get:
       operationId: listPublicationHistory
       responses:
-        "200": { description: Immutable publication checkpoints, newest first }
+        "200":
+          { description: "Immutable publication checkpoints, newest first" }
   /api/v1/content-history/{type}/{id}/compare:
     parameters:
       - name: type
@@ -2268,10 +2229,7 @@ paths:
         {
           "200":
             {
-              description: Readiness,
-              target,
-              revision,
-              and schedule preflight,
+              description: "Readiness, target, revision, and schedule preflight",
             },
         }
   /api/v1/campaigns/{id}/releases:
@@ -2410,7 +2368,7 @@ paths:
       summary: Configure NWS area and zone monitoring
       responses:
         "200": { description: Monitor updated }
-        "422": { description: Invalid area, zone, or interval }
+        "422": { description: "Invalid area, zone, or interval" }
   /api/v1/alerts/nws/poll:
     post:
       summary: Retrieve and apply active NWS alerts now
@@ -2422,7 +2380,8 @@ paths:
       summary: Create an automatic NWS rule answering with a takeover or a ticker bar
       responses:
         "201": { description: Rule created }
-        "422": { description: Invalid rule, response mode, or ticker geometry }
+        "422":
+          { description: "Invalid rule, response mode, or ticker geometry" }
   /api/v1/alerts/nws/rules/{id}:
     parameters:
       - {
@@ -2435,7 +2394,8 @@ paths:
       summary: Replace an automatic NWS rule
       responses:
         "200": { description: Rule updated }
-        "422": { description: Invalid rule, response mode, or ticker geometry }
+        "422":
+          { description: "Invalid rule, response mode, or ticker geometry" }
     delete:
       summary: Delete a rule, ending Takeovers it raised and withdrawing its ticker
       responses:
@@ -2546,31 +2506,11 @@ paths:
       }
   /api/v1/screens/{id}/reliability:
     get:
-      {
-        summary: Read commissioning,
-        zero-touch readiness,
-        Android reliability,
-        and Power Assist state,
-        responses:
-          {
-            "200": { description: Capability and effective-state diagnostics },
-            "404": { description: Screen not found },
-          },
-      }
+      { summary: "Read commissioning, zero-touch readiness, Android reliability,
+          and Power Assist state", responses: { "200": { description: Capability and effective-state diagnostics }, "404": { description: Screen not found } } }
   /api/v1/screens/{id}/power-assist:
-    put:
-      {
-        summary: Store administrator-confirmed sleep,
-        wake,
-        CEC,
-        input,
-        and startup test results,
-        responses:
-          {
-            "200": { description: Confirmation stored },
-            "422": { description: Invalid result state },
-          },
-      }
+    put: { summary: "Store administrator-confirmed sleep, wake, CEC, input, and
+          startup test results", responses: { "200": { description: Confirmation stored }, "422": { description: Invalid result state } } }
   /api/v1/player/config:
     get:
       {
