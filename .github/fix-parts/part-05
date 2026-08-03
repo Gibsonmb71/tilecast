@@ -1,0 +1,45 @@
+
+# 20-22 and 19. Bind editorial/campaign response schemas, remove client-controlled
+# publication method, remove the unreachable cancelled submission contract, and
+# quote YAML 1.1-sensitive "off".
+path = "docs/openapi.yaml"
+replace_one(path, '''                superseded,\n                cancelled,\n              ]''', '''                superseded,\n              ]''')
+# ContentSubmission.status enum (the second cancelled occurrence near this schema).
+replace_one(path, '''              superseded,\n              cancelled,\n              publication_failed,''', '''              superseded,\n              publication_failed,''')
+replace_one(path, '''        policy: { type: string, enum: [off, contributors, everyone] }''', '''        policy: { type: string, enum: ["off", contributors, everyone] }''')
+# Drop requestBody and schema for client-supplied publication provenance.
+replace_one(
+    path,
+    '''      requestBody:\n        content:\n          application/json:\n            schema: { $ref: "#/components/schemas/PublishSubmissionRequest" }\n''',
+    '''''',
+)
+regex_one(
+    path,
+    r'''    PublishSubmissionRequest:\n      type: object\n      additionalProperties: false\n      properties:\n        method:\n          type: string\n          enum: \[manual, automatic_after_approval, scheduled, rollback\]\n''',
+    '''''',
+)
+# Response schema bindings. Inline wrappers match the API's {data: ...} convention.
+replace_one(
+    path,
+    '''      responses:\n        "200": { description: Submission list and current review policy }''',
+    '''      responses:\n        "200":\n          description: Submission list and current review policy\n          content:\n            application/json:\n              schema:\n                type: object\n                required: [data]\n                properties:\n                  data: { $ref: "#/components/schemas/ContentSubmissionList" }''',
+)
+replace_one(
+    path,
+    '''      responses:\n        "200": { description: Exact immutable submission snapshot }\n        "404": { description: Submission not found }''',
+    '''      responses:\n        "200":\n          description: Exact immutable submission snapshot\n          content:\n            application/json:\n              schema:\n                type: object\n                required: [data]\n                properties:\n                  data: { $ref: "#/components/schemas/ContentSubmission" }\n        "404": { description: Submission not found }''',
+)
+replace_one(
+    path,
+    '''      responses:\n        "200":\n          { description: "Immutable publication checkpoints, newest first" }''',
+    '''      responses:\n        "200":\n          description: Immutable publication checkpoints, newest first\n          content:\n            application/json:\n              schema:\n                type: object\n                required: [data]\n                properties:\n                  data:\n                    type: object\n                    required: [items]\n                    properties:\n                      items:\n                        type: array\n                        items: { $ref: "#/components/schemas/PublicationHistoryItem" }''',
+)
+replace_one(
+    path,
+    '''      responses:\n        "200": { description: Semantic publication differences }\n        "404": { description: Publication not found }''',
+    '''      responses:\n        "200":\n          description: Semantic publication differences\n          content:\n            application/json:\n              schema:\n                type: object\n                required: [data]\n                properties:\n                  data:\n                    type: object\n                    required: [fromPublicationId, toPublicationId, changed, changes]\n                    properties:\n                      fromPublicationId: { type: string, format: uuid }\n                      toPublicationId: { type: string, format: uuid }\n                      changed: { type: boolean }\n                      changes:\n                        type: array\n                        items: { $ref: "#/components/schemas/SemanticChange" }\n        "404": { description: Publication not found }''',
+)
+replace_one(
+    path,
+    '''      responses: { "200": { description: Campaign draft and lifecycle state } }''',
+    '''      responses:\n        "200":\n          description: Campaign draft and lifecycle state\n          content:\n            application/json:\n              schema:\n                type: object\n                required: [data]\n                properties:\n                  data: { $ref: "#/components/schemas/Campaign" }''',
