@@ -108,7 +108,7 @@ Your server publishes an installer for the release it has cached. On the signage
 curl -fsSL https://your-tilecast-server/install.sh | sudo bash
 ```
 
-This installs the player for the kiosk account, points it at the server it came from, installs and enables the managed service with linger so it starts at boot, and provisions AirPlay support. It downloads nothing from the internet: the AppImage, its checksum, and every script come from your server, so it works on a signage network that reaches nothing else.
+This installs the player for the kiosk account, points it at the server it came from, installs and enables the managed service with linger so it starts at boot, and provisions AirPlay support. The AppImage, its checksum, the service unit, and the UxPlay source archive come from your Tilecast Server. AirPlay build dependencies come from Debian package mirrors. The installer does not contact GitHub or another source-code host.
 
 Re-running it upgrades the player in place.
 

@@ -41,5 +41,15 @@ Players remain suitable for Mirror groups; Span requires a Player that accepts
 manifest schema 15 and understands `canvas`/`viewport`. No player-side video
 transcoding or giant wall-sized raster surface is required.
 
+## Video duration and loop transitions
+
+When a video item has no authored duration, the Player uses the source video
+duration. An authored duration takes precedence. Image and renderer-native
+items keep their authored durations.
+
+When a grouped playlist loops one video, the Player restarts the same item in
+place. It does not crossfade the item into itself. It keeps one decoder for the
+loop, which prevents loop judder. Different items can still use a crossfade.
+
 The wall status endpoint is `GET /api/v1/screen-groups/{id}/span`. Raw panel
 delivery is device-authenticated at `GET /api/v1/player/span-panels/{id}`.

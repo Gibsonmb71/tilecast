@@ -25,7 +25,7 @@ The Content library is organized into **Media** (uploaded images and videos), **
 
 Tilecast Player includes hardened first-run commissioning, cached boot recovery, persistent watchdog escalation, safe mode, remote management, and offline playback. Android players add capability-confirmed Managed Kiosk, locally approved Accessibility Control Assist, and best-effort platform sleep/wake behavior; Android Power Assist does not send raw HDMI-CEC commands. Linux players use a kiosk session and systemd for unattended startup and recovery, and can expose capability-gated HDMI-CEC/DDC/CI Display Control when the host tools and device permissions are available. See [Display Control](docs/display-control.md), [Android reliability and power](docs/reliability-and-power.md), and the wiki's [Reliability and Kiosk](https://github.com/Gibsonmb71/tilecast/wiki/Reliability-and-Kiosk) guide, which covers both Android and Linux.
 
-Player `0.10.1` includes a pairing-recovery hotfix for upgraded devices that retain their stable player installation ID but lose access to the Android Keystore credential. Studio can explicitly repair the existing screen without deleting assignments; the previous credential is revoked only after successful replacement enrollment.
+Player pairing recovery supports an upgraded device that keeps its stable installation ID but loses access to its Android Keystore credential. Studio can repair the existing screen without deleting assignments. The server revokes the previous credential only after replacement enrollment succeeds.
 
 Studio accounts can add two-step verification: an authenticator app, WebAuthn passkeys, and single-use recovery codes. A passkey signs a user in with no username or password and counts as multi-factor on its own. An Owner or Administrator can require enrollment for administrators or for everyone, and can clear a locked-out account's factors; a `tilecast mfa reset` command covers the case where the only Owner is locked out. Passkeys need HTTPS and a hostname, so they are unavailable on a plain-HTTP LAN installation, where authenticator apps and recovery codes still work. See [Multi-factor authentication and passkeys](docs/multi-factor-authentication.md).
 
@@ -115,7 +115,7 @@ make build
 - Back up both volumes. PostgreSQL and `/data/media` are both required for a complete Milestone 3 backup; automated backup/restore tooling remains scheduled for Milestone 9.
 - Never commit `.env` or a Tunnel token.
 
-See [deployment documentation](docs/deployment.md), [architecture](docs/architecture.md), [API documentation](docs/api.md), and [development setup](docs/development.md).
+See [deployment documentation](docs/deployment.md), [architecture](docs/architecture.md), [API documentation](docs/api.md), [documentation style](docs/documentation-style.md), and [development setup](docs/development.md).
 
 ## Android TV player
 
@@ -131,6 +131,12 @@ The APK is written to `apps/player-android/app/build/outputs/apk/debug/app-debug
 ## Linux player
 
 The Linux player packages as an AppImage for x86_64 signage computers. It supports the same core pairing, playback, scheduling, layouts, widgets, offline cache, remote commands, live previews, ephemeral live streaming, and Takeover model as the Android player.
+
+The Tilecast Server provides a Linux installer. The installer downloads the
+AppImage, checksum, systemd unit, and AirPlay source archive from the server.
+AirPlay setup also needs Debian package mirrors for build dependencies. Use
+`--without-airplay` when the machine cannot reach those mirrors. A failed
+AirPlay setup does not stop Player installation or pairing.
 
 Build and run it from source with:
 
