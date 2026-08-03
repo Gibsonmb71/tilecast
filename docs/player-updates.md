@@ -77,8 +77,8 @@ Authenticated GitHub requests receive a substantially higher API allowance than 
 
 The Owner starts sign-in in Studio, opens GitHub's device page, and enters the displayed one-time code. The private device code remains only in server memory. After approval, Tilecast validates the GitHub account and stores the access token in `/data/updates/github-oauth.json` with owner-only file permissions. The token is never returned through the API, audit metadata, diagnostics, or logs. Disconnecting removes the local credential; the GitHub account can separately revoke the OAuth App grant. `TILECAST_GITHUB_TOKEN` remains supported as an environment-managed override and cannot be disconnected from Studio.
 
-Owners and Administrators deploy a fully verified cached release to screens
-and/or sync groups. Studio and the server restrict Android releases to Android
+Owners and Administrators deploy a fully verified cached release to screens or
+sync groups. Studio and the server restrict Android releases to Android
 screens and Linux releases to Linux screens. Sync-group membership is resolved
 at deployment start and duplicates are removed. Modes are download only,
 install now, and maintenance window. Screen states distinguish downloading,
@@ -128,14 +128,28 @@ curl --fail-with-body \
   https://tilecast.example.org/api/v1/player-releases/upload
 ```
 
-The player resumes `.part` downloads, verifies available storage, SHA-256, package name, version code, minimum SDK, signing certificate, install permission, and Takeover state, then uses Android `PackageInstaller`. For API 31 and newer it declares `UPDATE_PACKAGES_WITHOUT_USER_ACTION` and requests `USER_ACTION_NOT_REQUIRED` for its own signed update. Android can still return `STATUS_PENDING_USER_ACTION`, so the Player preserves an explicit confirmation fallback instead of claiming universal silent installation. Takeover playback delays installation but not downloading. Pairing credentials, manifests, configuration, disabled state, and media cache live outside the APK and survive replacement. The package-replaced receiver and the already-enabled bounded Accessibility service both request a return to Tilecast after replacement; Accessibility never reads or clicks installer controls. Success is recorded only after the updated player reconnects at the expected version and reports healthy playback after installation.
+The player resumes `.part` downloads, verifies available storage, SHA-256, package name, version code, minimum SDK, signing certificate, install permission, and Takeover state, then uses Android `PackageInstaller`. For API 31 and newer it declares `UPDATE_PACKAGES_WITHOUT_USER_ACTION` and requests `USER_ACTION_NOT_REQUIRED` for its own signed update. Android can still return `STATUS_PENDING_USER_ACTION`, so the Player preserves an explicit confirmation fallback instead of claiming universal silent installation. Takeover playback delays installation but not downloading. Pairing credentials, manifests, configuration, disabled state, and media cache live outside the APK and survive replacement. The package-replaced receiver and the already-enabled bounded Accessibility service both request a return to Tilecast after replacement; Accessibility never reads or clicks installer controls. Success is recorded after the updated Player reconnects at the expected version, remains up for at least 120 seconds or does not report uptime, is not in safe mode, and reports no update error. Healthy playback is not required, so a sleeping screen can settle the update.
 
 Deployments may start with a deterministic canary cohort. Other targeted screens remain held until every canary reconnects successfully. The rollout pauses when a canary reports failure, enters safe mode, or remains reconnecting beyond the bounded health window. Studio shows the rollout phase and safe pause reason; it never treats `WaitingForUser` as failure.
 
 ## Settling a deployment
 
-A target in `reconnecting` becomes `succeeded` on any accepted heartbeat that reports a player version code at or above the expected one, healthy playback later than the moment installation started, no reported update failure, and no safe mode. The transition only touches non-terminal states, so it is idempotent: a repeated heartbeat updates no rows, cannot double-count a target, and cannot move a completed deployment back to active. The aggregate follows the targets — a deployment with no unfinished target is `completed`, with its original completion timestamp preserved.
+A target in `reconnecting` becomes `succeeded` when an accepted heartbeat or bounded reconciliation confirms all of these conditions:
 
-Because a heartbeat is the only signal that proves the new build is running, a heartbeat the server cannot accept used to leave a successful installation stuck at "remaining targets in progress" forever. Two defences now prevent a permanent `reconnecting` state. The heartbeat path drops malformed optional playback identifiers instead of rejecting the whole message (see [`player-protocol.md`](player-protocol.md)), so the lifecycle fields still arrive. And reading the deployment list or a deployment's detail runs a bounded reconciliation: any target still `reconnecting` whose screen has heartbeated within five minutes at or above the expected version, out of safe mode, with healthy playback after installation and no update error, is settled, and any active deployment whose targets are all terminal is completed. The reconciliation is three fixed statements with no per-row work, and it runs before the stuck-canary pause check so a canary that genuinely reconnected is never paused for failing to.
+- Player version code is at or above the expected version.
+- Player uptime is at least 120 seconds, or the Player does not report uptime.
+- Player is not in safe mode.
+- Player reports no update error.
+
+Healthy playback is not required. A sleeping screen can settle the update. The transition touches only non-terminal states, so it is idempotent. A repeated heartbeat does not change the target, double-count it, or move a completed deployment back to active. The deployment becomes `completed` when no target remains unfinished. Its original completion time remains unchanged.
+
+The heartbeat path drops malformed optional playback identifiers instead of
+rejecting the whole message (see [`player-protocol.md`](player-protocol.md)).
+The lifecycle fields can therefore still settle the update. Reading the
+deployment list or detail runs bounded reconciliation. Reconciliation settles a
+target when the screen contacted the server within five minutes, reports the
+expected version, meets the uptime condition, is not in safe mode, and reports
+no update error. The reconciliation also completes an active deployment when
+all targets are terminal. It runs before the canary pause check.
 
 An offline player cannot receive a new deployment. `WaitingForPermission` and `WaitingForUser` are expected operational states, not failures. Silent installation is not claimed. Physical Fire TV and Google TV validation remains required for each device/OS family.

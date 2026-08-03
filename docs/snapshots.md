@@ -46,7 +46,7 @@ preview button is kept alongside the scheduled ones and marked `manual`.
 
 Only screens that are currently reporting are asked. That also covers active
 hours without a separate setting: a screen asleep outside its active hours is
-not reporting, so it is not asked. A screen that is offline simply does not
+not reporting, so it is not asked. An offline screen does not
 answer, and the next sweep asks again.
 
 ## Who can see them

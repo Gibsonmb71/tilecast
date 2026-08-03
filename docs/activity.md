@@ -145,7 +145,11 @@ Expectations are content-aware, because silence means different things:
 | Layout      | Each zone rendering                     | A stall once a zone stays silent              |
 | Indefinite  | A periodic renderer health confirmation | A stall once the probe lapses                 |
 
-Layouts are judged per zone, because a whole-layout signal hides the case that matters: one zone dying while its neighbours keep the presentation looking alive. Every zone owes a first render — a zone that never renders is simply a blank patch of screen — but only a rotating playlist zone owes continuing evidence. A static widget or image zone renders once and holds, which is the same reasoning that protects a still image, and a single-item zone loops in place rather than advancing so it is not held to a cadence either.
+Layouts are evaluated per zone. A whole-layout signal can hide a failed zone
+when other zones continue to render. Every zone must produce a first render. A
+rotating playlist zone must also produce continuing evidence. A static Widget or
+image zone renders once and holds. A single-item zone loops in place and does
+not advance, so it does not require a continuing cadence.
 
 A valid long-lived still image is never called frozen for having identical pixels, and a fingerprint change on a still image is treated as noise rather than evidence. The player reports `lastMeaningfulProgressAt`, `stallStartedAt`, `stallDurationMs`, `stallReason`, `expectedMotion` and `rendererResponding` on every heartbeat, and the recovery supervisor is fed from the assessment rather than from raw signals. The stall is measured from when progress was last seen, not from when it was noticed, so the duration reflects how long the screen has actually been wrong.
 
@@ -264,7 +268,10 @@ These are real and worth knowing before trusting a number.
 
 **Percentiles cannot be merged across samples.** A five-minute rollup receiving several samples keeps the worst reported sync-drift percentile rather than recomputing across the underlying values, which the server never sees. p50 and p95 in a multi-sample bucket are therefore upper bounds.
 
-**Frame fingerprints and luminance are best-effort and platform-dependent.** A player that cannot measure them reports nothing, and the black-output and frozen-output conditions simply never fire for it. Absence of those events is not evidence that the screen is fine.
+**Frame fingerprints and luminance are best-effort and platform-dependent.** A
+Player that cannot measure them reports nothing. The black-output and
+frozen-output conditions do not run for that Player. The absence of those events
+does not prove that the screen is operating correctly.
 
 **Layout zone evidence depends on the renderer reporting it.** Zones are judged individually on the Linux player. A zone that the renderer cannot identify is excluded rather than held to an expectation it could never meet.
 

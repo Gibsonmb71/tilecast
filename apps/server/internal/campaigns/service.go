@@ -107,13 +107,17 @@ type PreflightIssue struct {
 	BlockID  string `json:"blockId,omitempty"`
 }
 
+const maxPreflightPreviewScreens = 10
+
 type Preflight struct {
-	Valid            bool             `json:"valid"`
-	Issues           []PreflightIssue `json:"issues"`
-	BlockCount       int              `json:"blockCount"`
-	DestinationCount int              `json:"destinationCount"`
-	ScreenCount      int              `json:"screenCount"`
-	LocationCount    int              `json:"locationCount"`
+	Valid                bool             `json:"valid"`
+	Issues               []PreflightIssue `json:"issues"`
+	BlockCount           int              `json:"blockCount"`
+	DestinationCount     int              `json:"destinationCount"`
+	ScreenCount          int              `json:"screenCount"`
+	LocationCount        int              `json:"locationCount"`
+	PreviewedScreenCount int              `json:"previewedScreenCount"`
+	PreviewScreenLimit   int              `json:"previewScreenLimit"`
 }
 
 type Service struct {
@@ -168,20 +172,36 @@ func (s *Service) List(ctx context.Context, search string, page, pageSize int) (
 	if err := s.db.QueryRow(ctx, `SELECT count(*) FROM campaigns WHERE archived_at IS NULL AND ($1='' OR name ILIKE '%'||$1||'%')`, search).Scan(&total); err != nil {
 		return nil, 0, err
 	}
-	rows, err := s.db.Query(ctx, `SELECT id FROM campaigns WHERE archived_at IS NULL AND ($1='' OR name ILIKE '%'||$1||'%') ORDER BY updated_at DESC,id LIMIT $2 OFFSET $3`, search, pageSize, (page-1)*pageSize)
+	rows, err := s.db.Query(ctx, `
+		SELECT c.id,c.name,c.description,c.owner_id,c.timezone,c.campaign_start,c.campaign_end,
+		       c.draft,c.draft_revision,c.created_at,c.updated_at,r.snapshot
+		FROM campaigns c
+		LEFT JOIN LATERAL (
+			SELECT snapshot FROM campaign_releases
+			WHERE campaign_id=c.id AND status='published'
+			ORDER BY release_number DESC LIMIT 1
+		) r ON TRUE
+		WHERE c.archived_at IS NULL AND ($1='' OR c.name ILIKE '%'||$1||'%')
+		ORDER BY c.updated_at DESC,c.id LIMIT $2 OFFSET $3`, search, pageSize, (page-1)*pageSize)
 	if err != nil {
 		return nil, 0, err
 	}
 	defer rows.Close()
 	items := []Campaign{}
+	now := time.Now().UTC()
 	for rows.Next() {
-		var id uuid.UUID
-		if err = rows.Scan(&id); err != nil {
+		var item Campaign
+		var raw, publishedRaw []byte
+		if err = rows.Scan(&item.ID, &item.Name, &item.Description, &item.OwnerID, &item.Timezone, &item.CampaignStart, &item.CampaignEnd, &raw, &item.DraftRevision, &item.CreatedAt, &item.UpdatedAt, &publishedRaw); err != nil {
 			return nil, 0, err
 		}
-		item, getErr := s.Get(ctx, id)
-		if getErr != nil {
-			return nil, 0, getErr
+		if err = json.Unmarshal(raw, &item.Draft); err != nil {
+			return nil, 0, err
+		}
+		item.Destinations = item.Draft.Destinations
+		item.Status, err = campaignLifecycle(false, publishedRaw, now)
+		if err != nil {
+			return nil, 0, err
 		}
 		items = append(items, item)
 	}
@@ -190,8 +210,18 @@ func (s *Service) List(ctx context.Context, search string, page, pageSize int) (
 
 func (s *Service) Get(ctx context.Context, id uuid.UUID) (Campaign, error) {
 	var c Campaign
-	var raw []byte
-	err := s.db.QueryRow(ctx, `SELECT id,name,description,owner_id,timezone,campaign_start,campaign_end,draft,draft_revision,created_at,updated_at FROM campaigns WHERE id=$1`, id).Scan(&c.ID, &c.Name, &c.Description, &c.OwnerID, &c.Timezone, &c.CampaignStart, &c.CampaignEnd, &raw, &c.DraftRevision, &c.CreatedAt, &c.UpdatedAt)
+	var raw, publishedRaw []byte
+	var archived bool
+	err := s.db.QueryRow(ctx, `
+		SELECT c.id,c.name,c.description,c.owner_id,c.timezone,c.campaign_start,c.campaign_end,
+		       c.draft,c.draft_revision,c.created_at,c.updated_at,c.archived_at IS NOT NULL,r.snapshot
+		FROM campaigns c
+		LEFT JOIN LATERAL (
+			SELECT snapshot FROM campaign_releases
+			WHERE campaign_id=c.id AND status='published'
+			ORDER BY release_number DESC LIMIT 1
+		) r ON TRUE
+		WHERE c.id=$1`, id).Scan(&c.ID, &c.Name, &c.Description, &c.OwnerID, &c.Timezone, &c.CampaignStart, &c.CampaignEnd, &raw, &c.DraftRevision, &c.CreatedAt, &c.UpdatedAt, &archived, &publishedRaw)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Campaign{}, ErrNotFound
 	}
@@ -202,7 +232,7 @@ func (s *Service) Get(ctx context.Context, id uuid.UUID) (Campaign, error) {
 		return Campaign{}, err
 	}
 	c.Destinations = c.Draft.Destinations
-	c.Status, err = s.lifecycle(ctx, id, c.Draft.CampaignStart, c.Draft.CampaignEnd)
+	c.Status, err = campaignLifecycle(archived, publishedRaw, time.Now().UTC())
 	return c, err
 }
 
@@ -260,12 +290,20 @@ func (s *Service) populateContentRevisionsTx(ctx context.Context, tx pgx.Tx, sna
 		block := &snapshot.Blocks[i]
 		var revision int64
 		if block.ContentType == "playlist" {
-			if err := tx.QueryRow(ctx, `SELECT revision FROM playlists WHERE id=$1 AND deleted_at IS NULL`, block.ContentID).Scan(&revision); err != nil {
-				return fmt.Errorf("content block playlist is missing: %w", err)
+			err := tx.QueryRow(ctx, `SELECT revision FROM playlists WHERE id=$1 AND deleted_at IS NULL`, block.ContentID).Scan(&revision)
+			if errors.Is(err, pgx.ErrNoRows) {
+				return fmt.Errorf("%w: content block playlist is missing", ErrInvalid)
+			}
+			if err != nil {
+				return err
 			}
 		} else if block.ContentType == "layout" {
-			if err := tx.QueryRow(ctx, `SELECT r.revision FROM layouts l JOIN layout_revisions r ON r.id=l.published_revision_id WHERE l.id=$1 AND l.deleted_at IS NULL`, block.ContentID).Scan(&revision); err != nil {
-				return fmt.Errorf("content block Layout is missing or unpublished: %w", err)
+			err := tx.QueryRow(ctx, `SELECT r.revision FROM layouts l JOIN layout_revisions r ON r.id=l.published_revision_id WHERE l.id=$1 AND l.deleted_at IS NULL`, block.ContentID).Scan(&revision)
+			if errors.Is(err, pgx.ErrNoRows) {
+				return fmt.Errorf("%w: content block Layout is missing or unpublished", ErrInvalid)
+			}
+			if err != nil {
+				return err
 			}
 		} else {
 			return fmt.Errorf("%w: content blocks must reference a playlist or Layout", ErrInvalid)
@@ -522,7 +560,7 @@ func (s *Service) Preflight(ctx context.Context, id uuid.UUID) (Preflight, error
 		return Preflight{}, err
 	}
 	normalizeSnapshot(&snapshot)
-	result := Preflight{Valid: true, Issues: []PreflightIssue{}, BlockCount: len(snapshot.Blocks), DestinationCount: len(snapshot.Destinations)}
+	result := Preflight{Valid: true, Issues: []PreflightIssue{}, BlockCount: len(snapshot.Blocks), DestinationCount: len(snapshot.Destinations), PreviewScreenLimit: maxPreflightPreviewScreens}
 	var screens []uuid.UUID
 	// Resolve the exact root revisions that a submission would freeze. This is
 	// intentionally the same provider path used by Submit, rather than a
@@ -553,8 +591,19 @@ func (s *Service) Preflight(ctx context.Context, id uuid.UUID) (Preflight, error
 		return Preflight{}, err
 	}
 	if s.scheduler != nil && len(screens) > 0 && len(snapshot.Blocks) > 0 {
+		previewScreens := screens
+		if len(previewScreens) > maxPreflightPreviewScreens {
+			previewScreens = previewScreens[:maxPreflightPreviewScreens]
+			result.Issues = append(result.Issues, PreflightIssue{
+				Severity: "warning",
+				Code:     "schedule_preview_sampled",
+				Message:  fmt.Sprintf("Schedule overlap checks sampled %d of %d target screens; all destinations and content references were still validated.", len(previewScreens), len(screens)),
+			})
+		}
+		result.PreviewedScreenCount = len(previewScreens)
 		seenConflicts := map[string]bool{}
-		for _, screen := range screens {
+		now := time.Now().UTC()
+		for _, screen := range previewScreens {
 			for _, block := range snapshot.Blocks {
 				input := scheduling.Input{
 					Name: block.Name, Description: snapshot.Description, PlaylistID: playlistID(block), LayoutID: layoutID(block), Type: scheduling.Kind(block.Type), Timezone: block.Timezone,
@@ -564,7 +613,7 @@ func (s *Service) Preflight(ctx context.Context, id uuid.UUID) (Preflight, error
 				for _, destination := range snapshot.Destinations {
 					input.Targets = append(input.Targets, scheduling.Target{Type: destination.Type, ID: destination.ID})
 				}
-				preview, previewErr := s.scheduler.Preview(ctx, screen, time.Now().UTC(), &input)
+				preview, previewErr := s.scheduler.Preview(ctx, screen, now, &input)
 				if previewErr != nil {
 					key := "preview:" + previewErr.Error()
 					if !seenConflicts[key] {
@@ -692,6 +741,9 @@ func validateSnapshotShape(snapshot Snapshot) error {
 		seenBlocks[block.ID] = true
 		if len(strings.TrimSpace(block.Name)) < 1 || len(block.Name) > 180 {
 			return fmt.Errorf("%w: content block names must be between 1 and 180 characters", ErrInvalid)
+		}
+		if block.ContentType != "playlist" && block.ContentType != "layout" {
+			return fmt.Errorf("%w: content block %s has invalid content type %q", ErrInvalid, block.ID, block.ContentType)
 		}
 		if block.ContentID == uuid.Nil {
 			return fmt.Errorf("%w: content block %s has no content", ErrInvalid, block.ID)
@@ -831,26 +883,21 @@ func bumpScreens(ctx context.Context, tx pgx.Tx, ids []uuid.UUID, reason string)
 	return changes, rows.Err()
 }
 
-func (s *Service) lifecycle(ctx context.Context, id uuid.UUID, start, end *time.Time) (string, error) {
-	var archived bool
-	if err := s.db.QueryRow(ctx, `SELECT archived_at IS NOT NULL FROM campaigns WHERE id=$1`, id).Scan(&archived); err != nil {
-		return "", err
-	}
+func campaignLifecycle(archived bool, publishedRaw []byte, now time.Time) (string, error) {
 	if archived {
 		return "Archived", nil
 	}
-	var published bool
-	if err := s.db.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM campaign_releases WHERE campaign_id=$1 AND status='published')`, id).Scan(&published); err != nil {
-		return "", err
-	}
-	if !published {
+	if len(publishedRaw) == 0 {
 		return "Draft", nil
 	}
-	now := time.Now().UTC()
-	if start != nil && now.Before(*start) {
+	var published Snapshot
+	if err := json.Unmarshal(publishedRaw, &published); err != nil {
+		return "", err
+	}
+	if published.CampaignStart != nil && now.Before(*published.CampaignStart) {
 		return "Scheduled", nil
 	}
-	if end != nil && !now.Before(*end) {
+	if published.CampaignEnd != nil && !now.Before(*published.CampaignEnd) {
 		return "Ended", nil
 	}
 	return "Live", nil

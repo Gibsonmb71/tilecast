@@ -104,8 +104,8 @@ func snapshotDraftTx(ctx context.Context, tx pgx.Tx, playlistID uuid.UUID) (edit
 	var document playlistSnapshot
 	var snapshot editorial.Snapshot
 	var tagIDs []uuid.UUID
-	if err := tx.QueryRow(ctx, `SELECT d.revision,d.name,d.description,d.source_type,d.tag_match,d.tag_image_duration_ms,p.revision FROM playlist_drafts d JOIN playlists p ON p.id=d.playlist_id WHERE d.playlist_id=$1 AND p.deleted_at IS NULL`, playlistID).
-		Scan(&snapshot.WorkingRevision, &document.Name, &document.Description, &document.SourceType, &document.TagMatch, &document.TagImageDurationMS, &snapshot.PublishedRevision); err != nil {
+	if err := tx.QueryRow(ctx, `SELECT d.revision,d.name,d.description,d.source_type,d.tag_match,d.tag_image_duration_ms,p.revision,r.id FROM playlist_drafts d JOIN playlists p ON p.id=d.playlist_id LEFT JOIN playlist_revisions r ON r.playlist_id=p.id AND r.revision=p.revision WHERE d.playlist_id=$1 AND p.deleted_at IS NULL`, playlistID).
+		Scan(&snapshot.WorkingRevision, &document.Name, &document.Description, &document.SourceType, &document.TagMatch, &document.TagImageDurationMS, &snapshot.PublishedRevision, &snapshot.PublishedRevisionID); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return editorial.Snapshot{}, ErrNotFound
 		}

@@ -3115,6 +3115,8 @@ export type CampaignPreflight = {
   destinationCount: number;
   screenCount: number;
   locationCount: number;
+  previewedScreenCount: number;
+  previewScreenLimit: number;
 };
 
 export type ScreenScope = {

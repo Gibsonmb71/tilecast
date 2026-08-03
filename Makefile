@@ -1,4 +1,4 @@
-.PHONY: android-build android-check bootstrap build check dev-dashboard dev-server format helper-check test
+.PHONY: android-build android-check bootstrap build check dev-dashboard dev-server docs-check format helper-check test
 
 bootstrap:
 	npm install
@@ -13,6 +13,7 @@ build:
 	cd apps/player-android && ./gradlew assembleDebug
 
 check:
+	$(MAKE) docs-check
 	npm run format:check
 	npm run lint
 	npm test
@@ -46,3 +47,6 @@ test:
 	npm test
 	cd apps/server && go test ./...
 	python3 -m unittest discover -s apps/player-linux/helper
+
+docs-check:
+	bash scripts/check-docs-ste.sh

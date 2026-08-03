@@ -175,7 +175,7 @@ func (s *Service) Get(ctx context.Context, id uuid.UUID) (Layout, error) {
 		return Layout{}, err
 	}
 	rows.Close()
-	campaignRows, err := s.db.Query(ctx, `SELECT DISTINCT c.id,c.name FROM campaigns c LEFT JOIN schedules s ON s.campaign_id=c.id AND s.layout_id=$1 AND s.deleted_at IS NULL WHERE c.archived_at IS NULL AND (s.id IS NOT NULL OR EXISTS(SELECT 1 FROM jsonb_array_elements(c.draft->'blocks') block WHERE block->>'contentType'='layout' AND block->>'contentId'=$1::text)) ORDER BY c.name`, id)
+	campaignRows, err := s.db.Query(ctx, `SELECT DISTINCT c.id,c.name FROM campaigns c LEFT JOIN schedules s ON s.campaign_id=c.id AND s.layout_id=$1 AND s.deleted_at IS NULL WHERE c.archived_at IS NULL AND (s.id IS NOT NULL OR EXISTS(SELECT 1 FROM jsonb_array_elements(CASE WHEN jsonb_typeof(c.draft->'blocks')='array' THEN c.draft->'blocks' ELSE '[]'::jsonb END) block WHERE block->>'contentType'='layout' AND block->>'contentId'=$1::text)) ORDER BY c.name`, id)
 	if err != nil {
 		return Layout{}, err
 	}
@@ -199,7 +199,7 @@ func (s *Service) UpdateDetails(ctx context.Context, id, userID uuid.UUID, name,
 	if err = validateDetails(name, description, current.Orientation, current.CanvasWidth, current.CanvasHeight); err != nil {
 		return Layout{}, err
 	}
-	command, err := s.db.Exec(ctx, `UPDATE layouts SET name=$1,description=$2,draft_revision=draft_revision+1,updated_by=$3,updated_at=now() WHERE id=$4 AND deleted_at IS NULL`, name, description, userID, id)
+	command, err := s.db.Exec(ctx, `UPDATE layouts SET name=$1,description=$2,updated_by=$3,updated_at=now() WHERE id=$4 AND deleted_at IS NULL`, name, description, userID, id)
 	if err != nil {
 		return Layout{}, err
 	}

@@ -106,7 +106,7 @@ func (s *Service) Organization(ctx context.Context) (Document, error) {
 	if err := json.Unmarshal(values, &d.Values); err != nil {
 		return d, err
 	}
-	d.Values = mergeDefaults(d.Values, ScopeOrganization)
+	d.Values = mergeOrganizationDefaults(d.Values)
 	var name string
 	if err := s.db.QueryRow(ctx, `SELECT organization_name FROM organization_settings`).Scan(&name); err != nil {
 		return d, err
@@ -117,6 +117,19 @@ func (s *Service) Organization(ctx context.Context) (Document, error) {
 
 // OrganizationValues exposes the validated, default-merged organization
 // settings to domain services that use the same authoritative registry.
+func mergeOrganizationDefaults(values map[string]any) map[string]any {
+	legacyApprovalRequired, _ := values["content.approval_required"].(bool)
+	_, reviewPolicyStored := values["content.review_policy"]
+	merged := mergeDefaults(values, ScopeOrganization)
+	if !reviewPolicyStored && legacyApprovalRequired {
+		// content.review_policy was introduced after approval_required. Preserve
+		// the operator's existing review guarantee until they explicitly choose
+		// a new policy. Defaults must not mask the legacy value during upgrade.
+		merged["content.review_policy"] = "everyone"
+	}
+	return merged
+}
+
 func (s *Service) OrganizationValues(ctx context.Context) (map[string]any, error) {
 	document, err := s.Organization(ctx)
 	if err != nil {

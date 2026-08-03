@@ -21,6 +21,7 @@
 - **Pairing recovery required:** the player installation matches an existing screen with an active credential. Review the existing screen name and select **Repair and replace credential**. The old credential remains valid until this player successfully enrolls, and all content relationships stay on the original screen record.
 - **Unsupported request field:** update Studio and Player together. Strict JSON errors now name the mismatched field; pairing and enrollment request bodies are never written to logs.
 - **Tunnel connection fails:** enter the public HTTPS hostname manually and verify the Tunnel routes to `http://server:8080`.
+- **AirPlay is unavailable:** confirm that the Linux Player has UxPlay 1.73.6, GStreamer H.264 support, Avahi, and a supported decoder. Run the AirPlay installer on an x86_64 Debian-family host. The installer gets the UxPlay source archive from Tilecast Server and gets build dependencies from Debian package mirrors. AirPlay failure does not stop Player installation, pairing, or normal playback.
 
 ## Presentation Networks and AirPlay discovery
 

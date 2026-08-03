@@ -22,6 +22,7 @@ jobs:
       server: ${{ steps.paths.outputs.server }}
       dashboard: ${{ steps.paths.outputs.dashboard }}
       container: ${{ steps.paths.outputs.container }}
+      docs: ${{ steps.paths.outputs.docs }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -39,6 +40,7 @@ jobs:
           server=false
           dashboard=false
           container=false
+          docs=false
 
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             android=true
@@ -46,6 +48,7 @@ jobs:
             server=true
             dashboard=true
             container=true
+            docs=true
           else
             while IFS= read -r path; do
               case "$path" in
@@ -71,6 +74,9 @@ jobs:
                 deploy/docker/*)
                   container=true
                   ;;
+                docs/*|wiki/*|README.md|*/README.md|scripts/check-docs-ste.sh|Makefile)
+                  docs=true
+                  ;;
                 .github/workflows/*)
                   android=true
                   linux=true
@@ -88,6 +94,7 @@ jobs:
             echo "server=$server"
             echo "dashboard=$dashboard"
             echo "container=$container"
+            echo "docs=$docs"
           } >> "$GITHUB_OUTPUT"
 
   android_ci:
@@ -246,6 +253,26 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+  docs_ci:
+    name: Documentation style
+    needs: changes
+    if: needs.changes.outputs.docs == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Check ASD-STE100 hard rules
+        run: bash scripts/check-docs-ste.sh
+      - name: Check Markdown formatting
+        run: |
+          mapfile -t markdown_files < <(rg --files -g '*.md' docs wiki apps packages deploy | sort)
+          markdown_files+=(README.md)
+          npx prettier --check "${markdown_files[@]}"
+
   required:
     name: Required PR validation
     if: always()
@@ -256,6 +283,7 @@ jobs:
       - server_ci
       - dashboard_ci
       - container_ci
+      - docs_ci
     runs-on: ubuntu-latest
     env:
       RESULTS: ${{ join(needs.*.result, ',') }}

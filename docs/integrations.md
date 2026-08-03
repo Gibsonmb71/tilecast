@@ -43,7 +43,7 @@ Every authentication failure returns the same `401 invalid_token`. A revoked
 token is not distinguishable from an unknown one.
 
 A token is attributed to the account that created it. Everything the token does
-is recorded against that person as well as against the token, so a change always
+is recorded against that person and the token, so a change always
 has a person behind it. **Removing that account stops the token working.** This
 is deliberate: a token must not outlive everybody who knows why it exists.
 

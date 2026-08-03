@@ -15,7 +15,7 @@ import (
 
 func (s *server) listContentSubmissions(w http.ResponseWriter, r *http.Request) {
 	state := r.URL.Query().Get("state")
-	allowed := map[string]bool{"": true, "in_review": true, "changes_requested": true, "approved": true, "scheduled": true, "published": true, "publication_failed": true, "cancelled": true, "superseded": true}
+	allowed := map[string]bool{"": true, "in_review": true, "changes_requested": true, "approved": true, "scheduled": true, "published": true, "publication_failed": true, "superseded": true}
 	if !allowed[state] {
 		writeError(w, http.StatusBadRequest, "invalid_state", "Submission state is invalid.")
 		return
@@ -77,7 +77,7 @@ func (s *server) submitContent(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *server) approveContentSubmission(w http.ResponseWriter, r *http.Request) {
-	s.decideSubmission(w, r, true)
+	s.decideSubmission(w, r)
 }
 
 func (s *server) requestContentChanges(w http.ResponseWriter, r *http.Request) {
@@ -101,7 +101,7 @@ func (s *server) requestContentChanges(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"data": result})
 }
 
-func (s *server) decideSubmission(w http.ResponseWriter, r *http.Request, approve bool) {
+func (s *server) decideSubmission(w http.ResponseWriter, r *http.Request) {
 	id, ok := urlUUID(w, r, "id")
 	if !ok {
 		return
@@ -114,9 +114,6 @@ func (s *server) decideSubmission(w http.ResponseWriter, r *http.Request, approv
 		return
 	}
 	user := r.Context().Value(sessionContextKey).(auth.Session).User
-	if !approve {
-		return
-	}
 	result, err := s.approvals.Approve(r.Context(), user.ID, user.Role, id, body.Note)
 	if err != nil {
 		s.writeEditorialError(w, r, err)
@@ -130,18 +127,8 @@ func (s *server) publishContentSubmission(w http.ResponseWriter, r *http.Request
 	if !ok {
 		return
 	}
-	var body struct {
-		Method string `json:"method,omitempty"`
-	}
-	if err := decodeJSON(w, r, &body); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
-		return
-	}
-	if body.Method == "" {
-		body.Method = "manual"
-	}
 	user := r.Context().Value(sessionContextKey).(auth.Session).User
-	result, err := s.approvals.PublishSubmission(r.Context(), user.ID, user.Role, id, body.Method)
+	result, err := s.approvals.PublishSubmission(r.Context(), user.ID, user.Role, id)
 	if err != nil {
 		s.writeEditorialError(w, r, err)
 		return
