@@ -1,0 +1,45 @@
+from pathlib import Path
+import re
+
+
+def read(path: str) -> str:
+    return Path(path).read_text()
+
+
+def write(path: str, text: str) -> None:
+    Path(path).write_text(text)
+
+
+def replace_one(path: str, old: str, new: str) -> None:
+    text = read(path)
+    count = text.count(old)
+    if count != 1:
+        raise RuntimeError(f"{path}: expected one exact match, found {count}: {old[:100]!r}")
+    write(path, text.replace(old, new, 1))
+
+
+def regex_one(path: str, pattern: str, replacement: str) -> None:
+    text = read(path)
+    updated, count = re.subn(pattern, replacement, text, count=1, flags=re.S)
+    if count != 1:
+        raise RuntimeError(f"{path}: expected one regex match, found {count}: {pattern[:100]!r}")
+    write(path, updated)
+
+
+# 1. Preserve legacy approval_required=true when review_policy has never been stored.
+replace_one(
+    "apps/server/internal/settings/service.go",
+    '''\tif err := json.Unmarshal(values, &d.Values); err != nil {\n\t\treturn d, err\n\t}\n\td.Values = mergeDefaults(d.Values, ScopeOrganization)''',
+    '''\tif err := json.Unmarshal(values, &d.Values); err != nil {\n\t\treturn d, err\n\t}\n\td.Values = mergeOrganizationDefaults(d.Values)''',
+)
+replace_one(
+    "apps/server/internal/settings/service.go",
+    '''func (s *Service) OrganizationValues(ctx context.Context) (map[string]any, error) {''',
+    '''func mergeOrganizationDefaults(values map[string]any) map[string]any {\n\tlegacyApprovalRequired, _ := values["content.approval_required"].(bool)\n\t_, reviewPolicyStored := values["content.review_policy"]\n\tmerged := mergeDefaults(values, ScopeOrganization)\n\tif !reviewPolicyStored && legacyApprovalRequired {\n\t\t// content.review_policy was introduced after approval_required. Preserve\n\t\t// the operator's existing review guarantee until they explicitly choose\n\t\t// a new policy. Defaults must not mask the legacy value during upgrade.\n\t\tmerged["content.review_policy"] = "everyone"\n\t}\n\treturn merged\n}\n\nfunc (s *Service) OrganizationValues(ctx context.Context) (map[string]any, error) {''',
+)
+replace_one(
+    "apps/server/internal/settings/registry_test.go",
+    '''func TestLegacyLocalTimesNormalizeAndFixedTimezoneNamesFail(t *testing.T) {''',
+    '''func TestLegacyApprovalRequiredStillEnforcesReviewPolicy(t *testing.T) {\n\tmerged := mergeOrganizationDefaults(map[string]any{"content.approval_required": true})\n\tif merged["content.review_policy"] != "everyone" {\n\t\tt.Fatalf("legacy approval requirement did not migrate to everyone: %#v", merged["content.review_policy"])\n\t}\n\texplicit := mergeOrganizationDefaults(map[string]any{\n\t\t"content.approval_required": true,\n\t\t"content.review_policy":     "off",\n\t})\n\tif explicit["content.review_policy"] != "off" {\n\t\tt.Fatalf("explicit review policy was overridden: %#v", explicit["content.review_policy"])\n\t}\n}\n\nfunc TestLegacyLocalTimesNormalizeAndFixedTimezoneNamesFail(t *testing.T) {''',
+)
+
