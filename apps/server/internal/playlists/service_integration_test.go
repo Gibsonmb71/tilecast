@@ -348,6 +348,7 @@ func TestPlaylistAssignmentManifestLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	publishDraftForTest(t, ctx, service, calendarPlaylist.ID, owner.User.ID)
 	service.SetSourceProjector(media.NewService(pool, nil, media.Config{}))
 	if _, err = service.Assign(ctx, screenID, calendarPlaylist.ID, owner.User.ID); !errors.Is(err, ErrConflict) || !strings.Contains(err.Error(), "Player update required") {
 		t.Fatalf("expected old Player assignment to be blocked, got %v", err)
@@ -399,6 +400,7 @@ func TestPlaylistAssignmentManifestLifecycle(t *testing.T) {
 	if err != nil || len(delegated.Items) != 1 || !delegated.Items[0].UsePlayerDefaults || delegated.Items[0].DurationMS != nil || delegated.Items[0].FitMode != "cover" || delegated.Items[0].Transition != "fade" || delegated.Items[0].AudioEnabled {
 		t.Fatalf("delegated defaults item=%#v err=%v", delegated.Items, err)
 	}
+	publishDraftForTest(t, ctx, service, delegated.ID, owner.User.ID)
 	if _, err = service.Assign(ctx, screenID, delegated.ID, owner.User.ID); err != nil {
 		t.Fatal(err)
 	}

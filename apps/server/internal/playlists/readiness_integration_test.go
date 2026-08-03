@@ -73,6 +73,7 @@ func TestSharedReadinessRejectsUnpublishedDeletedAndUnavailableLayoutItems(t *te
 	if _, err = f.service.AddItem(f.ctx, playlist.ID, f.user, ItemInput{LayoutID: &layout.ID, DurationMS: &duration, DeliveryPolicy: "stream"}); err != nil {
 		t.Fatal(err)
 	}
+	publishDraftForTest(t, f.ctx, f.service, playlist.ID, f.user)
 	if err = f.service.ValidatePresentationNow(f.ctx, "playlist", playlist.ID, time.Now().UTC()); err != nil {
 		t.Fatalf("valid layout playlist rejected: %v", err)
 	}

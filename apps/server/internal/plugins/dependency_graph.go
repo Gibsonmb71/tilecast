@@ -3,8 +3,10 @@ package plugins
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 )
 
 // DependencyGraph is the Studio-facing content topology. Edges point from a
@@ -139,7 +141,13 @@ func (s *Service) DependencyGraph(ctx context.Context, visibleScreenIDs []uuid.U
 		  WHERE sc.id IN(SELECT id FROM visible_screens)`,
 	}
 	for _, query := range edgeQueries {
-		edgeRows, queryErr := s.db.Query(ctx, query, visibleScreenIDs)
+		var edgeRows pgx.Rows
+		var queryErr error
+		if strings.Contains(query, "$1") {
+			edgeRows, queryErr = s.db.Query(ctx, query, visibleScreenIDs)
+		} else {
+			edgeRows, queryErr = s.db.Query(ctx, query)
+		}
 		if queryErr != nil {
 			return DependencyGraph{}, fmt.Errorf("query dependency graph edges: %w", queryErr)
 		}

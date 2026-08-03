@@ -250,6 +250,7 @@ func TestWidgetUsingV13SourceRejectedOnLegacyScreen(t *testing.T) {
 	if _, err := f.service.AddItem(f.ctx, playlist.ID, f.user, ItemInput{AssetID: widget.ID, DurationMS: &duration, DeliveryPolicy: "stream"}); err != nil {
 		t.Fatal(err)
 	}
+	publishDraftForTest(t, f.ctx, f.service, playlist.ID, f.user)
 
 	// Legacy Player: both scheduling validation and direct assignment reject.
 	if err := f.service.ValidatePresentationTargets(f.ctx, &playlist.ID, nil, []uuid.UUID{f.screen}, nil); !errors.Is(err, ErrConflict) {

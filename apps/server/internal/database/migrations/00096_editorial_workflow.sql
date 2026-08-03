@@ -6,6 +6,7 @@
 CREATE TABLE playlist_drafts (
     playlist_id UUID PRIMARY KEY REFERENCES playlists(id) ON DELETE CASCADE,
     revision BIGINT NOT NULL CHECK (revision > 0),
+    published_draft_revision BIGINT NOT NULL DEFAULT 1 CHECK (published_draft_revision > 0),
     name TEXT NOT NULL,
     description TEXT NOT NULL DEFAULT '',
     source_type TEXT NOT NULL DEFAULT 'static' CHECK (source_type IN ('static','tag')),
@@ -148,8 +149,8 @@ ALTER TABLE schedules ADD CONSTRAINT schedule_campaign_link_check
 CREATE INDEX schedules_campaign_idx ON schedules(campaign_id, campaign_release_id) WHERE deleted_at IS NULL AND campaign_id IS NOT NULL;
 
 -- Seed an isolated playlist draft from the currently-live normalized rows.
-INSERT INTO playlist_drafts(playlist_id,revision,name,description,source_type,tag_match,tag_image_duration_ms,updated_by,updated_at)
-SELECT id,revision,name,description,source_type,tag_match,tag_image_duration_ms,created_by,updated_at
+INSERT INTO playlist_drafts(playlist_id,revision,published_draft_revision,name,description,source_type,tag_match,tag_image_duration_ms,updated_by,updated_at)
+SELECT id,revision,revision,name,description,source_type,tag_match,tag_image_duration_ms,created_by,updated_at
 FROM playlists
 WHERE deleted_at IS NULL
 ON CONFLICT (playlist_id) DO NOTHING;

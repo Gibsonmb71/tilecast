@@ -60,12 +60,18 @@ func canonicalPlaylistSnapshot(document playlistSnapshot) ([]byte, string, error
 }
 
 func ensureDraftTx(ctx context.Context, tx pgx.Tx, playlistID uuid.UUID) error {
-	if _, err := tx.Exec(ctx, `
-		INSERT INTO playlist_drafts(playlist_id,revision,name,description,source_type,tag_match,tag_image_duration_ms,updated_by,updated_at)
-		SELECT id,revision,name,description,source_type,tag_match,tag_image_duration_ms,created_by,updated_at
+	var inserted uuid.UUID
+	err := tx.QueryRow(ctx, `
+		INSERT INTO playlist_drafts(playlist_id,revision,published_draft_revision,name,description,source_type,tag_match,tag_image_duration_ms,updated_by,updated_at)
+		SELECT id,revision,revision,name,description,source_type,tag_match,tag_image_duration_ms,created_by,updated_at
 		FROM playlists WHERE id=$1 AND deleted_at IS NULL
-		ON CONFLICT (playlist_id) DO NOTHING`, playlistID); err != nil {
+		ON CONFLICT (playlist_id) DO NOTHING
+		RETURNING playlist_id`, playlistID).Scan(&inserted)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		return err
+	}
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil
 	}
 	if _, err := tx.Exec(ctx, `
 		INSERT INTO playlist_draft_items(id,playlist_id,asset_id,layout_id,position,duration_ms,fit_mode,transition,audio_enabled,volume,video_start_offset_ms,video_end_offset_ms,delivery_policy,use_player_defaults,created_at,updated_at)
@@ -73,7 +79,7 @@ func ensureDraftTx(ctx context.Context, tx pgx.Tx, playlistID uuid.UUID) error {
 		FROM playlist_items i WHERE i.playlist_id=$1 ON CONFLICT (id) DO NOTHING`, playlistID); err != nil {
 		return err
 	}
-	_, err := tx.Exec(ctx, `
+	_, err = tx.Exec(ctx, `
 		INSERT INTO playlist_draft_tags(playlist_id,tag_id)
 		SELECT playlist_id,tag_id FROM playlist_tags WHERE playlist_id=$1 ON CONFLICT DO NOTHING`, playlistID)
 	return err
@@ -157,8 +163,9 @@ func (s *Service) GetDraft(ctx context.Context, id uuid.UUID) (Playlist, error) 
 	}
 	var rawName, description, sourceType, tagMatch string
 	var draftRevision, tagDuration int64
-	if err = s.db.QueryRow(ctx, `SELECT d.name,d.description,d.source_type,d.tag_match,d.tag_image_duration_ms,d.revision,p.revision FROM playlist_drafts d JOIN playlists p ON p.id=d.playlist_id WHERE d.playlist_id=$1 AND p.deleted_at IS NULL`, id).
-		Scan(&rawName, &description, &sourceType, &tagMatch, &tagDuration, &draftRevision, &p.PublishedRevision); err != nil {
+	var publishedDraftRevision int64
+	if err = s.db.QueryRow(ctx, `SELECT d.name,d.description,d.source_type,d.tag_match,d.tag_image_duration_ms,d.revision,d.published_draft_revision,p.revision FROM playlist_drafts d JOIN playlists p ON p.id=d.playlist_id WHERE d.playlist_id=$1 AND p.deleted_at IS NULL`, id).
+		Scan(&rawName, &description, &sourceType, &tagMatch, &tagDuration, &draftRevision, &publishedDraftRevision, &p.PublishedRevision); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return p, nil
 		}
@@ -169,7 +176,7 @@ func (s *Service) GetDraft(ctx context.Context, id uuid.UUID) (Playlist, error) 
 	p.DraftRevision = draftRevision
 	// A revision is synchronized after publishing an unchanged draft.  A
 	// differing revision is therefore a conservative, useful UI signal.
-	p.HasUnpublishedChanges = draftRevision != p.PublishedRevision
+	p.HasUnpublishedChanges = draftRevision != publishedDraftRevision
 	p.Items = []Item{}
 	p.Warnings = []string{}
 	p.TagRule = nil
@@ -330,7 +337,7 @@ func (s *Service) PublishSnapshotTx(ctx context.Context, tx pgx.Tx, id uuid.UUID
 		return editorial.Published{}, err
 	}
 	if workingRevision > 0 {
-		if _, err := tx.Exec(ctx, `UPDATE playlist_drafts SET revision=$2,updated_at=now() WHERE playlist_id=$1 AND revision=$3`, id, revision, workingRevision); err != nil {
+		if _, err := tx.Exec(ctx, `UPDATE playlist_drafts SET published_draft_revision=$2,updated_at=now() WHERE playlist_id=$1 AND revision=$2`, id, workingRevision); err != nil {
 			return editorial.Published{}, err
 		}
 	}

@@ -109,7 +109,7 @@ func (s *Service) Create(ctx context.Context, userID uuid.UUID, name, descriptio
 	if err != nil {
 		return Playlist{}, err
 	}
-	if _, err = tx.Exec(ctx, `INSERT INTO playlist_drafts(playlist_id,revision,name,description,source_type,tag_match,tag_image_duration_ms,updated_by)VALUES($1,1,$2,$3,$4,'any',10000,$5)`, id, name, description, sourceType, userID); err != nil {
+	if _, err = tx.Exec(ctx, `INSERT INTO playlist_drafts(playlist_id,revision,published_draft_revision,name,description,source_type,tag_match,tag_image_duration_ms,updated_by)VALUES($1,1,1,$2,$3,$4,'any',10000,$5)`, id, name, description, sourceType, userID); err != nil {
 		return Playlist{}, err
 	}
 	if err = insertAudit(ctx, tx, userID, "playlist.created", id); err != nil {
@@ -154,11 +154,28 @@ func (s *Service) List(ctx context.Context, search string, page, pageSize int) (
 	}
 	search = strings.TrimSpace(search)
 	var total int
-	if err := s.db.QueryRow(ctx, `SELECT count(*) FROM playlists p JOIN playlist_drafts d ON d.playlist_id=p.id WHERE p.deleted_at IS NULL AND p.system_managed=FALSE AND ($1='' OR d.name ILIKE '%'||$1||'%')`, search).Scan(&total); err != nil {
+	if err := s.db.QueryRow(ctx, `SELECT count(*) FROM playlists p LEFT JOIN playlist_drafts d ON d.playlist_id=p.id WHERE p.deleted_at IS NULL AND p.system_managed=FALSE AND ($1='' OR COALESCE(d.name,p.name) ILIKE '%'||$1||'%')`, search).Scan(&total); err != nil {
 		return ListResult{}, err
 	}
-	rows, err := s.db.Query(ctx, `SELECT p.id,d.name,d.description,p.revision,d.revision,p.created_at,d.updated_at,d.source_type,
-		CASE WHEN d.source_type='static' THEN count(i.id) ELSE (
+	rows, err := s.db.Query(ctx, `SELECT p.id,COALESCE(d.name,p.name),COALESCE(d.description,p.description),p.revision,COALESCE(d.revision,p.revision),COALESCE(d.revision,p.revision)<>COALESCE(d.published_draft_revision,p.revision),p.created_at,COALESCE(d.updated_at,p.updated_at),COALESCE(d.source_type,p.source_type),
+		CASE WHEN COALESCE(d.source_type,p.source_type)='static' THEN
+			CASE WHEN d.playlist_id IS NULL
+				THEN (SELECT count(*) FROM playlist_items pi WHERE pi.playlist_id=p.id)
+				ELSE (SELECT count(*) FROM playlist_draft_items di WHERE di.playlist_id=p.id)
+			END
+		ELSE CASE WHEN d.playlist_id IS NULL THEN (
+			SELECT count(*) FROM assets a
+			WHERE a.deleted_at IS NULL AND a.archived_at IS NULL AND (a.expires_at IS NULL OR a.expires_at>now()) AND a.origin='library' AND a.type IN('image','video') AND a.processing_status='ready'
+			  AND EXISTS(SELECT 1 FROM asset_variants v WHERE v.asset_id=a.id AND v.deleted_at IS NULL AND v.player_compatible=TRUE)
+			  AND EXISTS(SELECT 1 FROM playlist_tags selected WHERE selected.playlist_id=p.id)
+			  AND ((p.tag_match='any' AND EXISTS(
+			       SELECT 1 FROM content_asset_tags at JOIN playlist_tags selected ON selected.tag_id=at.tag_id
+			       WHERE at.asset_id=a.id AND selected.playlist_id=p.id
+			  )) OR (p.tag_match='all' AND NOT EXISTS(
+			       SELECT 1 FROM playlist_tags selected WHERE selected.playlist_id=p.id
+			       AND NOT EXISTS(SELECT 1 FROM content_asset_tags at WHERE at.asset_id=a.id AND at.tag_id=selected.tag_id)
+			  )))
+		) ELSE (
 			SELECT count(*) FROM assets a
 			WHERE a.deleted_at IS NULL AND a.archived_at IS NULL AND (a.expires_at IS NULL OR a.expires_at>now()) AND a.origin='library' AND a.type IN('image','video') AND a.processing_status='ready'
 			  AND EXISTS(SELECT 1 FROM asset_variants v WHERE v.asset_id=a.id AND v.deleted_at IS NULL AND v.player_compatible=TRUE)
@@ -170,10 +187,10 @@ func (s *Service) List(ctx context.Context, search string, page, pageSize int) (
 			       SELECT 1 FROM playlist_draft_tags selected WHERE selected.playlist_id=p.id
 			       AND NOT EXISTS(SELECT 1 FROM content_asset_tags at WHERE at.asset_id=a.id AND at.tag_id=selected.tag_id)
 			  )))
-		) END
-		FROM playlists p JOIN playlist_drafts d ON d.playlist_id=p.id LEFT JOIN playlist_draft_items i ON i.playlist_id=p.id
-		WHERE p.deleted_at IS NULL AND p.system_managed=FALSE AND ($1='' OR d.name ILIKE '%'||$1||'%')
-		GROUP BY p.id,d.id ORDER BY d.updated_at DESC,p.id LIMIT $2 OFFSET $3`, search, pageSize, (page-1)*pageSize)
+		) END END
+		FROM playlists p LEFT JOIN playlist_drafts d ON d.playlist_id=p.id
+		WHERE p.deleted_at IS NULL AND p.system_managed=FALSE AND ($1='' OR COALESCE(d.name,p.name) ILIKE '%'||$1||'%')
+		ORDER BY COALESCE(d.updated_at,p.updated_at) DESC,p.id LIMIT $2 OFFSET $3`, search, pageSize, (page-1)*pageSize)
 	if err != nil {
 		return ListResult{}, err
 	}
@@ -181,11 +198,10 @@ func (s *Service) List(ctx context.Context, search string, page, pageSize int) (
 	items := []Playlist{}
 	for rows.Next() {
 		var p Playlist
-		if err := rows.Scan(&p.ID, &p.Name, &p.Description, &p.Revision, &p.DraftRevision, &p.CreatedAt, &p.UpdatedAt, &p.SourceType, &p.ItemCount); err != nil {
+		if err := rows.Scan(&p.ID, &p.Name, &p.Description, &p.Revision, &p.DraftRevision, &p.HasUnpublishedChanges, &p.CreatedAt, &p.UpdatedAt, &p.SourceType, &p.ItemCount); err != nil {
 			return ListResult{}, err
 		}
 		p.PublishedRevision = p.Revision
-		p.HasUnpublishedChanges = p.DraftRevision != p.PublishedRevision
 		p.Items = []Item{}
 		p.Warnings = []string{}
 		p.LayoutUsage = []LayoutUsage{}

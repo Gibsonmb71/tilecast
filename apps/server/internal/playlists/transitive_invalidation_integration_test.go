@@ -74,6 +74,7 @@ func TestTransitiveAssetChangeInvalidatesNestedLayoutsGroupsAndSchedules(t *test
 	if _, err = service.AddItem(ctx, nested.ID, owner.User.ID, ItemInput{AssetID: assetID, DurationMS: &duration}); err != nil {
 		t.Fatal(err)
 	}
+	publishDraftForTest(t, ctx, service, nested.ID, owner.User.ID)
 	layoutService := layouts.NewService(pool)
 	layoutService.SetManifestInvalidator(service)
 	layout, err := layoutService.Create(ctx, owner.User.ID, "Nested layout", "", "landscape", 1920, 1080)
@@ -101,6 +102,7 @@ func TestTransitiveAssetChangeInvalidatesNestedLayoutsGroupsAndSchedules(t *test
 	if _, err = service.AddItem(ctx, root.ID, owner.User.ID, ItemInput{LayoutID: &layout.ID, DurationMS: &layoutDuration}); err != nil {
 		t.Fatal(err)
 	}
+	publishDraftForTest(t, ctx, service, root.ID, owner.User.ID)
 	if _, err = service.Assign(ctx, screens[0], root.ID, owner.User.ID); err != nil {
 		t.Fatal(err)
 	}

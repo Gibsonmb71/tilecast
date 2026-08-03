@@ -229,6 +229,9 @@ func (s *Service) RestoreRevision(ctx context.Context, playlistID uuid.UUID, rev
 	if _, err := tx.Exec(ctx, `DELETE FROM playlist_items WHERE playlist_id=$1`, playlistID); err != nil {
 		return RestoreResult{}, err
 	}
+	if _, err := tx.Exec(ctx, `DELETE FROM playlist_draft_items WHERE playlist_id=$1`, playlistID); err != nil {
+		return RestoreResult{}, err
+	}
 	// Restore in the order the snapshot recorded, not the order the array
 	// happens to be in. The aggregate is already ordered numerically; sorting
 	// again here means a snapshot written by an older build, or by any future
