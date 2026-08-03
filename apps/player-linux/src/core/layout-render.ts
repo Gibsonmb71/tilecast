@@ -32,7 +32,10 @@ import type {
   LayoutZone,
   RenderNode,
 } from "./render-tree";
-import { resolvePlaybackItemSettings } from "./playback-defaults";
+import {
+  fallbackDurationMsFor,
+  resolvePlaybackItemSettings,
+} from "./playback-defaults";
 
 const FONT_WHITELIST = new Set([
   "Inter",
@@ -299,12 +302,13 @@ function buildZoneItems(
     const settings = resolvePlaybackItemSettings(
       item,
       playback,
-      kind === "image"
-        ? Number.isFinite(Number(playback?.defaultImageDurationSeconds)) &&
+      fallbackDurationMsFor(
+        kind,
+        Number.isFinite(Number(playback?.defaultImageDurationSeconds)) &&
           Number(playback?.defaultImageDurationSeconds) > 0
           ? Number(playback?.defaultImageDurationSeconds) * 1_000
-          : 10_000
-        : 30_000,
+          : 10_000,
+      ),
     );
     items.push({
       id: item.id,

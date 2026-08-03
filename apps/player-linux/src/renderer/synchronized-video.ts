@@ -32,15 +32,32 @@
       return;
     }
 
-    const visibleLayer = document.querySelector(".layer.visible");
-    const video = visibleLayer?.querySelector(
-      "video",
-    ) as HTMLVideoElement | null;
+    // The shared position always describes the occurrence the renderer mounted
+    // most recently, so the newest element is the only valid target. The item
+    // id cannot identify it: a group looping a single video mounts occurrence
+    // after occurrence of the *same* item, and the previous one stays visible
+    // for the crossfade. Correcting that outgoing element seeks it back to the
+    // incoming occurrence's offset, on screen, at every loop.
+    const mounted = Array.from(
+      document.querySelectorAll("video[data-tilecast-mount]"),
+    ) as HTMLVideoElement[];
+    const video = mounted.reduce<HTMLVideoElement | null>(
+      (newest, candidate) =>
+        newest === null ||
+        Number(candidate.dataset.tilecastMount) >
+          Number(newest.dataset.tilecastMount)
+          ? candidate
+          : newest,
+      null,
+    );
     if (!video || video.readyState < HTMLMediaElement.HAVE_METADATA) {
       return;
     }
-    // The previous item remains visible during the crossfade. It must never
-    // receive the next item's synchronized timeline position.
+    // Still staged on the hidden layer: the previous occurrence owns the screen
+    // until the incoming one can play, and neither may be corrected yet.
+    if (!video.closest(".layer")?.classList.contains("visible")) {
+      return;
+    }
     if (video.dataset.tilecastItemId !== position.itemId || video.seeking) {
       return;
     }

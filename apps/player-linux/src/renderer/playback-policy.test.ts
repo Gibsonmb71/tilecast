@@ -33,6 +33,11 @@ interface Policy {
   recordVideoSyncSeek(state: SyncState, nowMs: number): void;
   shouldClearOutgoingLayer(input: LayerCleanup): boolean;
   shouldPauseOutgoingLayer(input: LayerCleanup): boolean;
+  transitionForSwap(
+    configured: string | undefined,
+    outgoingItemId: string | null,
+    incomingItemId: string,
+  ): string;
   videoSyncCorrection(input: {
     expectedMs: number;
     actualMs: number;
@@ -277,6 +282,32 @@ describe("layout zone loops", () => {
     expect(
       policy.zoneStepAllowed({ alive: true, mounted: true, connected: true }),
     ).toBe(true);
+  });
+});
+
+describe("crossfade decision", () => {
+  it("does not fade an item into itself", () => {
+    // A grouped playlist that loops one video re-delivers the same item at
+    // every shared boundary. Fading there runs a second decoder over the first
+    // for 300 ms to dissolve a frame into itself.
+    expect(policy.transitionForSwap("crossfade", "item-1", "item-1")).toBe(
+      "none",
+    );
+    expect(policy.transitionForSwap(undefined, "item-1", "item-1")).toBe(
+      "none",
+    );
+  });
+
+  it("keeps the authored transition between different items", () => {
+    expect(policy.transitionForSwap("crossfade", "item-1", "item-2")).toBe(
+      "crossfade",
+    );
+    expect(policy.transitionForSwap("none", "item-1", "item-2")).toBe("none");
+  });
+
+  it("fades by default, including the first item of a presentation", () => {
+    expect(policy.transitionForSwap(undefined, null, "item-1")).toBe("fade");
+    expect(policy.transitionForSwap("", "item-1", "item-2")).toBe("fade");
   });
 });
 
