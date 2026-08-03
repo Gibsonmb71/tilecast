@@ -1,4 +1,4 @@
-.PHONY: android-build android-check bootstrap build check dev-dashboard dev-server format test
+.PHONY: android-build android-check bootstrap build check dev-dashboard dev-server docs-check format test
 
 bootstrap:
 	npm install
@@ -13,6 +13,7 @@ build:
 	cd apps/player-android && ./gradlew assembleDebug
 
 check:
+	$(MAKE) docs-check
 	npm run format:check
 	npm run lint
 	npm test
@@ -38,3 +39,6 @@ format:
 test:
 	npm test
 	cd apps/server && go test ./...
+
+docs-check:
+	bash scripts/check-docs-ste.sh

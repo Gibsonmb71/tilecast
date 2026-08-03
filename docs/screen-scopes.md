@@ -32,7 +32,7 @@ larger decision.
 - **An Owner is never scoped.** An installation must not be able to lock itself
   out of its own fleet.
 - **Nobody can change their own scope.** Otherwise a scoped administrator could
-  simply widen themselves.
+  only widen themselves.
 - **A grant is a location or a sync group.** A screen is in scope when its
   location matches, or when it belongs to a scoped group.
 - **All or nothing on a set.** An operation naming screens outside the scope is

@@ -44,7 +44,7 @@ implemented and normative behavior.
 
 ## Principles
 
-1. **Make state and action obvious.** Show what is happening, what changed, and
+1. **Make state and action clear.** Show what is happening, what changed, and
    the next safe action without requiring interpretation.
 2. **Prefer useful density.** Fit operational information comfortably without
    oversized cards, decorative whitespace, or compressed touch targets.
@@ -281,7 +281,7 @@ license to copy arbitrary breakpoint values.
 New work must:
 
 - preserve the primary task without horizontal page scrolling.
-- let tables scroll within a labeled or obvious container when columns cannot
+- let tables scroll within a labeled or clear container when columns cannot
   collapse safely.
 - stack actions and field rows before labels or controls become cramped.
 - keep important actions visible rather than hover-only.
