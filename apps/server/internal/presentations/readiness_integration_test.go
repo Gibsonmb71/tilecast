@@ -71,7 +71,7 @@ func TestQuickPresentUsesSharedReadinessAndProjectsIntoManifest(t *testing.T) {
 		t.Fatal(err)
 	}
 	duration := int64(10_000)
-	if _, err = playlistService.AddItem(ctx, playlist.ID, owner.User.ID, playlists.ItemInput{AssetID: assetID, DurationMS: &duration}); err != nil {
+	if _, err = pool.Exec(ctx, `INSERT INTO playlist_items(id,playlist_id,asset_id,position,duration_ms) VALUES($1,$2,$3,0,$4)`, uuid.New(), playlist.ID, assetID, duration); err != nil {
 		t.Fatal(err)
 	}
 	service := NewService(pool, nil)

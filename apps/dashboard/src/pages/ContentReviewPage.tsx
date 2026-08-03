@@ -56,6 +56,11 @@ export function ContentReviewPage() {
       <PageHeader
         title="Content review"
         description="A playlist or Layout must be approved at its current revision before it can go on a screen. Editing approved content sends it back here."
+        actions={
+          <Link className="button" to="/content-review/submissions">
+            Open submission inbox
+          </Link>
+        }
       />
 
       {queue.data && !queue.data.required && (

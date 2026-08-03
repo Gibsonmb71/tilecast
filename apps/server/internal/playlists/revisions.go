@@ -67,9 +67,16 @@ func snapshotRevision(ctx context.Context, tx pgx.Tx, playlistID uuid.UUID, user
 	// Trim inside the same transaction so the cap cannot be exceeded even
 	// briefly.
 	_, err = tx.Exec(ctx, `
-		DELETE FROM playlist_revisions WHERE id IN (
-			SELECT id FROM playlist_revisions WHERE playlist_id=$1
-			ORDER BY revision DESC OFFSET $2)`, playlistID, RevisionsToKeep)
+		DELETE FROM playlist_revisions r WHERE r.id IN (
+			SELECT candidate.id FROM playlist_revisions candidate
+			WHERE candidate.playlist_id=$1
+			  AND NOT EXISTS(SELECT 1 FROM publication_history h WHERE h.native_revision_id=candidate.id)
+			  AND NOT EXISTS(
+				  SELECT 1 FROM content_submissions sub
+				  WHERE sub.content_type='playlist' AND sub.content_id=candidate.playlist_id
+				    AND sub.working_revision=candidate.revision
+				    AND sub.status IN ('in_review','changes_requested','approved','scheduled'))
+			ORDER BY candidate.revision DESC OFFSET $2)`, playlistID, RevisionsToKeep)
 	return err
 }
 
@@ -182,8 +189,7 @@ func (s *Service) RestoreRevision(ctx context.Context, playlistID uuid.UUID, rev
 	}
 	defer tx.Rollback(ctx) //nolint:errcheck
 
-	// Snapshot the present first, so a restore can itself be undone.
-	if err := snapshotRevision(ctx, tx, playlistID, &user); err != nil {
+	if err := ensureDraftTx(ctx, tx, playlistID); err != nil {
 		return RestoreResult{}, err
 	}
 
@@ -223,6 +229,9 @@ func (s *Service) RestoreRevision(ctx context.Context, playlistID uuid.UUID, rev
 	if _, err := tx.Exec(ctx, `DELETE FROM playlist_items WHERE playlist_id=$1`, playlistID); err != nil {
 		return RestoreResult{}, err
 	}
+	if _, err := tx.Exec(ctx, `DELETE FROM playlist_draft_items WHERE playlist_id=$1`, playlistID); err != nil {
+		return RestoreResult{}, err
+	}
 	// Restore in the order the snapshot recorded, not the order the array
 	// happens to be in. The aggregate is already ordered numerically; sorting
 	// again here means a snapshot written by an older build, or by any future
@@ -251,7 +260,7 @@ func (s *Service) RestoreRevision(ctx context.Context, playlistID uuid.UUID, rev
 			continue
 		}
 		if _, err := tx.Exec(ctx, `
-			INSERT INTO playlist_items(
+			INSERT INTO playlist_draft_items(
 				id,playlist_id,asset_id,layout_id,position,duration_ms,fit_mode,
 				transition,audio_enabled,volume,video_start_offset_ms,
 				video_end_offset_ms,delivery_policy,use_player_defaults)
@@ -264,22 +273,21 @@ func (s *Service) RestoreRevision(ctx context.Context, playlistID uuid.UUID, rev
 		position++
 	}
 
-	// A restore is an ordinary edit: it bumps the revision, so the manifest
-	// changes, content review re-opens if it is required, and the state it
-	// replaced stays in the history.
+	// Restore is a new working-draft edit. It never touches the normalized
+	// published rows or manifest state.
 	var newRevision int64
 	if err := tx.QueryRow(ctx, `
-		UPDATE playlists SET name=$2,description=$3,source_type=$4,tag_match=$5,
-			tag_image_duration_ms=$6,revision=revision+1,updated_at=now()
-		WHERE id=$1 AND deleted_at IS NULL RETURNING revision`,
-		playlistID, name, description, sourceType, tagMatch, tagDuration).Scan(&newRevision); err != nil {
+		UPDATE playlist_drafts SET name=$2,description=$3,source_type=$4,tag_match=$5,
+			tag_image_duration_ms=$6,revision=revision+1,updated_by=$7,updated_at=now()
+		WHERE playlist_id=$1 RETURNING revision`,
+		playlistID, name, description, sourceType, tagMatch, tagDuration, user).Scan(&newRevision); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return RestoreResult{}, ErrNotFound
 		}
 		return RestoreResult{}, err
 	}
 
-	if _, err := tx.Exec(ctx, `DELETE FROM playlist_tags WHERE playlist_id=$1`, playlistID); err != nil {
+	if _, err := tx.Exec(ctx, `DELETE FROM playlist_draft_tags WHERE playlist_id=$1`, playlistID); err != nil {
 		return RestoreResult{}, err
 	}
 	var restoredTags []uuid.UUID
@@ -292,29 +300,20 @@ func (s *Service) RestoreRevision(ctx context.Context, playlistID uuid.UUID, rev
 		// A tag deleted since the snapshot is skipped for the same reason an
 		// asset is.
 		if _, err := tx.Exec(ctx, `
-			INSERT INTO playlist_tags(playlist_id,tag_id)
+			INSERT INTO playlist_draft_tags(playlist_id,tag_id)
 			SELECT $1,$2 WHERE EXISTS(SELECT 1 FROM content_tags WHERE id=$2)
 			ON CONFLICT DO NOTHING`, playlistID, tag); err != nil {
 			return RestoreResult{}, err
 		}
 	}
 
-	if err := snapshotRevision(ctx, tx, playlistID, &user); err != nil {
-		return RestoreResult{}, err
-	}
-	notifications, err := bumpAssigned(ctx, tx, playlistID, "playlist.revision_restored")
-	if err != nil {
-		return RestoreResult{}, err
-	}
-	if err := insertAudit(ctx, tx, user, "playlist.revision_restored", playlistID); err != nil {
+	if err := insertAudit(ctx, tx, user, "playlist.version_restored_to_draft", playlistID); err != nil {
 		return RestoreResult{}, err
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return RestoreResult{}, err
 	}
-	s.notify(notifications)
-
-	playlist, err := s.Get(ctx, playlistID)
+	playlist, err := s.GetDraft(ctx, playlistID)
 	if err != nil {
 		return RestoreResult{}, err
 	}

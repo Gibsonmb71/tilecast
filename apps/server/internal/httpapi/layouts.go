@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/tilecast/tilecast/apps/server/internal/approvals"
 	"github.com/tilecast/tilecast/apps/server/internal/auth"
 	"github.com/tilecast/tilecast/apps/server/internal/layouts"
 )
@@ -159,6 +160,24 @@ func (s *server) publishLayout(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	user := r.Context().Value(sessionContextKey).(auth.Session).User
+	if s.approvals != nil {
+		published, publishErr := s.approvals.SubmitAndPublish(r.Context(), user.ID, user.Role, "layout", id, body.ExpectedDraftRevision)
+		if errors.Is(publishErr, approvals.ErrReviewRequired) {
+			submission, submitErr := s.approvals.SubmitExpected(r.Context(), user.ID, user.Role, "layout", id, nil, body.ExpectedDraftRevision)
+			if submitErr != nil {
+				s.writeEditorialError(w, r, submitErr)
+				return
+			}
+			writeJSON(w, http.StatusAccepted, map[string]any{"data": submission})
+			return
+		}
+		if publishErr != nil {
+			s.writeEditorialError(w, r, publishErr)
+			return
+		}
+		writeJSON(w, http.StatusCreated, map[string]any{"data": published})
+		return
+	}
 	result, err := s.layouts.Publish(r.Context(), id, user.ID, body.ExpectedDraftRevision)
 	if err != nil {
 		s.writeLayoutError(w, r, err)

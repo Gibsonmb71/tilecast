@@ -2,6 +2,7 @@ package approvals
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -105,5 +106,50 @@ func TestNotApprovedErrorNamesTheContentType(t *testing.T) {
 	}
 	if !errors.Is(err, ErrNotApproved) {
 		t.Error("the sentinel must be preserved for the HTTP mapping")
+	}
+}
+
+func TestReviewPolicyModes(t *testing.T) {
+	if reviewRequiredFor(PolicyOff, "contributor") {
+		t.Error("off policy unexpectedly requires review")
+	}
+	if !reviewRequiredFor(PolicyContributors, "contributor") {
+		t.Error("Contributor work should require review")
+	}
+	if reviewRequiredFor(PolicyContributors, "editor") {
+		t.Error("manager publication should remain direct under contributor policy")
+	}
+	if !reviewRequiredFor(PolicyEveryone, "owner") {
+		t.Error("everyone policy should require review for owners")
+	}
+}
+
+func TestCampaignPublicationPermissionDoesNotGrantEditorScheduleAuthority(t *testing.T) {
+	if !canAuthor(TypeCampaign, "editor") {
+		t.Error("editor should be able to author campaigns")
+	}
+	if canPublishContent(TypeCampaign, "editor") {
+		t.Error("editor must not publish campaign schedule changes")
+	}
+	if !canPublishContent(TypeCampaign, "administrator") {
+		t.Error("administrator should publish campaign schedule changes")
+	}
+}
+
+func TestSemanticPlaylistDiffNamesMeaningfulChanges(t *testing.T) {
+	before := json.RawMessage(`{"name":"Morning","items":[{"id":"a","position":0,"durationMs":5000}]}`)
+	after := json.RawMessage(`{"name":"Morning board","items":[{"id":"a","position":0,"durationMs":7000},{"id":"b","position":1,"durationMs":5000}]}`)
+	changes := semanticChanges(TypePlaylist, before, after)
+	if len(changes) != 3 {
+		t.Fatalf("changes=%#v, want details plus added and changed items", changes)
+	}
+	kinds := map[string]bool{}
+	for _, change := range changes {
+		kinds[change.Kind] = true
+	}
+	for _, kind := range []string{"details_changed", "item_added", "item_changed"} {
+		if !kinds[kind] {
+			t.Fatalf("changes=%#v missing %s", changes, kind)
+		}
 	}
 }

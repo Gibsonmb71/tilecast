@@ -109,6 +109,9 @@ func (s *Service) Create(ctx context.Context, userID uuid.UUID, name, descriptio
 	if err != nil {
 		return Playlist{}, err
 	}
+	if _, err = tx.Exec(ctx, `INSERT INTO playlist_drafts(playlist_id,revision,published_draft_revision,name,description,source_type,tag_match,tag_image_duration_ms,updated_by)VALUES($1,1,1,$2,$3,$4,'any',10000,$5)`, id, name, description, sourceType, userID); err != nil {
+		return Playlist{}, err
+	}
 	if err = insertAudit(ctx, tx, userID, "playlist.created", id); err != nil {
 		return Playlist{}, err
 	}
@@ -151,11 +154,16 @@ func (s *Service) List(ctx context.Context, search string, page, pageSize int) (
 	}
 	search = strings.TrimSpace(search)
 	var total int
-	if err := s.db.QueryRow(ctx, `SELECT count(*) FROM playlists WHERE deleted_at IS NULL AND system_managed=FALSE AND ($1='' OR name ILIKE '%'||$1||'%')`, search).Scan(&total); err != nil {
+	if err := s.db.QueryRow(ctx, `SELECT count(*) FROM playlists p LEFT JOIN playlist_drafts d ON d.playlist_id=p.id WHERE p.deleted_at IS NULL AND p.system_managed=FALSE AND ($1='' OR COALESCE(d.name,p.name) ILIKE '%'||$1||'%')`, search).Scan(&total); err != nil {
 		return ListResult{}, err
 	}
-	rows, err := s.db.Query(ctx, `SELECT p.id,p.name,p.description,p.revision,p.created_at,p.updated_at,p.source_type,
-		CASE WHEN p.source_type='static' THEN count(i.id) ELSE (
+	rows, err := s.db.Query(ctx, `SELECT p.id,COALESCE(d.name,p.name),COALESCE(d.description,p.description),p.revision,COALESCE(d.revision,p.revision),COALESCE(d.revision,p.revision)<>COALESCE(d.published_draft_revision,p.revision),p.created_at,COALESCE(d.updated_at,p.updated_at),COALESCE(d.source_type,p.source_type),
+		CASE WHEN COALESCE(d.source_type,p.source_type)='static' THEN
+			CASE WHEN d.playlist_id IS NULL
+				THEN (SELECT count(*) FROM playlist_items pi WHERE pi.playlist_id=p.id)
+				ELSE (SELECT count(*) FROM playlist_draft_items di WHERE di.playlist_id=p.id)
+			END
+		ELSE CASE WHEN d.playlist_id IS NULL THEN (
 			SELECT count(*) FROM assets a
 			WHERE a.deleted_at IS NULL AND a.archived_at IS NULL AND (a.expires_at IS NULL OR a.expires_at>now()) AND a.origin='library' AND a.type IN('image','video') AND a.processing_status='ready'
 			  AND EXISTS(SELECT 1 FROM asset_variants v WHERE v.asset_id=a.id AND v.deleted_at IS NULL AND v.player_compatible=TRUE)
@@ -167,10 +175,22 @@ func (s *Service) List(ctx context.Context, search string, page, pageSize int) (
 			       SELECT 1 FROM playlist_tags selected WHERE selected.playlist_id=p.id
 			       AND NOT EXISTS(SELECT 1 FROM content_asset_tags at WHERE at.asset_id=a.id AND at.tag_id=selected.tag_id)
 			  )))
-		) END
-		FROM playlists p LEFT JOIN playlist_items i ON i.playlist_id=p.id
-		WHERE p.deleted_at IS NULL AND p.system_managed=FALSE AND ($1='' OR p.name ILIKE '%'||$1||'%')
-		GROUP BY p.id ORDER BY p.updated_at DESC,p.id LIMIT $2 OFFSET $3`, search, pageSize, (page-1)*pageSize)
+		) ELSE (
+			SELECT count(*) FROM assets a
+			WHERE a.deleted_at IS NULL AND a.archived_at IS NULL AND (a.expires_at IS NULL OR a.expires_at>now()) AND a.origin='library' AND a.type IN('image','video') AND a.processing_status='ready'
+			  AND EXISTS(SELECT 1 FROM asset_variants v WHERE v.asset_id=a.id AND v.deleted_at IS NULL AND v.player_compatible=TRUE)
+			  AND EXISTS(SELECT 1 FROM playlist_draft_tags selected WHERE selected.playlist_id=p.id)
+			  AND ((d.tag_match='any' AND EXISTS(
+			       SELECT 1 FROM content_asset_tags at JOIN playlist_draft_tags selected ON selected.tag_id=at.tag_id
+			       WHERE at.asset_id=a.id AND selected.playlist_id=p.id
+			  )) OR (d.tag_match='all' AND NOT EXISTS(
+			       SELECT 1 FROM playlist_draft_tags selected WHERE selected.playlist_id=p.id
+			       AND NOT EXISTS(SELECT 1 FROM content_asset_tags at WHERE at.asset_id=a.id AND at.tag_id=selected.tag_id)
+			  )))
+		) END END
+		FROM playlists p LEFT JOIN playlist_drafts d ON d.playlist_id=p.id
+		WHERE p.deleted_at IS NULL AND p.system_managed=FALSE AND ($1='' OR COALESCE(d.name,p.name) ILIKE '%'||$1||'%')
+		ORDER BY COALESCE(d.updated_at,p.updated_at) DESC,p.id LIMIT $2 OFFSET $3`, search, pageSize, (page-1)*pageSize)
 	if err != nil {
 		return ListResult{}, err
 	}
@@ -178,9 +198,10 @@ func (s *Service) List(ctx context.Context, search string, page, pageSize int) (
 	items := []Playlist{}
 	for rows.Next() {
 		var p Playlist
-		if err := rows.Scan(&p.ID, &p.Name, &p.Description, &p.Revision, &p.CreatedAt, &p.UpdatedAt, &p.SourceType, &p.ItemCount); err != nil {
+		if err := rows.Scan(&p.ID, &p.Name, &p.Description, &p.Revision, &p.DraftRevision, &p.HasUnpublishedChanges, &p.CreatedAt, &p.UpdatedAt, &p.SourceType, &p.ItemCount); err != nil {
 			return ListResult{}, err
 		}
+		p.PublishedRevision = p.Revision
 		p.Items = []Item{}
 		p.Warnings = []string{}
 		p.LayoutUsage = []LayoutUsage{}
@@ -336,36 +357,31 @@ func (s *Service) SetTagRule(ctx context.Context, id, userID uuid.UUID, input Ta
 	if input.Enabled {
 		sourceType = "tag"
 	}
-	result, err := tx.Exec(ctx, `UPDATE playlists SET source_type=$2,tag_match=$3,tag_image_duration_ms=$4,revision=revision+1,updated_at=now() WHERE id=$1 AND deleted_at IS NULL`, id, sourceType, input.Match, input.ImageDurationMS)
+	if err = ensureDraftTx(ctx, tx, id); err != nil {
+		return Playlist{}, err
+	}
+	result, err := tx.Exec(ctx, `UPDATE playlist_drafts SET source_type=$2,tag_match=$3,tag_image_duration_ms=$4,revision=revision+1,updated_by=$5,updated_at=now() WHERE playlist_id=$1`, id, sourceType, input.Match, input.ImageDurationMS, userID)
 	if err != nil {
 		return Playlist{}, err
 	}
 	if result.RowsAffected() == 0 {
 		return Playlist{}, ErrNotFound
 	}
-	if _, err = tx.Exec(ctx, `DELETE FROM playlist_tags WHERE playlist_id=$1`, id); err != nil {
+	if _, err = tx.Exec(ctx, `DELETE FROM playlist_draft_tags WHERE playlist_id=$1`, id); err != nil {
 		return Playlist{}, err
 	}
 	for _, tagID := range tagIDs {
-		if _, err = tx.Exec(ctx, `INSERT INTO playlist_tags(playlist_id,tag_id) VALUES($1,$2)`, id, tagID); err != nil {
+		if _, err = tx.Exec(ctx, `INSERT INTO playlist_draft_tags(playlist_id,tag_id) VALUES($1,$2)`, id, tagID); err != nil {
 			return Playlist{}, err
 		}
 	}
-	if err = snapshotRevision(ctx, tx, id, &userID); err != nil {
-		return Playlist{}, err
-	}
-	notes, err := bumpAssigned(ctx, tx, id, "playlist.tag_rule_updated")
-	if err != nil {
-		return Playlist{}, err
-	}
-	if err = insertAudit(ctx, tx, userID, "playlist.tag_rule_updated", id); err != nil {
+	if err = insertAudit(ctx, tx, userID, "playlist.draft.tag_rule_updated", id); err != nil {
 		return Playlist{}, err
 	}
 	if err = tx.Commit(ctx); err != nil {
 		return Playlist{}, err
 	}
-	s.notify(notes)
-	return s.Get(ctx, id)
+	return s.GetDraft(ctx, id)
 }
 
 // reachableDataSources reports the Data Sources a playlist reaches through its items.
@@ -409,7 +425,7 @@ func (s *Service) reachableDataSources(ctx context.Context, id uuid.UUID) ([]uui
 // direct assignment or through a synchronized group, matching how the Layout usage read resolves
 // the same question.
 func (s *Service) usage(ctx context.Context, id uuid.UUID) (Usage, error) {
-	result := Usage{Screens: []UsageItem{}, Schedules: []UsageItem{}}
+	result := Usage{Screens: []UsageItem{}, Schedules: []UsageItem{}, Campaigns: []UsageItem{}}
 	screens, err := s.db.Query(ctx, `SELECT DISTINCT sc.id,sc.name FROM screens sc LEFT JOIN screen_playlist_assignments a ON a.screen_id=sc.id LEFT JOIN screen_group_memberships m ON m.screen_id=sc.id LEFT JOIN screen_group_playlist_assignments ga ON ga.screen_group_id=m.screen_group_id WHERE a.playlist_id=$1 OR ga.playlist_id=$1 ORDER BY sc.name`, id)
 	if err != nil {
 		return Usage{}, err
@@ -438,7 +454,22 @@ func (s *Service) usage(ctx context.Context, id uuid.UUID) (Usage, error) {
 		}
 		result.Schedules = append(result.Schedules, item)
 	}
-	return result, schedules.Err()
+	if err = schedules.Err(); err != nil {
+		return Usage{}, err
+	}
+	campaigns, err := s.db.Query(ctx, `SELECT DISTINCT c.id,c.name FROM campaigns c LEFT JOIN schedules s ON s.campaign_id=c.id AND s.playlist_id=$1 AND s.deleted_at IS NULL WHERE c.archived_at IS NULL AND (s.id IS NOT NULL OR EXISTS(SELECT 1 FROM jsonb_array_elements(c.draft->'blocks') block WHERE block->>'contentType'='playlist' AND block->>'contentId'=$1::text)) ORDER BY c.name`, id)
+	if err != nil {
+		return Usage{}, err
+	}
+	defer campaigns.Close()
+	for campaigns.Next() {
+		var item UsageItem
+		if err = campaigns.Scan(&item.ID, &item.Name); err != nil {
+			return Usage{}, err
+		}
+		result.Campaigns = append(result.Campaigns, item)
+	}
+	return result, campaigns.Err()
 }
 
 func (s *Service) Update(ctx context.Context, id, userID uuid.UUID, name, description string) (Playlist, error) {
@@ -452,32 +483,27 @@ func (s *Service) Update(ctx context.Context, id, userID uuid.UUID, name, descri
 		return Playlist{}, err
 	}
 	defer tx.Rollback(ctx)
-	tag, err := tx.Exec(ctx, `UPDATE playlists SET name=$2,description=$3,revision=revision+1,updated_at=now() WHERE id=$1 AND deleted_at IS NULL`, id, name, description)
+	if err = ensureDraftTx(ctx, tx, id); err != nil {
+		return Playlist{}, err
+	}
+	tag, err := tx.Exec(ctx, `UPDATE playlist_drafts SET name=$2,description=$3,revision=revision+1,updated_by=$4,updated_at=now() WHERE playlist_id=$1`, id, name, description, userID)
 	if err != nil {
 		return Playlist{}, err
 	}
 	if tag.RowsAffected() == 0 {
 		return Playlist{}, ErrNotFound
 	}
-	if err = snapshotRevision(ctx, tx, id, &userID); err != nil {
-		return Playlist{}, err
-	}
-	notifications, err := bumpAssigned(ctx, tx, id, "playlist.updated")
-	if err != nil {
-		return Playlist{}, err
-	}
-	if err = insertAudit(ctx, tx, userID, "playlist.updated", id); err != nil {
+	if err = insertAudit(ctx, tx, userID, "playlist.draft.updated", id); err != nil {
 		return Playlist{}, err
 	}
 	if err = tx.Commit(ctx); err != nil {
 		return Playlist{}, err
 	}
-	s.notify(notifications)
-	return s.Get(ctx, id)
+	return s.GetDraft(ctx, id)
 }
 
 func (s *Service) Duplicate(ctx context.Context, id, userID uuid.UUID) (Playlist, error) {
-	source, err := s.Get(ctx, id)
+	source, err := s.GetDraft(ctx, id)
 	if err != nil {
 		return Playlist{}, err
 	}
@@ -490,20 +516,30 @@ func (s *Service) Duplicate(ctx context.Context, id, userID uuid.UUID) (Playlist
 		return Playlist{}, err
 	}
 	defer tx.Rollback(ctx)
-	_, err = tx.Exec(ctx, `INSERT INTO playlist_items(id,playlist_id,asset_id,layout_id,position,duration_ms,fit_mode,transition,audio_enabled,volume,video_start_offset_ms,video_end_offset_ms,delivery_policy,use_player_defaults) SELECT gen_random_uuid(),$2,asset_id,layout_id,position,duration_ms,fit_mode,transition,audio_enabled,volume,video_start_offset_ms,video_end_offset_ms,delivery_policy,use_player_defaults FROM playlist_items WHERE playlist_id=$1`, id, created.ID)
+	_, err = tx.Exec(ctx, `UPDATE playlist_drafts SET source_type=$2,tag_match=$3,tag_image_duration_ms=$4,revision=revision+1,updated_by=$5,updated_at=now() WHERE playlist_id=$1`, created.ID, source.SourceType, func() string {
+		if source.TagRule != nil {
+			return source.TagRule.Match
+		}
+		return "any"
+	}(), func() int64 {
+		if source.TagRule != nil {
+			return source.TagRule.ImageDurationMS
+		}
+		return int64(10000)
+	}(), userID)
 	if err != nil {
 		return Playlist{}, err
 	}
-	if _, err = tx.Exec(ctx, `UPDATE playlists destination SET source_type=source.source_type,tag_match=source.tag_match,tag_image_duration_ms=source.tag_image_duration_ms,revision=revision+1 FROM playlists source WHERE destination.id=$1 AND source.id=$2`, created.ID, id); err != nil {
+	if _, err = tx.Exec(ctx, `INSERT INTO playlist_draft_items(id,playlist_id,asset_id,layout_id,position,duration_ms,fit_mode,transition,audio_enabled,volume,video_start_offset_ms,video_end_offset_ms,delivery_policy,use_player_defaults) SELECT gen_random_uuid(),$2,asset_id,layout_id,position,duration_ms,fit_mode,transition,audio_enabled,volume,video_start_offset_ms,video_end_offset_ms,delivery_policy,use_player_defaults FROM playlist_draft_items WHERE playlist_id=$1`, id, created.ID); err != nil {
 		return Playlist{}, err
 	}
-	if _, err = tx.Exec(ctx, `INSERT INTO playlist_tags(playlist_id,tag_id) SELECT $2,tag_id FROM playlist_tags WHERE playlist_id=$1`, id, created.ID); err != nil {
+	if _, err = tx.Exec(ctx, `INSERT INTO playlist_draft_tags(playlist_id,tag_id) SELECT $2,tag_id FROM playlist_draft_tags WHERE playlist_id=$1`, id, created.ID); err != nil {
 		return Playlist{}, err
 	}
 	if err = tx.Commit(ctx); err != nil {
 		return Playlist{}, err
 	}
-	return s.Get(ctx, created.ID)
+	return s.GetDraft(ctx, created.ID)
 }
 
 func (s *Service) Delete(ctx context.Context, id, userID uuid.UUID) error {
@@ -745,7 +781,7 @@ func validateLayoutItemCycle(ctx context.Context, q interface {
 				WHERE ref.kind='layout' AND layout.id=ref.id
 				UNION
 				SELECT 'layout'::text,item.layout_id
-				FROM playlist_items item
+				FROM playlist_draft_items item
 				WHERE ref.kind='playlist' AND item.playlist_id=ref.id AND item.layout_id IS NOT NULL
 			) next
 		)
@@ -776,40 +812,34 @@ func (s *Service) AddItem(ctx context.Context, playlistID, userID uuid.UUID, inp
 	if err != nil {
 		return Playlist{}, err
 	}
-	var position int
-	if err = tx.QueryRow(ctx, `SELECT COALESCE(max(position)+1,0) FROM playlist_items WHERE playlist_id=$1`, playlistID).Scan(&position); err != nil {
+	if err = ensureDraftTx(ctx, tx, playlistID); err != nil {
 		return Playlist{}, err
 	}
-	tag, err := tx.Exec(ctx, `UPDATE playlists SET revision=revision+1,updated_at=now() WHERE id=$1 AND deleted_at IS NULL`, playlistID)
+	var position int
+	if err = tx.QueryRow(ctx, `SELECT COALESCE(max(position)+1,0) FROM playlist_draft_items WHERE playlist_id=$1`, playlistID).Scan(&position); err != nil {
+		return Playlist{}, err
+	}
+	var draftRevision int64
+	err = tx.QueryRow(ctx, `UPDATE playlist_drafts SET revision=revision+1,updated_by=$2,updated_at=now() WHERE playlist_id=$1 RETURNING revision`, playlistID, userID).Scan(&draftRevision)
 	if err != nil {
 		return Playlist{}, err
-	}
-	if tag.RowsAffected() == 0 {
-		return Playlist{}, ErrNotFound
 	}
 	var assetID any = input.AssetID
 	if input.LayoutID != nil {
 		assetID = nil
 	}
-	_, err = tx.Exec(ctx, `INSERT INTO playlist_items(id,playlist_id,asset_id,layout_id,position,duration_ms,fit_mode,transition,audio_enabled,volume,video_start_offset_ms,video_end_offset_ms,delivery_policy,use_player_defaults)VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`, uuid.New(), playlistID, assetID, input.LayoutID, position, input.DurationMS, input.FitMode, input.Transition, *input.AudioEnabled, *input.Volume, input.VideoStartOffsetMS, input.VideoEndOffsetMS, input.DeliveryPolicy, input.UsePlayerDefaults)
+	_, err = tx.Exec(ctx, `INSERT INTO playlist_draft_items(id,playlist_id,asset_id,layout_id,position,duration_ms,fit_mode,transition,audio_enabled,volume,video_start_offset_ms,video_end_offset_ms,delivery_policy,use_player_defaults)VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`, uuid.New(), playlistID, assetID, input.LayoutID, position, input.DurationMS, input.FitMode, input.Transition, *input.AudioEnabled, *input.Volume, input.VideoStartOffsetMS, input.VideoEndOffsetMS, input.DeliveryPolicy, input.UsePlayerDefaults)
 	if err != nil {
 		return Playlist{}, err
 	}
-	if err = snapshotRevision(ctx, tx, playlistID, &userID); err != nil {
-		return Playlist{}, err
-	}
-	notifications, err := bumpAssigned(ctx, tx, playlistID, "playlist.item_added")
-	if err != nil {
-		return Playlist{}, err
-	}
-	if err = insertAudit(ctx, tx, userID, "playlist.item_added", playlistID); err != nil {
+	_ = draftRevision
+	if err = insertAudit(ctx, tx, userID, "playlist.draft.item_added", playlistID); err != nil {
 		return Playlist{}, err
 	}
 	if err = tx.Commit(ctx); err != nil {
 		return Playlist{}, err
 	}
-	s.notify(notifications)
-	return s.Get(ctx, playlistID)
+	return s.GetDraft(ctx, playlistID)
 }
 
 func (s *Service) UpdateItem(ctx context.Context, playlistID, itemID, userID uuid.UUID, input ItemInput) (Playlist, error) {
@@ -832,31 +862,23 @@ func (s *Service) UpdateItem(ctx context.Context, playlistID, itemID, userID uui
 	if input.LayoutID != nil {
 		assetID = nil
 	}
-	tag, err := tx.Exec(ctx, `UPDATE playlist_items SET asset_id=$3,layout_id=$4,duration_ms=$5,fit_mode=$6,transition=$7,audio_enabled=$8,volume=$9,video_start_offset_ms=$10,video_end_offset_ms=$11,delivery_policy=$12,use_player_defaults=$13,updated_at=now() WHERE playlist_id=$1 AND id=$2`, playlistID, itemID, assetID, input.LayoutID, input.DurationMS, input.FitMode, input.Transition, *input.AudioEnabled, *input.Volume, input.VideoStartOffsetMS, input.VideoEndOffsetMS, input.DeliveryPolicy, input.UsePlayerDefaults)
+	tag, err := tx.Exec(ctx, `UPDATE playlist_draft_items SET asset_id=$3,layout_id=$4,duration_ms=$5,fit_mode=$6,transition=$7,audio_enabled=$8,volume=$9,video_start_offset_ms=$10,video_end_offset_ms=$11,delivery_policy=$12,use_player_defaults=$13,updated_at=now() WHERE playlist_id=$1 AND id=$2`, playlistID, itemID, assetID, input.LayoutID, input.DurationMS, input.FitMode, input.Transition, *input.AudioEnabled, *input.Volume, input.VideoStartOffsetMS, input.VideoEndOffsetMS, input.DeliveryPolicy, input.UsePlayerDefaults)
 	if err != nil {
 		return Playlist{}, err
 	}
 	if tag.RowsAffected() == 0 {
 		return Playlist{}, ErrNotFound
 	}
-	if _, err = tx.Exec(ctx, `UPDATE playlists SET revision=revision+1,updated_at=now() WHERE id=$1`, playlistID); err != nil {
+	if _, err = bumpDraftTx(ctx, tx, playlistID, userID); err != nil {
 		return Playlist{}, err
 	}
-	if err = snapshotRevision(ctx, tx, playlistID, &userID); err != nil {
-		return Playlist{}, err
-	}
-	notifications, err := bumpAssigned(ctx, tx, playlistID, "playlist.item_updated")
-	if err != nil {
-		return Playlist{}, err
-	}
-	if err = insertAudit(ctx, tx, userID, "playlist.item_updated", playlistID); err != nil {
+	if err = insertAudit(ctx, tx, userID, "playlist.draft.item_updated", playlistID); err != nil {
 		return Playlist{}, err
 	}
 	if err = tx.Commit(ctx); err != nil {
 		return Playlist{}, err
 	}
-	s.notify(notifications)
-	return s.Get(ctx, playlistID)
+	return s.GetDraft(ctx, playlistID)
 }
 
 func (s *Service) DeleteItem(ctx context.Context, playlistID, itemID, userID uuid.UUID) (Playlist, error) {
@@ -868,37 +890,29 @@ func (s *Service) DeleteItem(ctx context.Context, playlistID, itemID, userID uui
 		return Playlist{}, err
 	}
 	defer tx.Rollback(ctx)
-	tag, err := tx.Exec(ctx, `DELETE FROM playlist_items WHERE playlist_id=$1 AND id=$2`, playlistID, itemID)
+	tag, err := tx.Exec(ctx, `DELETE FROM playlist_draft_items WHERE playlist_id=$1 AND id=$2`, playlistID, itemID)
 	if err != nil {
 		return Playlist{}, err
 	}
 	if tag.RowsAffected() == 0 {
 		return Playlist{}, ErrNotFound
 	}
-	if _, err = tx.Exec(ctx, `UPDATE playlist_items SET position=position+1000000 WHERE playlist_id=$1`, playlistID); err != nil {
+	if _, err = tx.Exec(ctx, `UPDATE playlist_draft_items SET position=position+1000000 WHERE playlist_id=$1`, playlistID); err != nil {
 		return Playlist{}, err
 	}
-	if _, err = tx.Exec(ctx, `WITH ranked AS(SELECT id,row_number()OVER(ORDER BY position)-1 p FROM playlist_items WHERE playlist_id=$1)UPDATE playlist_items i SET position=r.p FROM ranked r WHERE i.id=r.id`, playlistID); err != nil {
+	if _, err = tx.Exec(ctx, `WITH ranked AS(SELECT id,row_number()OVER(ORDER BY position)-1 p FROM playlist_draft_items WHERE playlist_id=$1)UPDATE playlist_draft_items i SET position=r.p FROM ranked r WHERE i.id=r.id`, playlistID); err != nil {
 		return Playlist{}, err
 	}
-	if _, err = tx.Exec(ctx, `UPDATE playlists SET revision=revision+1,updated_at=now() WHERE id=$1`, playlistID); err != nil {
+	if _, err = bumpDraftTx(ctx, tx, playlistID, userID); err != nil {
 		return Playlist{}, err
 	}
-	if err = snapshotRevision(ctx, tx, playlistID, &userID); err != nil {
-		return Playlist{}, err
-	}
-	notifications, err := bumpAssigned(ctx, tx, playlistID, "playlist.item_deleted")
-	if err != nil {
-		return Playlist{}, err
-	}
-	if err = insertAudit(ctx, tx, userID, "playlist.item_deleted", playlistID); err != nil {
+	if err = insertAudit(ctx, tx, userID, "playlist.draft.item_deleted", playlistID); err != nil {
 		return Playlist{}, err
 	}
 	if err = tx.Commit(ctx); err != nil {
 		return Playlist{}, err
 	}
-	s.notify(notifications)
-	return s.Get(ctx, playlistID)
+	return s.GetDraft(ctx, playlistID)
 }
 
 func (s *Service) Reorder(ctx context.Context, playlistID, userID uuid.UUID, ids []uuid.UUID) (Playlist, error) {
@@ -911,7 +925,7 @@ func (s *Service) Reorder(ctx context.Context, playlistID, userID uuid.UUID, ids
 	}
 	defer tx.Rollback(ctx)
 	var count int
-	if err = tx.QueryRow(ctx, `SELECT count(*) FROM playlist_items WHERE playlist_id=$1`, playlistID).Scan(&count); err != nil {
+	if err = tx.QueryRow(ctx, `SELECT count(*) FROM playlist_draft_items WHERE playlist_id=$1`, playlistID).Scan(&count); err != nil {
 		return Playlist{}, err
 	}
 	if len(ids) != count {
@@ -924,11 +938,11 @@ func (s *Service) Reorder(ctx context.Context, playlistID, userID uuid.UUID, ids
 		}
 		seen[id] = true
 	}
-	if _, err = tx.Exec(ctx, `UPDATE playlist_items SET position=position+1000000 WHERE playlist_id=$1`, playlistID); err != nil {
+	if _, err = tx.Exec(ctx, `UPDATE playlist_draft_items SET position=position+1000000 WHERE playlist_id=$1`, playlistID); err != nil {
 		return Playlist{}, err
 	}
 	for position, id := range ids {
-		tag, e := tx.Exec(ctx, `UPDATE playlist_items SET position=$3,updated_at=now() WHERE playlist_id=$1 AND id=$2`, playlistID, id, position)
+		tag, e := tx.Exec(ctx, `UPDATE playlist_draft_items SET position=$3,updated_at=now() WHERE playlist_id=$1 AND id=$2`, playlistID, id, position)
 		if e != nil {
 			return Playlist{}, e
 		}
@@ -936,29 +950,21 @@ func (s *Service) Reorder(ctx context.Context, playlistID, userID uuid.UUID, ids
 			return Playlist{}, errors.New("item order contains an unknown item")
 		}
 	}
-	if _, err = tx.Exec(ctx, `UPDATE playlists SET revision=revision+1,updated_at=now() WHERE id=$1`, playlistID); err != nil {
+	if _, err = bumpDraftTx(ctx, tx, playlistID, userID); err != nil {
 		return Playlist{}, err
 	}
-	if err = snapshotRevision(ctx, tx, playlistID, &userID); err != nil {
-		return Playlist{}, err
-	}
-	notifications, err := bumpAssigned(ctx, tx, playlistID, "playlist.reordered")
-	if err != nil {
-		return Playlist{}, err
-	}
-	if err = insertAudit(ctx, tx, userID, "playlist.reordered", playlistID); err != nil {
+	if err = insertAudit(ctx, tx, userID, "playlist.draft.reordered", playlistID); err != nil {
 		return Playlist{}, err
 	}
 	if err = tx.Commit(ctx); err != nil {
 		return Playlist{}, err
 	}
-	s.notify(notifications)
-	return s.Get(ctx, playlistID)
+	return s.GetDraft(ctx, playlistID)
 }
 
 func (s *Service) requireStaticPlaylist(ctx context.Context, id uuid.UUID) error {
 	var sourceType string
-	if err := s.db.QueryRow(ctx, `SELECT source_type FROM playlists WHERE id=$1 AND deleted_at IS NULL`, id).Scan(&sourceType); errors.Is(err, pgx.ErrNoRows) {
+	if err := s.db.QueryRow(ctx, `SELECT d.source_type FROM playlist_drafts d JOIN playlists p ON p.id=d.playlist_id WHERE d.playlist_id=$1 AND p.deleted_at IS NULL`, id).Scan(&sourceType); errors.Is(err, pgx.ErrNoRows) {
 		return ErrNotFound
 	} else if err != nil {
 		return err

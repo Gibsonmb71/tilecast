@@ -28,9 +28,9 @@ func (s *Service) ListPreviewItems(ctx context.Context, playlistIDs []uuid.UUID)
 
 	rows, err := s.db.Query(ctx, `
 		WITH requested AS (
-			SELECT id,source_type,tag_match
-			FROM playlists
-			WHERE id=ANY($1::uuid[]) AND deleted_at IS NULL
+			SELECT p.id,d.source_type,d.tag_match
+			FROM playlists p JOIN playlist_drafts d ON d.playlist_id=p.id
+			WHERE p.id=ANY($1::uuid[]) AND p.deleted_at IS NULL
 		), ranked_static AS (
 			SELECT p.id AS playlist_id,
 				i.id AS preview_id,
@@ -41,7 +41,7 @@ func (s *Service) ListPreviewItems(ctx context.Context, playlistIDs []uuid.UUID)
 				COALESCE(l.preview_image IS NOT NULL,FALSE) AS layout_has_preview,
 				row_number() OVER(PARTITION BY p.id ORDER BY i.position,i.id) AS preview_rank
 			FROM requested p
-			JOIN playlist_items i ON i.playlist_id=p.id
+			JOIN playlist_draft_items i ON i.playlist_id=p.id
 			LEFT JOIN assets a ON a.id=i.asset_id AND a.deleted_at IS NULL
 			LEFT JOIN layouts l ON l.id=i.layout_id AND l.deleted_at IS NULL
 			WHERE p.source_type='static'
@@ -66,18 +66,18 @@ func (s *Service) ListPreviewItems(ctx context.Context, playlistIDs []uuid.UUID)
 					WHERE v.asset_id=a.id AND v.deleted_at IS NULL AND v.player_compatible=TRUE
 				)
 			WHERE p.source_type='tag'
-				AND EXISTS(SELECT 1 FROM playlist_tags selected WHERE selected.playlist_id=p.id)
+				AND EXISTS(SELECT 1 FROM playlist_draft_tags selected WHERE selected.playlist_id=p.id)
 				AND (
 					(p.tag_match='any' AND EXISTS(
 						SELECT 1
 						FROM content_asset_tags at
-						JOIN playlist_tags selected ON selected.tag_id=at.tag_id
+						JOIN playlist_draft_tags selected ON selected.tag_id=at.tag_id
 						WHERE at.asset_id=a.id AND selected.playlist_id=p.id
 					))
 					OR
 					(p.tag_match='all' AND NOT EXISTS(
 						SELECT 1
-						FROM playlist_tags selected
+						FROM playlist_draft_tags selected
 						WHERE selected.playlist_id=p.id
 							AND NOT EXISTS(
 								SELECT 1 FROM content_asset_tags at

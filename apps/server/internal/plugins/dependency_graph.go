@@ -3,8 +3,10 @@ package plugins
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 )
 
 // DependencyGraph is the Studio-facing content topology. Edges point from a
@@ -42,6 +44,8 @@ func (s *Service) DependencyGraph(ctx context.Context, visibleScreenIDs []uuid.U
 		SELECT id,'layout',name FROM layouts WHERE deleted_at IS NULL
 		UNION ALL
 		SELECT id,'playlist',name FROM playlists WHERE deleted_at IS NULL
+		UNION ALL
+		SELECT id,'campaign',name FROM campaigns WHERE archived_at IS NULL
 		UNION ALL
 		SELECT id,'schedule',name FROM schedules WHERE deleted_at IS NULL
 		UNION ALL
@@ -93,6 +97,20 @@ func (s *Service) DependencyGraph(ctx context.Context, visibleScreenIDs []uuid.U
 		   FROM layout_draft_dependencies d
 		   JOIN layouts l ON l.id=d.layout_id AND l.deleted_at IS NULL
 		  WHERE d.dependency_type IN ('data_source','widget','asset','playlist')`,
+		`SELECT 'playlist',p.id,'campaign',c.id,'used by'
+		   FROM campaigns c
+		   CROSS JOIN LATERAL jsonb_array_elements(c.draft->'blocks') block
+		   JOIN playlists p ON p.id::text=block->>'contentId'
+		  WHERE c.archived_at IS NULL AND p.deleted_at IS NULL AND block->>'contentType'='playlist'`,
+		`SELECT 'layout',l.id,'campaign',c.id,'used by'
+		   FROM campaigns c
+		   CROSS JOIN LATERAL jsonb_array_elements(c.draft->'blocks') block
+		   JOIN layouts l ON l.id::text=block->>'contentId'
+		  WHERE c.archived_at IS NULL AND l.deleted_at IS NULL AND block->>'contentType'='layout'`,
+		`SELECT 'campaign',s.campaign_id,'schedule',s.id,'materialized as'
+		   FROM schedules s
+		   JOIN campaigns c ON c.id=s.campaign_id AND c.archived_at IS NULL
+		  WHERE s.deleted_at IS NULL`,
 		`WITH visible_screens AS (SELECT unnest($1::uuid[]) id)
 		 SELECT CASE WHEN s.layout_id IS NOT NULL THEN 'layout' ELSE 'playlist' END,
 		        COALESCE(s.layout_id,s.playlist_id),'schedule',s.id,'scheduled by'
@@ -123,7 +141,13 @@ func (s *Service) DependencyGraph(ctx context.Context, visibleScreenIDs []uuid.U
 		  WHERE sc.id IN(SELECT id FROM visible_screens)`,
 	}
 	for _, query := range edgeQueries {
-		edgeRows, queryErr := s.db.Query(ctx, query, visibleScreenIDs)
+		var edgeRows pgx.Rows
+		var queryErr error
+		if strings.Contains(query, "$1") {
+			edgeRows, queryErr = s.db.Query(ctx, query, visibleScreenIDs)
+		} else {
+			edgeRows, queryErr = s.db.Query(ctx, query)
+		}
 		if queryErr != nil {
 			return DependencyGraph{}, fmt.Errorf("query dependency graph edges: %w", queryErr)
 		}

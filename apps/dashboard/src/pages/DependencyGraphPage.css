@@ -207,8 +207,10 @@
 
 .dependency-graph-node--layout,
 .dependency-graph-node--playlist,
+.dependency-graph-node--campaign,
 .dependency-related-node--layout,
-.dependency-related-node--playlist {
+.dependency-related-node--playlist,
+.dependency-related-node--campaign {
   border-left-color: var(--tc-action-primary);
 }
 

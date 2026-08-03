@@ -2031,6 +2031,290 @@ paths:
       responses:
         "200": { description: Revision copied into a new draft revision }
         "409": { description: Draft revision conflict }
+  /api/v1/content-submissions:
+    get:
+      operationId: listContentSubmissions
+      description: Lists immutable Playlist, Layout, and Campaign submissions. A submission snapshot is not changed by later draft edits.
+      parameters:
+        - name: state
+          in: query
+          schema:
+            type: string
+            enum:
+              [
+                in_review,
+                changes_requested,
+                approved,
+                scheduled,
+                published,
+                publication_failed,
+                superseded,
+                cancelled,
+              ]
+      responses:
+        "200": { description: Submission list and current review policy }
+  /api/v1/content-submissions/{id}:
+    parameters: [{ $ref: "#/components/parameters/ResourceID" }]
+    get:
+      operationId: getContentSubmission
+      responses:
+        "200": { description: Exact immutable submission snapshot }
+        "404": { description: Submission not found }
+  /api/v1/content-submissions/{type}/{id}:
+    parameters:
+      - name: type
+        in: path
+        required: true
+        schema: { type: string, enum: [playlist, layout, campaign] }
+      - { $ref: "#/components/parameters/ResourceID" }
+    post:
+      operationId: submitContentDraft
+      description: Freezes the current working draft. expectedRevision is optional optimistic concurrency protection.
+      parameters: [{ $ref: "#/components/parameters/CSRFToken" }]
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SubmitContentRequest" }
+      responses:
+        "201": { description: Immutable submission created }
+        "409": { description: Active submission or working-draft conflict }
+        "422": { description: Snapshot/readiness validation failed }
+  /api/v1/content-submissions/{id}/approve:
+    parameters: [{ $ref: "#/components/parameters/ResourceID" }]
+    post:
+      operationId: approveContentSubmission
+      parameters: [{ $ref: "#/components/parameters/CSRFToken" }]
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ReviewDecisionRequest" }
+      responses:
+        "200": { description: Submission approved or automatically published }
+        "409": { description: Submission is no longer actionable }
+        "422": { description: Self-approval or review validation failed }
+  /api/v1/content-submissions/{id}/request-changes:
+    parameters: [{ $ref: "#/components/parameters/ResourceID" }]
+    post:
+      operationId: requestContentChanges
+      parameters: [{ $ref: "#/components/parameters/CSRFToken" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ChangesRequest" }
+      responses:
+        "200": { description: Submission returned for changes }
+        "422": { description: A non-empty note is required }
+  /api/v1/content-submissions/{id}/publish:
+    parameters: [{ $ref: "#/components/parameters/ResourceID" }]
+    post:
+      operationId: publishContentSubmission
+      parameters: [{ $ref: "#/components/parameters/CSRFToken" }]
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PublishSubmissionRequest" }
+      responses:
+        "201":
+          {
+            description: Exact submitted snapshot published and recorded in history,
+          }
+        "409": { description: Submission is not approved or is otherwise stale }
+        "422": { description: Current readiness validation failed }
+  /api/v1/content-submissions/{id}/schedule:
+    parameters: [{ $ref: "#/components/parameters/ResourceID" }]
+    post:
+      operationId: scheduleContentPublication
+      parameters: [{ $ref: "#/components/parameters/CSRFToken" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SchedulePublicationRequest" }
+      responses:
+        "200": { description: Approved submission scheduled in PostgreSQL }
+        "422":
+          {
+            description: Publication time is invalid or submission is not approved,
+          }
+  /api/v1/content-submissions/{id}/cancel-schedule:
+    parameters: [{ $ref: "#/components/parameters/ResourceID" }]
+    post:
+      operationId: cancelContentPublicationSchedule
+      parameters: [{ $ref: "#/components/parameters/CSRFToken" }]
+      responses:
+        "200": { description: Scheduled publication cancelled }
+  /api/v1/content-history/{type}/{id}/publications:
+    parameters:
+      - name: type
+        in: path
+        required: true
+        schema: { type: string, enum: [playlist, layout, campaign] }
+      - { $ref: "#/components/parameters/ResourceID" }
+    get:
+      operationId: listPublicationHistory
+      responses:
+        "200": { description: Immutable publication checkpoints, newest first }
+  /api/v1/content-history/{type}/{id}/compare:
+    parameters:
+      - name: type
+        in: path
+        required: true
+        schema: { type: string, enum: [playlist, layout, campaign] }
+      - { $ref: "#/components/parameters/ResourceID" }
+      - name: fromPublicationId
+        in: query
+        required: true
+        schema: { type: string, format: uuid }
+      - name: toPublicationId
+        in: query
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      operationId: comparePublications
+      responses:
+        "200": { description: Semantic publication differences }
+        "404": { description: Publication not found }
+  /api/v1/content-history/{type}/{id}/publications/{publicationId}/restore-draft:
+    parameters:
+      - name: type
+        in: path
+        required: true
+        schema: { type: string, enum: [playlist, layout, campaign] }
+      - { $ref: "#/components/parameters/ResourceID" }
+      - name: publicationId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      operationId: restorePublicationAsDraft
+      parameters: [{ $ref: "#/components/parameters/CSRFToken" }]
+      responses:
+        "200":
+          {
+            description: Historical snapshot copied to the working draft; live state is unchanged,
+          }
+        "422": { description: Historical snapshot no longer validates }
+  /api/v1/content-history/{type}/{id}/publications/{publicationId}/rollback:
+    parameters:
+      - name: type
+        in: path
+        required: true
+        schema: { type: string, enum: [playlist, layout, campaign] }
+      - { $ref: "#/components/parameters/ResourceID" }
+      - name: publicationId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      operationId: rollbackPublication
+      parameters: [{ $ref: "#/components/parameters/CSRFToken" }]
+      responses:
+        "201":
+          { description: Historical snapshot published as a new publication }
+        "202": { description: Rollback submitted for review }
+        "409": { description: Review or concurrency conflict }
+  /api/v1/campaigns:
+    get:
+      operationId: listCampaigns
+      parameters:
+        - { in: query, name: search, schema: { type: string } }
+        - { in: query, name: page, schema: { type: integer, minimum: 1 } }
+        - {
+            in: query,
+            name: pageSize,
+            schema: { type: integer, minimum: 1, maximum: 100 },
+          }
+      responses: { "200": { description: Campaign library } }
+    post:
+      operationId: createCampaign
+      parameters: [{ $ref: "#/components/parameters/CSRFToken" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CampaignDetailsRequest" }
+      responses:
+        "201": { description: Campaign draft created }
+  /api/v1/campaigns/{id}:
+    parameters: [{ $ref: "#/components/parameters/ResourceID" }]
+    get:
+      operationId: getCampaign
+      responses: { "200": { description: Campaign draft and lifecycle state } }
+    delete:
+      operationId: archiveCampaign
+      parameters: [{ $ref: "#/components/parameters/CSRFToken" }]
+      responses: { "204": { description: Campaign archived } }
+  /api/v1/campaigns/{id}/draft:
+    parameters: [{ $ref: "#/components/parameters/ResourceID" }]
+    patch:
+      operationId: updateCampaignDraft
+      parameters: [{ $ref: "#/components/parameters/CSRFToken" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CampaignDraftRequest" }
+      responses:
+        "200": { description: Campaign draft saved }
+        "409": { description: Draft revision conflict }
+        "422": { description: Campaign shape invalid }
+  /api/v1/campaigns/{id}/preflight:
+    parameters: [{ $ref: "#/components/parameters/ResourceID" }]
+    get:
+      operationId: preflightCampaign
+      responses:
+        {
+          "200":
+            {
+              description: Readiness,
+              target,
+              revision,
+              and schedule preflight,
+            },
+        }
+  /api/v1/campaigns/{id}/releases:
+    parameters: [{ $ref: "#/components/parameters/ResourceID" }]
+    get:
+      operationId: listCampaignReleases
+      responses: { "200": { description: Immutable Campaign release history } }
+  /api/v1/campaigns/{id}/releases/{releaseId}/restore:
+    parameters:
+      - { $ref: "#/components/parameters/ResourceID" }
+      - name: releaseId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      operationId: restoreCampaignRelease
+      parameters: [{ $ref: "#/components/parameters/CSRFToken" }]
+      responses:
+        {
+          "200":
+            { description: Release copied into the working Campaign draft },
+        }
+  /api/v1/campaigns/{id}/publish:
+    parameters: [{ $ref: "#/components/parameters/ResourceID" }]
+    post:
+      operationId: publishCampaign
+      description: Publishes one immutable Campaign release by atomically materializing ordinary scheduler rows; Players do not receive a Campaign type.
+      parameters: [{ $ref: "#/components/parameters/CSRFToken" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [expectedDraftRevision]
+              properties:
+                expectedDraftRevision:
+                  { type: integer, format: int64, minimum: 1 }
+      responses:
+        "201": { description: Campaign release published atomically }
+        "202": { description: Campaign release submitted for review }
+        "409": { description: Root revision or draft conflict }
+        "422": { description: Preflight failed }
   /api/v1/takeovers:
     get:
       summary: List Takeovers
@@ -2500,6 +2784,295 @@ components:
       scheme: bearer
       bearerFormat: Tilecast device credential
   schemas:
+    SubmitContentRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        requestedPublicationAt: { type: string, format: date-time }
+        expectedRevision: { type: integer, format: int64, minimum: 1 }
+    ReviewDecisionRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        note: { type: string, maxLength: 4000 }
+    ChangesRequest:
+      type: object
+      additionalProperties: false
+      required: [note]
+      properties:
+        note: { type: string, minLength: 1, maxLength: 4000 }
+    PublishSubmissionRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        method:
+          type: string
+          enum: [manual, automatic_after_approval, scheduled, rollback]
+    SchedulePublicationRequest:
+      type: object
+      additionalProperties: false
+      required: [requestedPublicationAt]
+      properties:
+        requestedPublicationAt: { type: string, format: date-time }
+    ContentSubmission:
+      type: object
+      required:
+        [
+          id,
+          contentType,
+          contentId,
+          workingRevision,
+          snapshot,
+          snapshotSha256,
+          submittedAt,
+          status,
+          reviewRequired,
+          allowSelfApproval,
+        ]
+      properties:
+        id: { type: string, format: uuid }
+        contentType: { type: string, enum: [playlist, layout, campaign] }
+        contentId: { type: string, format: uuid }
+        contentName: { type: string }
+        workingRevision: { type: integer, format: int64, minimum: 1 }
+        snapshot: { type: object, additionalProperties: true }
+        snapshotSha256: { type: string, pattern: "^[0-9a-f]{64}$" }
+        submittedBy: { type: string, format: uuid }
+        submitterName: { type: string }
+        submittedAt: { type: string, format: date-time }
+        basedPublishedRevision: { type: integer, format: int64 }
+        basedPublishedRevisionId: { type: string, format: uuid }
+        status:
+          type: string
+          enum:
+            [
+              in_review,
+              changes_requested,
+              approved,
+              scheduled,
+              published,
+              superseded,
+              cancelled,
+              publication_failed,
+            ]
+        reviewRequired: { type: boolean }
+        allowSelfApproval: { type: boolean }
+        reviewNote: { type: string }
+        reviewedBy: { type: string, format: uuid }
+        reviewerName: { type: string }
+        reviewedAt: { type: string, format: date-time }
+        requestedPublicationAt: { type: string, format: date-time }
+        publicationFailureReason: { type: string }
+        publishedAt: { type: string, format: date-time }
+        newerWorkingDraft: { type: boolean }
+        currentPublishedRevision: { type: integer, format: int64 }
+        affectedScreenCount: { type: integer, minimum: 0 }
+        affectedLocationCount: { type: integer, minimum: 0 }
+    ContentSubmissionList:
+      type: object
+      required: [policy, allowSelfApproval, autoPublishOnApproval, items]
+      properties:
+        policy: { type: string, enum: [off, contributors, everyone] }
+        allowSelfApproval: { type: boolean }
+        autoPublishOnApproval: { type: boolean }
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/ContentSubmission" }
+    PublicationHistoryItem:
+      type: object
+      required: [id, revision, publishedAt, method, affectedScreenCount]
+      properties:
+        id: { type: string, format: uuid }
+        revision: { type: integer, format: int64, minimum: 1 }
+        nativeRevisionId: { type: string, format: uuid }
+        submissionId: { type: string, format: uuid }
+        campaignReleaseId: { type: string, format: uuid }
+        publishedBy: { type: string, format: uuid }
+        publisherName: { type: string }
+        publishedAt: { type: string, format: date-time }
+        supersedesPublicationId: { type: string, format: uuid }
+        method:
+          {
+            type: string,
+            enum:
+              [
+                manual,
+                automatic_after_approval,
+                scheduled,
+                rollback,
+                migration,
+                backfill,
+              ],
+          }
+        affectedScreenCount: { type: integer, minimum: 0 }
+        snapshotSha256: { type: string, pattern: "^[0-9a-f]{64}$" }
+    SemanticChange:
+      type: object
+      required: [kind, path, description]
+      properties:
+        kind: { type: string }
+        path: { type: string }
+        description: { type: string }
+    CampaignDetailsRequest:
+      type: object
+      additionalProperties: false
+      required: [name]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 180 }
+        description: { type: string, maxLength: 2000 }
+        timezone: { type: string, minLength: 1, maxLength: 64 }
+    CampaignDestination:
+      type: object
+      additionalProperties: false
+      required: [type, id]
+      properties:
+        type: { type: string, enum: [screen, group] }
+        id: { type: string, format: uuid }
+    CampaignBlock:
+      type: object
+      additionalProperties: false
+      required:
+        [id, name, contentType, contentId, priority, type, timezone, enabled]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string, maxLength: 180 }
+        contentType: { type: string, enum: [playlist, layout] }
+        contentId: { type: string, format: uuid }
+        contentRevision: { type: integer, format: int64, minimum: 1 }
+        priority: { type: integer, minimum: 0 }
+        type: { type: string, enum: [one_time, weekly] }
+        timezone: { type: string, minLength: 1, maxLength: 64 }
+        startDate: { type: string, format: date }
+        endDate: { type: string, format: date }
+        oneTimeStart: { type: string, format: date-time }
+        oneTimeEnd: { type: string, format: date-time }
+        dailyStart: { type: string, pattern: "^\\d{2}:\\d{2}$" }
+        dailyEnd: { type: string, pattern: "^\\d{2}:\\d{2}$" }
+        daysOfWeek:
+          { type: array, items: { type: integer, minimum: 0, maximum: 6 } }
+        enabled: { type: boolean }
+    CampaignSnapshot:
+      type: object
+      additionalProperties: false
+      required: [name, description, timezone, destinations, blocks]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 180 }
+        description: { type: string, maxLength: 2000 }
+        ownerId: { type: string, format: uuid }
+        timezone: { type: string, minLength: 1, maxLength: 64 }
+        campaignStart: { type: string, format: date-time }
+        campaignEnd: { type: string, format: date-time }
+        destinations:
+          type: array
+          items: { $ref: "#/components/schemas/CampaignDestination" }
+        blocks:
+          type: array
+          items: { $ref: "#/components/schemas/CampaignBlock" }
+    CampaignDraftRequest:
+      type: object
+      additionalProperties: false
+      required: [expectedDraftRevision, draft]
+      properties:
+        expectedDraftRevision: { type: integer, format: int64, minimum: 1 }
+        draft: { $ref: "#/components/schemas/CampaignSnapshot" }
+    CampaignPreflight:
+      type: object
+      required:
+        [
+          valid,
+          issues,
+          blockCount,
+          destinationCount,
+          screenCount,
+          locationCount,
+        ]
+      properties:
+        valid: { type: boolean }
+        issues:
+          type: array
+          items:
+            type: object
+            required: [severity, code, message]
+            properties:
+              severity: { type: string, enum: [warning, error] }
+              code: { type: string }
+              message: { type: string }
+              blockId: { type: string, format: uuid }
+        blockCount: { type: integer, minimum: 0 }
+        destinationCount: { type: integer, minimum: 0 }
+        screenCount: { type: integer, minimum: 0 }
+        locationCount: { type: integer, minimum: 0 }
+    CampaignRelease:
+      type: object
+      required:
+        [
+          id,
+          campaignId,
+          releaseNumber,
+          snapshot,
+          snapshotSha256,
+          status,
+          createdAt,
+        ]
+      properties:
+        id: { type: string, format: uuid }
+        campaignId: { type: string, format: uuid }
+        releaseNumber: { type: integer, format: int64, minimum: 1 }
+        submissionId: { type: string, format: uuid }
+        snapshot: { $ref: "#/components/schemas/CampaignSnapshot" }
+        snapshotSha256: { type: string, pattern: "^[0-9a-f]{64}$" }
+        status:
+          {
+            type: string,
+            enum:
+              [
+                in_review,
+                changes_requested,
+                approved,
+                scheduled,
+                published,
+                superseded,
+                cancelled,
+                publication_failed,
+              ],
+          }
+        basedReleaseId: { type: string, format: uuid }
+        publishedBy: { type: string, format: uuid }
+        publishedAt: { type: string, format: date-time }
+        requestedPublicationAt: { type: string, format: date-time }
+        failureReason: { type: string }
+        createdAt: { type: string, format: date-time }
+    Campaign:
+      type: object
+      required:
+        [
+          id,
+          name,
+          description,
+          timezone,
+          destinations,
+          draft,
+          draftRevision,
+          status,
+          createdAt,
+          updatedAt,
+        ]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        description: { type: string }
+        ownerId: { type: string, format: uuid }
+        timezone: { type: string }
+        campaignStart: { type: string, format: date-time }
+        campaignEnd: { type: string, format: date-time }
+        destinations:
+          type: array
+          items: { $ref: "#/components/schemas/CampaignDestination" }
+        draft: { $ref: "#/components/schemas/CampaignSnapshot" }
+        draftRevision: { type: integer, format: int64, minimum: 1 }
+        status: { type: string }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
     DependencyGraph:
       type: object
       additionalProperties: false
@@ -2525,6 +3098,7 @@ components:
               widget,
               layout,
               playlist,
+              campaign,
               schedule,
               screen_group,
               screen,

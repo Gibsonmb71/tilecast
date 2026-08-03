@@ -12,7 +12,7 @@ Forms does not add a Player plugin manifest entry. Its published views flow thro
 
 ## Dependency Graph
 
-Dependency Graph is a read-only Studio tool at **Plugins → Dependency Graph**. It maps Data Sources, media, Widgets, Layouts, playlists, schedules, sync groups, and screens without adding anything to a Player manifest.
+Dependency Graph is a read-only Studio tool at **Plugins → Dependency Graph**. It maps Data Sources, media, Widgets, Layouts, playlists, Campaigns, schedules, sync groups, and screens without adding anything to a Player manifest.
 
 Edges point from a dependency to its consumer. Following them forward answers where a change can appear; following them backward answers what feeds a presentation or screen. The explorer reports direct relationships separately from the complete upstream and downstream counts, and every node links to its canonical Studio surface.
 

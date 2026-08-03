@@ -37,6 +37,7 @@ type Layout struct {
 type Usage struct {
 	Screens   []UsageItem `json:"screens"`
 	Schedules []UsageItem `json:"schedules"`
+	Campaigns []UsageItem `json:"campaigns"`
 }
 type UsageItem struct {
 	ID   uuid.UUID `json:"id"`

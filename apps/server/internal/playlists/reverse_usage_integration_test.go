@@ -98,6 +98,7 @@ func TestReverseUsageReachesScreens(t *testing.T) {
 	if _, err = service.AddItem(ctx, playlist.ID, owner.User.ID, ItemInput{AssetID: widgetID, DurationMS: &duration}); err != nil {
 		t.Fatal(err)
 	}
+	publishDraftForTest(t, ctx, service, playlist.ID, owner.User.ID)
 
 	// An unrelated playlist must not appear in the asset's usage.
 	other, err := service.Create(ctx, owner.User.ID, "Unrelated", "", "static")

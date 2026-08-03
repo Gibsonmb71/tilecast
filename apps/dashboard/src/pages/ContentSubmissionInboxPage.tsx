@@ -1,0 +1,307 @@
+import { useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Link } from "react-router";
+import { Check, Clock3, Send, Undo2 } from "lucide-react";
+import { api } from "../api/client";
+import type { ContentSubmission, SubmissionStatus } from "../api/types";
+import { useAuth } from "../auth/AuthProvider";
+import { Button, Notice, PageHeader } from "../components/ui";
+
+const filters: { value: "" | SubmissionStatus; label: string }[] = [
+  { value: "in_review", label: "Needs review" },
+  { value: "changes_requested", label: "Changes requested" },
+  { value: "approved", label: "Approved" },
+  { value: "scheduled", label: "Scheduled" },
+  { value: "publication_failed", label: "Publication failed" },
+  { value: "published", label: "Published" },
+  { value: "", label: "All history" },
+];
+
+export function ContentSubmissionInboxPage() {
+  const auth = useAuth();
+  const csrf = auth.status?.csrfToken ?? "";
+  const role = auth.status?.user?.role ?? "viewer";
+  const canReview = ["owner", "administrator", "editor"].includes(role);
+  const canPublish = canReview;
+  const canPublishCampaign = ["owner", "administrator"].includes(role);
+  const client = useQueryClient();
+  const [filter, setFilter] = useState<"" | SubmissionStatus>("in_review");
+  const [notes, setNotes] = useState<Record<string, string>>({});
+  const [schedule, setSchedule] = useState<Record<string, string>>({});
+  const query = useQuery({
+    queryKey: ["content-submissions", filter],
+    queryFn: () => api.contentSubmissions(filter),
+  });
+  const invalidate = () => {
+    void client.invalidateQueries({ queryKey: ["content-submissions"] });
+    void client.invalidateQueries({ queryKey: ["content-reviews"] });
+  };
+  const approve = useMutation({
+    mutationFn: (item: ContentSubmission) =>
+      api.approveContentSubmission(item.id, notes[item.id] ?? "", csrf),
+    onSuccess: invalidate,
+  });
+  const requestChanges = useMutation({
+    mutationFn: (item: ContentSubmission) =>
+      api.requestContentChanges(item.id, notes[item.id] ?? "", csrf),
+    onSuccess: invalidate,
+  });
+  const publish = useMutation({
+    mutationFn: (item: ContentSubmission) =>
+      api.publishContentSubmission(item.id, csrf),
+    onSuccess: invalidate,
+  });
+  const schedulePublication = useMutation({
+    mutationFn: (item: ContentSubmission) =>
+      api.scheduleContentSubmission(
+        item.id,
+        new Date(schedule[item.id] ?? "").toISOString(),
+        csrf,
+      ),
+    onSuccess: invalidate,
+  });
+  const cancelSchedule = useMutation({
+    mutationFn: (item: ContentSubmission) =>
+      api.cancelContentSchedule(item.id, csrf),
+    onSuccess: invalidate,
+  });
+  const error =
+    approve.error ||
+    requestChanges.error ||
+    publish.error ||
+    schedulePublication.error ||
+    cancelSchedule.error;
+  const items = query.data?.items ?? [];
+
+  return (
+    <section>
+      <PageHeader
+        title="Content review"
+        description="Every submission freezes the exact draft a reviewer saw. Publishing creates a new immutable runtime revision; later edits stay private until submitted again."
+        actions={
+          <Link className="button" to="/content-review">
+            Open legacy revision queue
+          </Link>
+        }
+      />
+      {query.data && (
+        <Notice variant="info">
+          Policy: <strong>{query.data.policy}</strong>. Self-approval is{" "}
+          {query.data.allowSelfApproval ? "allowed" : "disabled"}; approved
+          submissions{" "}
+          {query.data.autoPublishOnApproval
+            ? "publish automatically"
+            : "wait for an explicit publish or schedule action"}
+          .
+        </Notice>
+      )}
+      <nav className="view-tabs" aria-label="Submission state">
+        {filters.map((item) => (
+          <button
+            className="button button--quiet"
+            aria-current={filter === item.value ? "page" : undefined}
+            key={item.label}
+            onClick={() => setFilter(item.value)}
+          >
+            {item.label}
+          </button>
+        ))}
+      </nav>
+      {query.isLoading ? (
+        <div className="table-loading">Loading submissions…</div>
+      ) : query.error ? (
+        <Notice variant="danger">{query.error.message}</Notice>
+      ) : !items.length ? (
+        <div className="empty-card">No submissions match this view.</div>
+      ) : (
+        <div className="backup-list">
+          {items.map((item) => (
+            <SubmissionRow
+              key={item.id}
+              item={item}
+              canReview={canReview}
+              canPublish={
+                item.contentType === "campaign"
+                  ? canPublishCampaign
+                  : canPublish
+              }
+              note={notes[item.id] ?? ""}
+              schedule={schedule[item.id] ?? ""}
+              onNote={(value) => setNotes({ ...notes, [item.id]: value })}
+              onSchedule={(value) =>
+                setSchedule({ ...schedule, [item.id]: value })
+              }
+              approve={() => approve.mutate(item)}
+              requestChanges={() => requestChanges.mutate(item)}
+              publish={() => publish.mutate(item)}
+              schedulePublication={() => schedulePublication.mutate(item)}
+              cancelSchedule={() => cancelSchedule.mutate(item)}
+              disabled={
+                approve.isPending ||
+                requestChanges.isPending ||
+                publish.isPending ||
+                schedulePublication.isPending ||
+                cancelSchedule.isPending
+              }
+            />
+          ))}
+        </div>
+      )}
+      {error && <Notice variant="danger">{error.message}</Notice>}
+    </section>
+  );
+}
+
+function SubmissionRow({
+  item,
+  canReview,
+  canPublish,
+  note,
+  schedule,
+  onNote,
+  onSchedule,
+  approve,
+  requestChanges,
+  publish,
+  schedulePublication,
+  cancelSchedule,
+  disabled,
+}: {
+  item: ContentSubmission;
+  canReview: boolean;
+  canPublish: boolean;
+  note: string;
+  schedule: string;
+  onNote: (value: string) => void;
+  onSchedule: (value: string) => void;
+  approve: () => void;
+  requestChanges: () => void;
+  publish: () => void;
+  schedulePublication: () => void;
+  cancelSchedule: () => void;
+  disabled: boolean;
+}) {
+  const href =
+    item.contentType === "playlist"
+      ? `/playlists/${item.contentId}`
+      : item.contentType === "layout"
+        ? `/layouts/${item.contentId}`
+        : `/campaigns/${item.contentId}`;
+  const requiresNote = item.status === "in_review";
+  return (
+    <article className="backup-row">
+      <div className="backup-row__details">
+        <strong>
+          <Link to={href}>
+            {item.contentName || item.contentType} ·{" "}
+            {item.contentId.slice(0, 8)}
+          </Link>
+        </strong>
+        <span>
+          Draft revision {item.workingRevision} · submitted{" "}
+          {new Date(item.submittedAt).toLocaleString()}{" "}
+          {item.submitterName ? `by ${item.submitterName}` : ""}
+        </span>
+        <span>
+          <span
+            className={`status-badge status-badge--${statusBadge(item.status)}`}
+          >
+            {statusLabel(item.status)}
+          </span>
+          {item.newerWorkingDraft && " · A newer private draft exists"}
+        </span>
+        <span>
+          Published revision {item.currentPublishedRevision ?? "none"} ·{" "}
+          {item.affectedScreenCount} screens across {item.affectedLocationCount}{" "}
+          locations
+        </span>
+        <span>
+          Snapshot SHA-256 <code>{item.snapshotSha256}</code>
+        </span>
+        {item.reviewNote && (
+          <span className="setting-dependency">
+            Review note: {item.reviewNote}
+          </span>
+        )}
+        <details>
+          <summary>View exact submitted snapshot</summary>
+          <pre className="submission-snapshot">
+            {JSON.stringify(item.snapshot, null, 2)}
+          </pre>
+        </details>
+      </div>
+      <div className="backup-row__actions review-actions">
+        {canReview && item.status === "in_review" && (
+          <>
+            <label className="review-note">
+              <span className="field__label">Review note</span>
+              <input
+                value={note}
+                onChange={(event) => onNote(event.target.value)}
+                placeholder={
+                  requiresNote ? "Required when sending back" : "Optional note"
+                }
+              />
+            </label>
+            <Button variant="primary" disabled={disabled} onClick={approve}>
+              <Check size={15} /> Approve
+            </Button>
+            <Button
+              disabled={disabled || !note.trim()}
+              onClick={requestChanges}
+            >
+              <Undo2 size={15} /> Request changes
+            </Button>
+          </>
+        )}
+        {canPublish && item.status === "approved" && (
+          <>
+            <Button variant="primary" disabled={disabled} onClick={publish}>
+              <Send size={15} /> Publish now
+            </Button>
+            <label className="review-note">
+              <span className="field__label">Publish at</span>
+              <input
+                type="datetime-local"
+                value={schedule}
+                onChange={(event) => onSchedule(event.target.value)}
+              />
+            </label>
+            <Button
+              disabled={disabled || !schedule}
+              onClick={schedulePublication}
+            >
+              <Clock3 size={15} /> Schedule
+            </Button>
+          </>
+        )}
+        {canPublish && item.status === "scheduled" && (
+          <Button disabled={disabled} onClick={cancelSchedule}>
+            Cancel schedule
+          </Button>
+        )}
+      </div>
+    </article>
+  );
+}
+
+function statusLabel(status: SubmissionStatus) {
+  return {
+    in_review: "Needs review",
+    changes_requested: "Changes requested",
+    approved: "Approved",
+    scheduled: "Scheduled",
+    published: "Published",
+    superseded: "Superseded",
+    cancelled: "Cancelled",
+    publication_failed: "Publication failed",
+  }[status];
+}
+
+function statusBadge(status: SubmissionStatus) {
+  if (status === "published") return "online";
+  if (status === "publication_failed" || status === "changes_requested")
+    return "offline";
+  if (status === "approved" || status === "scheduled") return "recent";
+  return "stale";
+}

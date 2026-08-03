@@ -74,6 +74,7 @@ func TestSyncGroupRemovalRestoresScreenContent(t *testing.T) {
 	if _, err = service.AddItem(ctx, lobbyPlaylist.ID, owner.User.ID, ItemInput{AssetID: imageID, DurationMS: &duration}); err != nil {
 		t.Fatal(err)
 	}
+	publishDraftForTest(t, ctx, service, lobbyPlaylist.ID, owner.User.ID)
 	groupPlaylist, err := service.Create(ctx, owner.User.ID, "Group loop", "", "static")
 	if err != nil {
 		t.Fatal(err)
@@ -81,6 +82,7 @@ func TestSyncGroupRemovalRestoresScreenContent(t *testing.T) {
 	if _, err = service.AddItem(ctx, groupPlaylist.ID, owner.User.ID, ItemInput{AssetID: imageID, DurationMS: &duration}); err != nil {
 		t.Fatal(err)
 	}
+	publishDraftForTest(t, ctx, service, groupPlaylist.ID, owner.User.ID)
 	if _, err = service.Assign(ctx, lobbyScreen, lobbyPlaylist.ID, owner.User.ID); err != nil {
 		t.Fatal(err)
 	}

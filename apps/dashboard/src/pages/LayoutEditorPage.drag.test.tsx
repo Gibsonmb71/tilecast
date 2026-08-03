@@ -52,7 +52,7 @@ function buildLayout(): Layout {
     draftRevision: 1,
     hasUnpublishedChanges: false,
     dependencies: [],
-    usage: { screens: [], schedules: [] },
+    usage: { screens: [], schedules: [], campaigns: [] },
     createdAt: "2026-01-01T00:00:00Z",
     updatedAt: "2026-01-01T00:00:00Z",
   };
