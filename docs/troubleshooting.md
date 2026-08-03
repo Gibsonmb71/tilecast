@@ -22,6 +22,19 @@
 - **Unsupported request field:** update Studio and Player together. Strict JSON errors now name the mismatched field; pairing and enrollment request bodies are never written to logs.
 - **Tunnel connection fails:** enter the public HTTPS hostname manually and verify the Tunnel routes to `http://server:8080`.
 
+## Presentation Networks and AirPlay discovery
+
+- **Presentation Network is unavailable:** check that `TILECAST_PRESENTATION_NETWORK_KEY` is set to a valid 32-byte hex or Base64 value, then restart the server. A missing key leaves the rest of Tilecast running but blocks credential creation and player provisioning.
+- **Credentials became unreadable after restore:** restore the same external encryption key used when the database was written. If it is unavailable, re-enter each network credential in Settings → Presentation Networks; the database ciphertext cannot be decrypted without the key.
+- **Wi-Fi adapter unavailable:** confirm the Linux host exposes a usable adapter to NetworkManager. A Presentation Network does not add hardware.
+- **NetworkManager unavailable:** install/enable the host's intended NetworkManager service and restart `tilecast-networkd`; the Tilecast installer will not migrate an existing Ethernet stack for you.
+- **Helper missing or unhealthy:** run `sudo systemctl status tilecast-networkd`, inspect `sudo journalctl -u tilecast-networkd`, and re-run `/install-presentation-network.sh`. Do not give the kiosk user sudo or a general polkit rule.
+- **Authentication failed, SSID not found, or DHCP timed out:** verify the saved network type, hidden-SSID flag, Enterprise identity/CA/domain, radio coverage, VLAN policy, and DHCP scope. Rotate the secret in Studio when the Wi-Fi administrator changes it.
+- **Ethernet is not the default route:** inspect `ip route` and NetworkManager metrics. Tilecast tears down the sidecar Wi-Fi when it would displace Ethernet; it does not modify the Ethernet profile.
+- **No usable wired IPv4:** group AirPlay requires the player-reported wired IPv4 and rejects loopback, link-local, multicast, IPv6, and temporary Wi-Fi addresses as RTP destinations.
+- **Wi-Fi works but AirPlay is not visible:** verify UDP 5353/mDNS reachability and that access-point client isolation permits sender-to-gateway traffic. Tilecast does not bridge VLANs, route between them, provide an mDNS reflector, enable NAT/IP forwarding, or bypass client isolation.
+- **Stale profile remains:** wait for configuration reconciliation or use Sync now. Assignment and revision are durable; the player removes obsolete `tilecast-presentation-*` profiles before installing the current assignment.
+
 ## Media
 
 - **Readiness reports media infrastructure unavailable:** confirm `/data/media` is writable by the Tilecast runtime user and that the configured FFmpeg and FFprobe paths are executable.

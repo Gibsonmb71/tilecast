@@ -26,6 +26,7 @@ import { NotificationsPanel } from "../settings/NotificationsPanel";
 import { IntegrationTokensPanel } from "../settings/IntegrationTokensPanel";
 import { LocationsPanel } from "../settings/LocationsPanel";
 import { ActivityRetentionPanel } from "../settings/ActivityRetentionPanel";
+import { PresentationNetworksPanel } from "../settings/PresentationNetworksPanel";
 
 export { PlayerPolicyEditor } from "../settings/PlayerPolicyEditor";
 export {
@@ -255,6 +256,8 @@ function Destination({
   if (active === "import-export") return <ImportExportPanel owner={owner} />;
   if (active === "player-updates")
     return <PlayerUpdatesPanel owner={owner} manageable={manageable} />;
+  if (active === "presentation-networks")
+    return <PresentationNetworksPanel canManage={manageable} />;
   let before: React.ReactNode;
   // Automatic NWS alert handling is the Emergency Alerts plugin, not a default.
   // What is left here is the policy for a Takeover a person starts by hand.

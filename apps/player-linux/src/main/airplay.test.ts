@@ -69,6 +69,80 @@ interface TestManagerOptions {
   onStatus?: (status: ExternalPresentationStatus | null) => void;
   /** Fail the nth (1-based) state-file write, to exercise a torn persist. */
   failWriteOnCall?: number;
+  presentationNetwork?: FakePresentationNetwork;
+}
+
+const PRESENTATION_NETWORK_ID = "3f2504e0-4f89-41d3-9a0c-0305e82c3301";
+const PRESENTATION_NETWORK_PSK = "test-only-presentation-psk-2026";
+
+/**
+ * Stands in for the root-owned Presentation Network manager. It records the
+ * ordering of its calls relative to the media processes, which is where the
+ * load-bearing guarantee lives: the network must be up before UxPlay can be seen
+ * on the network at all.
+ */
+class FakePresentationNetwork {
+  events: string[] = [];
+  connectError: Error | null = null;
+  assignment: {
+    presentationNetworkId: string;
+    name: string;
+    configRevision: number;
+  } | null = {
+    presentationNetworkId: PRESENTATION_NETWORK_ID,
+    name: "District Staff Wi-Fi",
+    configRevision: 3,
+  };
+  status = {
+    state: "provisioned" as string,
+    networkName: "District Staff Wi-Fi",
+    networkId: PRESENTATION_NETWORK_ID,
+    activeNetworkId: null as string | null,
+    installedNetworkId: PRESENTATION_NETWORK_ID as string | null,
+    installedRevision: 3 as number | null,
+    failureCode: undefined as string | undefined,
+    failureMessage: undefined as string | undefined,
+  };
+
+  getAssignment() {
+    return this.assignment;
+  }
+
+  getStatus() {
+    return this.status;
+  }
+
+  async connect(reason: string) {
+    this.events.push(`connect:${reason}`);
+    if (this.connectError) {
+      this.status = {
+        ...this.status,
+        state: "failed",
+        failureCode: "authentication_failed",
+        failureMessage: "Authentication to District Staff Wi-Fi failed.",
+      };
+      throw this.connectError;
+    }
+    this.status = {
+      ...this.status,
+      state: "connected",
+      activeNetworkId: PRESENTATION_NETWORK_ID,
+    };
+    return this.status;
+  }
+
+  async disconnect(reason: string) {
+    this.events.push(`disconnect:${reason}`);
+    this.status = {
+      ...this.status,
+      state: "provisioned",
+      activeNetworkId: null,
+    };
+  }
+
+  async cleanupOrphaned() {
+    this.events.push("cleanupOrphaned");
+  }
 }
 
 function testManager(
@@ -90,18 +164,36 @@ function testManager(
     delete: async (name: string) => void files.delete(name),
   } as never;
   const calls: { binary: string; args: string[]; process: FakeProcess }[] = [];
+  const timeline: string[] = [];
+  if (options.presentationNetwork) {
+    // Share one ordered timeline between the network calls and the process
+    // spawns, so a test can assert that one happened before the other.
+    const network = options.presentationNetwork;
+    const originalConnect = network.connect.bind(network);
+    network.connect = async (reason: string) => {
+      timeline.push("presentation-network:connect");
+      return originalConnect(reason);
+    };
+    const originalDisconnect = network.disconnect.bind(network);
+    network.disconnect = async (reason: string) => {
+      timeline.push("presentation-network:disconnect");
+      return originalDisconnect(reason);
+    };
+  }
   const manager = new AirplayManager({
     store,
     resolveExecutable:
       options.resolveExecutable ?? (async (name) => resolvedExecutable(name)),
     onStatus: options.onStatus,
+    presentationNetwork: options.presentationNetwork as never,
     spawn: ((binary: string, args: string[]) => {
+      timeline.push(`spawn:${binary}`);
       const process = spawn(binary, args);
       calls.push({ binary, args, process });
       return process as never;
     }) as never,
   });
-  return { manager, files, calls };
+  return { manager, files, calls, timeline };
 }
 
 describe("AirPlay Linux process ownership", () => {
@@ -620,5 +712,233 @@ describe("AirPlay persisted preparation state", () => {
     await result.manager.stopSession("manual_stop");
     expect(result.files.has("airplay-session.json")).toBe(false);
     expect(statuses[statuses.length - 1]).toBeNull();
+  });
+});
+
+describe("AirPlay with a Presentation Network", () => {
+  function networkConfig(
+    role: "single" | "gateway" | "receiver",
+  ): ExternalPresentationConfig {
+    return { ...config(role), presentationNetworkId: PRESENTATION_NETWORK_ID };
+  }
+
+  it("joins the network before UxPlay can advertise on a single screen", async () => {
+    const network = new FakePresentationNetwork();
+    const result = testManager(() => new FakeProcess(), {
+      presentationNetwork: network,
+    });
+    await result.manager.prepareSession(networkConfig("single"), "avdec_h264");
+    await result.manager.startGateway("avdec_h264");
+    // The ordering is the contract. A receiver that appeared in a sender's picker
+    // before the network it lives on was up would fail to connect.
+    expect(result.timeline).toEqual([
+      "presentation-network:connect",
+      "spawn:/usr/local/bin/uxplay",
+    ]);
+  });
+
+  it("joins the network before the gateway's own RTP receiver and UxPlay", async () => {
+    const network = new FakePresentationNetwork();
+    const result = testManager(() => new FakeProcess(), {
+      presentationNetwork: network,
+    });
+    await result.manager.prepareSession(networkConfig("gateway"), "vah264dec");
+    await result.manager.startGateway("vah264dec");
+    expect(result.timeline).toEqual([
+      "presentation-network:connect",
+      "spawn:/usr/bin/gst-launch-1.0",
+      "spawn:/usr/local/bin/uxplay",
+    ]);
+  });
+
+  it("never starts UxPlay when the network cannot be joined", async () => {
+    const network = new FakePresentationNetwork();
+    network.connectError = new Error("Authentication failed.");
+    const result = testManager(() => new FakeProcess(), {
+      presentationNetwork: network,
+    });
+    await expect(
+      result.manager.prepareSession(networkConfig("gateway"), "vah264dec"),
+    ).rejects.toThrow(/Authentication/);
+    // Nothing was spawned at all: no receiver, and above all no advertiser.
+    expect(result.calls).toHaveLength(0);
+    expect(result.files.has("airplay-session.json")).toBe(false);
+  });
+
+  it("reports joining progress and then connected in the session status", async () => {
+    const statuses: (ExternalPresentationStatus | null)[] = [];
+    const network = new FakePresentationNetwork();
+    const result = testManager(() => new FakeProcess(), {
+      presentationNetwork: network,
+      onStatus: (status) => statuses.push(status),
+    });
+    await result.manager.prepareSession(networkConfig("gateway"), "vah264dec");
+    const phases = statuses
+      .filter((status): status is ExternalPresentationStatus => status !== null)
+      .map((status) => status.presentationNetwork);
+    expect(phases).toContain("joining");
+    expect(phases).toContain("connected");
+    // The display name reaches Studio; the SSID and credential never do.
+    const named = statuses.find(
+      (status) => status?.presentationNetworkName === "District Staff Wi-Fi",
+    );
+    expect(named).toBeTruthy();
+  });
+
+  it("leaves the network when the session stops, after the processes are gone", async () => {
+    const network = new FakePresentationNetwork();
+    const result = testManager(() => new FakeProcess(), {
+      presentationNetwork: network,
+    });
+    await result.manager.prepareSession(networkConfig("gateway"), "vah264dec");
+    await result.manager.startGateway("vah264dec");
+    await result.manager.stopSession("manual_stop");
+    expect(result.timeline.at(-1)).toBe("presentation-network:disconnect");
+    expect(
+      network.events.some((event) => event.startsWith("disconnect:")),
+    ).toBe(true);
+  });
+
+  it("does not touch the network for a session that never used one", async () => {
+    const network = new FakePresentationNetwork();
+    const result = testManager(() => new FakeProcess(), {
+      presentationNetwork: network,
+    });
+    // Exactly the existing Ethernet-only path: no assignment in the payload.
+    await result.manager.prepareSession(config("gateway"), "vah264dec");
+    await result.manager.startGateway("vah264dec");
+    await result.manager.stopSession("manual_stop");
+    expect(network.events).toEqual([]);
+    expect(result.timeline).toEqual([
+      "spawn:/usr/bin/gst-launch-1.0",
+      "spawn:/usr/local/bin/uxplay",
+    ]);
+  });
+
+  it("never asks a follower to join a network", async () => {
+    const network = new FakePresentationNetwork();
+    const result = testManager(() => new FakeProcess(), {
+      presentationNetwork: network,
+    });
+    // A follower prepares only the GStreamer receiver path. It needs no Wi-Fi
+    // adapter, no UxPlay advertisement, and no Presentation Network credential.
+    await result.manager.prepareSession(config("receiver"), "vah264dec");
+    expect(network.events).toEqual([]);
+    expect(result.calls.map((call) => call.binary)).toEqual([
+      "/usr/bin/gst-launch-1.0",
+    ]);
+  });
+
+  it("refuses to prepare when the assigned configuration has not arrived yet", async () => {
+    const network = new FakePresentationNetwork();
+    network.assignment = null;
+    const result = testManager(() => new FakeProcess(), {
+      presentationNetwork: network,
+    });
+    await expect(
+      result.manager.prepareSession(networkConfig("gateway"), "vah264dec"),
+    ).rejects.toMatchObject({ code: "credential_unavailable" });
+    expect(result.calls).toHaveLength(0);
+  });
+
+  it("refuses to prepare when the server names a network this player is not assigned", async () => {
+    const network = new FakePresentationNetwork();
+    network.assignment = {
+      presentationNetworkId: "8f14e45f-ceea-467a-9575-6a1a0a1a0a1a",
+      name: "Guest Wi-Fi",
+      configRevision: 1,
+    };
+    const result = testManager(() => new FakeProcess(), {
+      presentationNetwork: network,
+    });
+    await expect(
+      result.manager.prepareSession(networkConfig("gateway"), "vah264dec"),
+    ).rejects.toMatchObject({ code: "credential_unavailable" });
+  });
+
+  it("refuses to prepare on a build with no presentation-network support", async () => {
+    const result = testManager(() => new FakeProcess());
+    await expect(
+      result.manager.prepareSession(networkConfig("gateway"), "vah264dec"),
+    ).rejects.toMatchObject({ code: "helper_unavailable" });
+  });
+
+  it("reconnects the network before restoring UxPlay after a restart", async () => {
+    const network = new FakePresentationNetwork();
+    const first = testManager(() => new FakeProcess(), {
+      presentationNetwork: network,
+    });
+    await first.manager.prepareSession(networkConfig("single"), "avdec_h264");
+    await first.manager.startGateway("avdec_h264");
+    const persisted = first.files.get("airplay-session.json");
+
+    // A new process reads the persisted session. A previously started gateway must
+    // restore its network *before* the receiver is advertised again.
+    const recoveredNetwork = new FakePresentationNetwork();
+    const second = testManager(() => new FakeProcess(), {
+      presentationNetwork: recoveredNetwork,
+    });
+    second.files.set("airplay-session.json", persisted);
+    await second.manager.recoverSession("avdec_h264");
+    expect(second.timeline).toEqual([
+      "presentation-network:connect",
+      "spawn:/usr/local/bin/uxplay",
+    ]);
+  });
+
+  it("does not reconnect the network for an expired session", async () => {
+    const network = new FakePresentationNetwork();
+    const result = testManager(() => new FakeProcess(), {
+      presentationNetwork: network,
+    });
+    result.files.set("airplay-session.json", {
+      version: 2,
+      config: {
+        ...networkConfig("single"),
+        expiresAt: new Date(Date.now() - 1_000).toISOString(),
+      },
+      gatewayStarted: true,
+    });
+    expect(await result.manager.recoverSession("avdec_h264")).toBeNull();
+    // Cleanup, not connect: an expired session must never rejoin Wi-Fi.
+    expect(network.events).toEqual(["cleanupOrphaned"]);
+    expect(result.calls).toHaveLength(0);
+  });
+
+  it("cleans up a connection a crash left behind when there is no session", async () => {
+    const network = new FakePresentationNetwork();
+    const result = testManager(() => new FakeProcess(), {
+      presentationNetwork: network,
+    });
+    expect(await result.manager.recoverSession("avdec_h264")).toBeNull();
+    expect(network.events).toEqual(["cleanupOrphaned"]);
+  });
+
+  it("never writes the credential into the persisted session file", async () => {
+    const network = new FakePresentationNetwork();
+    const result = testManager(() => new FakeProcess(), {
+      presentationNetwork: network,
+    });
+    await result.manager.prepareSession(networkConfig("gateway"), "vah264dec");
+    const persisted = JSON.stringify(result.files.get("airplay-session.json"));
+    expect(persisted).toContain(PRESENTATION_NETWORK_ID);
+    expect(persisted).not.toContain(PRESENTATION_NETWORK_PSK);
+    expect(persisted).not.toContain("secret");
+    expect(persisted).not.toContain("psk");
+    expect(persisted).not.toContain("password");
+    expect(persisted).not.toContain("District-Staff");
+  });
+
+  it("rejects a Presentation Network in a follower's payload", async () => {
+    const { parseExternalPresentationConfig } =
+      await import("../core/external-presentation");
+    // The server never sends this to a receiver. Rejecting it here means a
+    // malformed or tampered command cannot make a follower try to join Wi-Fi.
+    expect(() =>
+      parseExternalPresentationConfig({
+        ...config("receiver"),
+        presentationNetworkId: PRESENTATION_NETWORK_ID,
+      }),
+    ).toThrow(/receiver must not be given a Presentation Network/i);
   });
 });

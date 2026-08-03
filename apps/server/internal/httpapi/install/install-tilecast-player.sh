@@ -16,6 +16,7 @@ set -eu
 readonly SERVER_URL="__TILECAST_SERVER_URL__"
 
 WITH_AIRPLAY=1
+WITH_PRESENTATION_NETWORK=1
 KIOSK_USER=""
 CREATE_USER=0
 
@@ -27,6 +28,10 @@ Usage: install-tilecast-player.sh [options]
                      invoked sudo, or "tilecast" when run as root directly.
   --create-user      Create the kiosk account if it does not exist.
   --without-airplay  Skip AirPlay dependency provisioning.
+  --without-presentation-network
+                     Skip the Presentation Network helper, which lets a supported
+                     Linux player temporarily join Wi-Fi for AirPlay while
+                     Ethernet stays its primary Tilecast connection.
   --help             Show this message.
 USAGE
 }
@@ -44,6 +49,10 @@ while [ "$#" -gt 0 ]; do
       ;;
     --without-airplay)
       WITH_AIRPLAY=0
+      shift
+      ;;
+    --without-presentation-network)
+      WITH_PRESENTATION_NETWORK=0
       shift
       ;;
     --help)
@@ -204,6 +213,27 @@ if [ "${WITH_AIRPLAY}" -eq 1 ]; then
   rm -f -- "${airplay_script}"
 fi
 
+# ------------------------------------------- Presentation Network helper
+
+# Upgrading an existing player installs or repairs the root-owned helper without
+# touching Ethernet or any other network configuration, and without installing
+# NetworkManager on a box that does not already run it. When support is absent
+# the sub-script says so and exits successfully, because the player is fully
+# functional either way.
+PRESENTATION_NETWORK_RESULT="skipped"
+if [ "${WITH_PRESENTATION_NETWORK}" -eq 1 ]; then
+  echo "Provisioning Presentation Network support (use --without-presentation-network to skip)..."
+  network_script="$(mktemp /tmp/tilecast-presentation-network.XXXXXX.sh)"
+  if curl -fsS -o "${network_script}" "${SERVER_URL}/install-presentation-network.sh" \
+    && bash "${network_script}" --user "${KIOSK_USER}"; then
+    PRESENTATION_NETWORK_RESULT="checked"
+  else
+    # An optional capability must never fail the install.
+    PRESENTATION_NETWORK_RESULT="failed"
+  fi
+  rm -f -- "${network_script}"
+fi
+
 # ------------------------------------------------------------------ summary
 
 echo
@@ -215,6 +245,11 @@ case "${AIRPLAY_RESULT}" in
   installed) echo "  AirPlay:  provisioned" ;;
   skipped) echo "  AirPlay:  skipped (--without-airplay)" ;;
   failed) echo "  AirPlay:  not provisioned; the player still runs. Re-run: curl -fsSL ${SERVER_URL}/install-airplay.sh | sudo bash" ;;
+esac
+case "${PRESENTATION_NETWORK_RESULT}" in
+  checked) echo "  Networks: Presentation Network support checked (see the detail above)" ;;
+  skipped) echo "  Networks: Presentation Network support skipped (--without-presentation-network)" ;;
+  failed) echo "  Networks: Presentation Network helper not installed; the player still runs. Re-run: curl -fsSL ${SERVER_URL}/install-presentation-network.sh | sudo bash -s -- --user ${KIOSK_USER}" ;;
 esac
 if [ "${SERVICE_READY}" -eq 1 ]; then
   echo

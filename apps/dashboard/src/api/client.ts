@@ -31,6 +31,13 @@ import type {
   PlayerHistory,
   Location,
   LocationInput,
+  PresentationNetwork,
+  PresentationNetworkAssignment,
+  PresentationNetworkDetail,
+  PresentationNetworkInput,
+  PresentationNetworkList,
+  PresentationNetworkReadiness,
+  PresentationNetworkTestResult,
   Screen,
   SetupInput,
   User,
@@ -1177,6 +1184,81 @@ export const api = {
     };
   },
   locations: () => request<{ items: Location[]; total: number }>("/locations"),
+  presentationNetworks: () =>
+    request<PresentationNetworkList>("/presentation-networks"),
+  presentationNetwork: (id: string) =>
+    request<PresentationNetworkDetail>(`/presentation-networks/${id}`),
+  createPresentationNetwork: (
+    input: PresentationNetworkInput,
+    csrfToken: string,
+  ) =>
+    request<PresentationNetwork>("/presentation-networks", {
+      method: "POST",
+      headers: { "X-CSRF-Token": csrfToken },
+      body: JSON.stringify(input),
+    }),
+  updatePresentationNetwork: (
+    id: string,
+    input: PresentationNetworkInput,
+    csrfToken: string,
+  ) =>
+    request<PresentationNetwork>(`/presentation-networks/${id}`, {
+      method: "PATCH",
+      headers: { "X-CSRF-Token": csrfToken },
+      body: JSON.stringify(input),
+    }),
+  deletePresentationNetwork: (id: string, csrfToken: string) =>
+    request<PresentationNetwork>(`/presentation-networks/${id}`, {
+      method: "DELETE",
+      headers: { "X-CSRF-Token": csrfToken },
+    }),
+  replacePresentationNetworkAssignments: (
+    id: string,
+    screenIds: string[],
+    csrfToken: string,
+  ) =>
+    request<{ assignments: PresentationNetworkAssignment[] }>(
+      `/presentation-networks/${id}/screens`,
+      {
+        method: "PUT",
+        headers: { "X-CSRF-Token": csrfToken },
+        body: JSON.stringify({ screenIds }),
+      },
+    ),
+  screenPresentationNetwork: (id: string) =>
+    request<PresentationNetworkReadiness>(
+      `/screens/${id}/presentation-network`,
+    ),
+  assignScreenPresentationNetwork: (
+    screenId: string,
+    presentationNetworkId: string,
+    csrfToken: string,
+  ) =>
+    request<PresentationNetworkAssignment>(
+      `/screens/${screenId}/presentation-network`,
+      {
+        method: "PUT",
+        headers: { "X-CSRF-Token": csrfToken },
+        body: JSON.stringify({ presentationNetworkId }),
+      },
+    ),
+  unassignScreenPresentationNetwork: (screenId: string, csrfToken: string) =>
+    request<PresentationNetworkAssignment>(
+      `/screens/${screenId}/presentation-network`,
+      {
+        method: "DELETE",
+        headers: { "X-CSRF-Token": csrfToken },
+      },
+    ),
+  testPresentationNetwork: (id: string, screenId: string, csrfToken: string) =>
+    request<PresentationNetworkTestResult>(
+      `/presentation-networks/${id}/test`,
+      {
+        method: "POST",
+        headers: { "X-CSRF-Token": csrfToken },
+        body: JSON.stringify({ screenId }),
+      },
+    ),
   plugins: () => request<{ items: PluginSummary[] }>("/plugins"),
   dependencyGraph: () => request<DependencyGraph>("/plugins/dependency-graph"),
   countdownBars: () =>

@@ -28,6 +28,13 @@ type Config struct {
 	Backup        BackupConfig
 	WebAuthn      WebAuthnConfig
 	Notifications NotificationsConfig
+	// PresentationNetworkKey seals Wi-Fi credentials for Presentation Networks.
+	// Empty is a supported state: the server starts normally and every other
+	// feature works, but creating or provisioning a Presentation Network
+	// credential reports a clear operator-facing limitation instead. The value is
+	// deliberately environment-only, like the SMTP password, so it never lands in
+	// the schema, a backup, or the configuration export.
+	PresentationNetworkKey string
 }
 
 // NotificationsConfig carries the SMTP relay. These are environment values
@@ -214,6 +221,7 @@ func Load() (Config, error) {
 		return Config{}, errors.New("TILECAST_SOURCE_MIN_REFRESH_SECONDS must not exceed TILECAST_SOURCE_MAX_REFRESH_SECONDS")
 	}
 	cfg.Sources.AirQualityBaseURL = get("TILECAST_AIR_QUALITY_BASE_URL", "https://air-quality-api.open-meteo.com")
+	cfg.PresentationNetworkKey = strings.TrimSpace(os.Getenv("TILECAST_PRESENTATION_NETWORK_KEY"))
 	cfg.Notifications.SMTPHost = strings.TrimSpace(get("TILECAST_SMTP_HOST", ""))
 	cfg.Notifications.SMTPUsername = get("TILECAST_SMTP_USERNAME", "")
 	cfg.Notifications.SMTPPassword = os.Getenv("TILECAST_SMTP_PASSWORD")

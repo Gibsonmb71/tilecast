@@ -34,6 +34,12 @@ func (s *server) routes() http.Handler {
 	r.With(s.installRateLimit).Get("/install.sh", s.installScript)
 	r.With(s.installRateLimit).Get("/install-airplay.sh", s.airplayInstallScript)
 	r.With(s.installRateLimit).Get("/install/tilecast-player.service", s.playerServiceUnit)
+	// The Presentation Network helper installer and its system unit. Same
+	// unauthenticated boundary as the other provisioning assets: they serve only
+	// what an operator already published, and a box being installed has no
+	// credential yet.
+	r.With(s.installRateLimit).Get("/install-presentation-network.sh", s.presentationNetworkInstallScript)
+	r.With(s.installRateLimit).Get("/install/tilecast-networkd.service", s.presentationNetworkServiceUnit)
 	r.Get("/readyz", s.ready)
 	r.Route("/api/v1", func(api chi.Router) {
 		api.Get("/system/health", s.health)
@@ -44,6 +50,9 @@ func (s *server) routes() http.Handler {
 		api.With(s.installRateLimit).Get("/install/airplay/uxplay", s.installableUxPlayArtifact)
 		api.With(s.installRateLimit).Head("/install/airplay/uxplay", s.installableUxPlayArtifact)
 		api.With(s.installRateLimit).Get("/install/airplay/uxplay.sha256", s.installableUxPlayChecksum)
+		api.With(s.installRateLimit).Get("/install/presentation-network/helper", s.presentationNetworkHelper)
+		api.With(s.installRateLimit).Head("/install/presentation-network/helper", s.presentationNetworkHelper)
+		api.With(s.installRateLimit).Get("/install/presentation-network/helper.sha256", s.presentationNetworkHelperChecksum)
 		api.Get("/auth/status", s.authStatus)
 		api.With(s.authRateLimit).Post("/auth/setup", s.setup)
 		api.With(s.authRateLimit).Post("/auth/login", s.login)
@@ -81,6 +90,11 @@ func (s *server) routes() http.Handler {
 		api.With(s.requireDevice).Get("/player/manifest", s.playerManifest)
 		api.With(s.requireDevice).Get("/player/commands", s.playerCommands)
 		api.With(s.requireDevice).Get("/player/config", s.playerConfig)
+		// Presentation Network provisioning material. The permanent player
+		// credential is required, the network is derived from the authenticated
+		// screen's own assignment rather than from the request, and the response
+		// is no-store. See presentation_networks.go.
+		api.With(s.requireDevice).Get("/player/presentation-network", s.playerPresentationNetworkSecret)
 		api.With(s.requireDevice).Post("/player/commands/{id}/acknowledge", s.acknowledgePlayerCommand)
 		api.With(s.requireDevice).Post("/player/commands/{id}/result", s.resultPlayerCommand)
 		api.With(s.requireDevice).Get("/player/updates/{releaseId}", s.playerUpdateMetadata)
@@ -119,6 +133,21 @@ func (s *server) routes() http.Handler {
 			dashboard.With(s.requireRoles("owner", "administrator"), s.requireCSRF).Post("/airplay/sessions", s.createAirplaySession)
 			dashboard.Get("/airplay/sessions/{id}", s.getAirplaySession)
 			dashboard.With(s.requireRoles("owner", "administrator"), s.requireCSRF).Post("/airplay/sessions/{id}/stop", s.stopAirplaySession)
+			// Presentation Networks are reusable organization Wi-Fi definitions a
+			// Linux player joins temporarily for AirPlay. They are administrative
+			// settings, so they carry the same Owner/Administrator + CSRF boundary as
+			// every other settings and screen-assignment operation. Credentials are
+			// write-only: no read here can produce a stored PSK or password.
+			dashboard.With(s.requireRoles("owner", "administrator")).Get("/presentation-networks", s.listPresentationNetworks)
+			dashboard.With(s.requireRoles("owner", "administrator")).Get("/presentation-networks/{id}", s.getPresentationNetwork)
+			dashboard.With(s.requireRoles("owner", "administrator"), s.requireCSRF).Post("/presentation-networks", s.createPresentationNetwork)
+			dashboard.With(s.requireRoles("owner", "administrator"), s.requireCSRF).Patch("/presentation-networks/{id}", s.updatePresentationNetwork)
+			dashboard.With(s.requireRoles("owner", "administrator"), s.requireCSRF).Delete("/presentation-networks/{id}", s.deletePresentationNetwork)
+			dashboard.With(s.requireRoles("owner", "administrator"), s.requireCSRF).Put("/presentation-networks/{id}/screens", s.replacePresentationNetworkAssignments)
+			dashboard.With(s.requireRoles("owner", "administrator"), s.operationsRateLimit, s.requireCSRF).Post("/presentation-networks/{id}/test", s.testPresentationNetwork)
+			dashboard.With(s.requireScreenScope).Get("/screens/{id}/presentation-network", s.getScreenPresentationNetwork)
+			dashboard.With(s.requireRoles("owner", "administrator"), s.requireCSRF, s.requireScreenScope).Put("/screens/{id}/presentation-network", s.putScreenPresentationNetwork)
+			dashboard.With(s.requireRoles("owner", "administrator"), s.requireCSRF, s.requireScreenScope).Delete("/screens/{id}/presentation-network", s.deleteScreenPresentationNetwork)
 			dashboard.Get("/presentation-overrides", s.listPresentationOverrides)
 			dashboard.With(s.requireRoles("owner", "administrator"), s.requireCSRF).Post("/presentation-overrides", s.createPresentationOverride)
 			dashboard.With(s.requireRoles("owner", "administrator"), s.requireCSRF).Post("/presentation-overrides/{id}/stop", s.stopPresentationOverride)

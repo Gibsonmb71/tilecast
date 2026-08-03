@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/tilecast/tilecast/apps/server/internal/airplay"
 )
 
 // airplayGroup is a two-display AirPlay group session created through the real
@@ -220,8 +221,8 @@ func TestAirplayReconciliationFailsAfterThePreparationDeadline(t *testing.T) {
 		if err := env.pool.QueryRow(context.Background(), `SELECT prepare_deadline_at,created_at FROM external_presentation_sessions WHERE id=$1`, group.sessionID).Scan(&deadline, &createdAt); err != nil {
 			t.Fatal(err)
 		}
-		if gap := deadline.Sub(createdAt); gap < airplayPreparationWait-time.Second || gap > airplayPreparationWait+time.Second {
-			t.Fatalf("stored preparation window = %s, want ~%s after creation", gap, airplayPreparationWait)
+		if gap := deadline.Sub(createdAt); gap < airplay.PreparationWait-time.Second || gap > airplay.PreparationWait+time.Second {
+			t.Fatalf("stored preparation window = %s, want ~%s after creation", gap, airplay.PreparationWait)
 		}
 
 		// Not yet due: an incomplete group is left alone rather than failed.

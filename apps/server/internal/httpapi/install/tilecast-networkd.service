@@ -1,0 +1,55 @@
+[Unit]
+# Tilecast Presentation Network helper.
+#
+# The narrow root-owned boundary between the unprivileged Electron player and
+# NetworkManager. It exists so the kiosk account never needs sudo, a polkit rule,
+# or any other standing privilege: it can ask for five validated operations on
+# connections named tilecast-presentation-<uuid> and nothing else.
+#
+# This is a *system* unit, unlike tilecast-player.service, which is a user unit
+# for the kiosk account. The two are deliberately different: the player must stay
+# unprivileged and self-updatable, and root must never execute the AppImage the
+# player replaces during an update.
+Description=Tilecast Presentation Network helper
+Documentation=https://github.com/gibsonmb71/tilecast/blob/main/docs/presentation-networks.md
+After=NetworkManager.service
+Wants=NetworkManager.service
+
+[Service]
+Type=simple
+# The interpreter and the script path are both fixed and both root-owned. The
+# script lives under /usr/local/lib, not in the kiosk user's home.
+ExecStart=/usr/bin/python3 /usr/local/lib/tilecast/tilecast-networkd
+User=root
+Group=root
+Restart=always
+RestartSec=2
+# /run/tilecast, where the socket lives. The helper narrows its group to
+# tilecast-network on startup so the kiosk account can reach it.
+RuntimeDirectory=tilecast
+RuntimeDirectoryMode=0750
+# /var/lib/tilecast/presentation-networks holds the installed-revision metadata
+# and any CA certificate. No credential is ever written there.
+StateDirectory=tilecast
+StateDirectoryMode=0700
+
+# Hardening. ProtectSystem is deliberately "true" rather than "strict" or "full":
+# the helper has to write /etc/NetworkManager/system-connections, which is the
+# whole point, and stricter settings would break that while adding nothing —
+# /usr and /boot are already read-only here.
+NoNewPrivileges=yes
+ProtectSystem=true
+ProtectHome=yes
+PrivateTmp=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+RestrictRealtime=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=no
+# Local unix socket and the nmcli subprocess only. No listening network socket.
+RestrictAddressFamilies=AF_UNIX AF_NETLINK AF_INET AF_INET6
+
+[Install]
+WantedBy=multi-user.target

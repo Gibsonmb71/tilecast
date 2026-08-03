@@ -389,6 +389,22 @@ export class ApiClient {
     await this.request("POST", "/api/v1/player/telemetry", { body: sample });
   }
 
+  /**
+   * Fetch Presentation Network provisioning material for THIS screen.
+   *
+   * The request carries no network identifier: the server derives the network
+   * from the authenticated screen's own assignment, which is what makes it
+   * impossible for one player to obtain another player's network. The response is
+   * no-store, and its body is never logged.
+   */
+  async presentationNetworkProvisioning(): Promise<Record<string, unknown>> {
+    const res = await this.request(
+      "GET",
+      "/api/v1/player/presentation-network",
+    );
+    return ApiClient.data<Record<string, unknown>>(res.json);
+  }
+
   /** Poll the live-preview lease. Returns raw session JSON (or null). */
   async previewSession(): Promise<Record<string, unknown> | null> {
     const res = await this.request("GET", "/api/v1/player/preview-session");

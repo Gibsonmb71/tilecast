@@ -247,6 +247,24 @@ func (s *server) playerConfig(w http.ResponseWriter, r *http.Request) {
 		s.internalError(w, r, err)
 		return
 	}
+	// The Presentation Network section carries safe identifiers and a
+	// configuration revision only — never a credential, because a configuration
+	// document is cached on disk by every player that reads it. The player
+	// compares the revision it has installed against this one and fetches the
+	// credential over its own authenticated, no-store channel when it has to
+	// (re)provision. A screen with no assignment gets no section at all, which is
+	// what keeps existing Ethernet-only AirPlay behavior unchanged.
+	//
+	// Assignment changes bump screen_config_state, so the ETag above already
+	// changes when this section does.
+	if s.presentationNetworks != nil {
+		assignment, assignmentErr := s.presentationNetworks.PlayerConfiguration(r.Context(), principal.ScreenID)
+		if assignmentErr != nil {
+			s.internalError(w, r, assignmentErr)
+			return
+		}
+		config.PresentationNetwork = presentationNetworkConfigSection(assignment)
+	}
 	if r.Header.Get("If-None-Match") == etag {
 		w.WriteHeader(http.StatusNotModified)
 		return

@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net"
 	"net/http"
 	"regexp"
 	"strconv"
@@ -16,12 +15,10 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/tilecast/tilecast/apps/server/internal/airplay"
 	"github.com/tilecast/tilecast/apps/server/internal/auth"
+	"github.com/tilecast/tilecast/apps/server/internal/presentnet"
 )
 
-const (
-	airplayDefaultDuration = 24 * time.Hour
-	airplayPreparationWait = 45 * time.Second
-)
+const airplayDefaultDuration = 24 * time.Hour
 
 var (
 	airplayPINPattern       = regexp.MustCompile(`^[0-9]{4}$`)
@@ -52,6 +49,36 @@ type airplayTargetScreen struct {
 	MaxProfile         string
 	MulticastSupported bool
 	Wired              bool
+
+	// Presentation Network facts. Assignment is the administrator's intent;
+	// the rest is what the player reported about its own hardware and helper.
+	PresentationNetworkID       *uuid.UUID
+	PresentationNetworkName     string
+	PresentationNetworkReady    bool
+	WifiAdapterPresent          bool
+	PresentationNetworkReported bool
+
+	// WiredIPv4 is the explicitly reported Ethernet address group AirPlay RTP is
+	// fanned out to. It is deliberately narrower than LastKnownIP: the address a
+	// request happened to arrive from stops being an unambiguous answer once a
+	// player can hold a second, temporary Wi-Fi address.
+	WiredIPv4         string
+	WiredIPv4Reported bool
+}
+
+// rtpHost is the destination group AirPlay video is sent to for this display.
+//
+// The explicitly reported wired address wins whenever the player reports one,
+// because it is the only value that stays correct while a Presentation Network is
+// active. A player that predates the feature reports nothing, and then the
+// historical last_known_ip is used so upgrading the server does not break a fleet
+// that has not upgraded its players yet — except when a Presentation Network is in
+// use, where airplayWiredAddressError refuses to guess.
+func (screen airplayTargetScreen) rtpHost() string {
+	if airplay.ValidWiredIPv4(screen.WiredIPv4) {
+		return screen.WiredIPv4
+	}
+	return screen.LastKnownIP
 }
 
 type airplaySessionRecord struct {
@@ -77,6 +104,12 @@ type airplaySessionRecord struct {
 	AudioPort      int
 	Profile        string
 	AudioMode      string
+	// PresentationNetworkID is the network the *gateway* was asked to join, or
+	// nil for an ordinary Ethernet-only session. Recording it lets Studio say
+	// "Joining District Staff Wi-Fi…" during preparation and gives the audit trail
+	// the network without the credential.
+	PresentationNetworkID   *uuid.UUID
+	PresentationNetworkName string
 }
 
 type airplaySessionState struct {
@@ -87,6 +120,11 @@ type airplaySessionState struct {
 	LastUpdatedAt  time.Time `json:"lastUpdatedAt"`
 	FailureCode    *string   `json:"failureCode,omitempty"`
 	FailureMessage *string   `json:"failureMessage,omitempty"`
+	// What the gateway's Presentation Network is doing right now, straight from
+	// its capability report. It is what turns "Preparing" into "Joining District
+	// Staff Wi-Fi…" in Studio. A follower reports nothing here, which is itself
+	// the evidence that followers never touch Wi-Fi.
+	PresentationNetworkState *string `json:"presentationNetworkState,omitempty"`
 }
 
 func (s *server) createAirplaySession(w http.ResponseWriter, r *http.Request) {
@@ -174,12 +212,30 @@ func (s *server) createAirplaySession(w http.ResponseWriter, r *http.Request) {
 		case input.TargetType == "group" && !screen.GroupSupported:
 			writeError(w, 422, "airplay_group_not_ready", fmt.Sprintf("%s has not verified the GStreamer group receiver path.", screen.Name))
 			return
-		case input.TargetType == "group" && screen.LastKnownIP == "":
-			writeError(w, 422, "airplay_ip_unavailable", fmt.Sprintf("%s has no current LAN address for group video fan-out.", screen.Name))
-			return
-		case input.TargetType == "group" && (net.ParseIP(screen.LastKnownIP) == nil || net.ParseIP(screen.LastKnownIP).To4() == nil):
-			writeError(w, 422, "airplay_ip_invalid", fmt.Sprintf("%s has no usable IPv4 LAN address for group video fan-out.", screen.Name))
-			return
+		}
+	}
+	// Does this target use Presentation Networks at all? One assignment anywhere
+	// in the room is enough: it means an administrator has decided this room's
+	// AirPlay senders live on a Wi-Fi VLAN, and a gateway that stays Ethernet-only
+	// would advertise a receiver nobody can discover. A room with no assignment
+	// takes none of the branches below and behaves exactly as it did before.
+	presentationNetworkRequired := false
+	for _, screen := range screens {
+		if screen.PresentationNetworkID != nil {
+			presentationNetworkRequired = true
+			break
+		}
+	}
+	if input.TargetType == "group" {
+		// Group fan-out needs an explicit destination per display, including the
+		// gateway, which consumes its own forwarded stream over the same Ethernet
+		// path. Validate here so a readiness error names the display rather than
+		// letting GStreamer be handed an address that cannot work.
+		for _, screen := range screens {
+			if code, message := airplayWiredAddressError(screen, presentationNetworkRequired); code != "" {
+				writeError(w, 422, code, message)
+				return
+			}
 		}
 	}
 	capabilities := make([]airplay.Capability, 0, len(screens))
@@ -207,11 +263,49 @@ func (s *server) createAirplaySession(w http.ResponseWriter, r *http.Request) {
 	}
 	candidates := make([]airplay.GatewayCandidate, 0, len(screens))
 	for _, screen := range screens {
-		candidates = append(candidates, airplay.GatewayCandidate{ID: screen.ID.String(), Name: screen.Name, Online: screen.Online, Platform: screen.Platform, AirPlaySupported: screen.AirPlaySupported, HardwareDecode: screen.HardwareDecode, Wired: screen.Wired})
+		candidates = append(candidates, airplay.GatewayCandidate{
+			ID: screen.ID.String(), Name: screen.Name, Online: screen.Online,
+			Platform: screen.Platform, AirPlaySupported: screen.AirPlaySupported,
+			HardwareDecode: screen.HardwareDecode, Wired: screen.Wired,
+			PresentationNetworkAssigned: screen.PresentationNetworkID != nil,
+			PresentationNetworkReady:    screen.PresentationNetworkReady,
+			WifiAdapterPresent:          screen.WifiAdapterPresent,
+			WiredIPv4:                   screen.rtpHost(),
+		})
 	}
-	gateway, ok := airplay.ChooseGateway(candidates, uuidString(preferredGateway))
+	requirement := airplay.GatewayRequirement{
+		PresentationNetwork: presentationNetworkRequired,
+		WiredIPv4:           input.TargetType == "group",
+	}
+	// Exactly ONE display joins the Presentation Network: this one. Followers
+	// prepare only their existing GStreamer receiver, never need a Wi-Fi adapter,
+	// and never receive the network's credentials. A room in which only one member
+	// has Wi-Fi is therefore fully usable, as long as that member can be the
+	// gateway — which is what this selection decides.
+	gateway, rejected, ok := airplay.ChooseGateway(candidates, uuidString(preferredGateway), requirement)
 	if !ok {
-		writeError(w, 422, "airplay_gateway_unavailable", "No online Linux AirPlay-capable gateway is available.")
+		code := "airplay_gateway_unavailable"
+		if presentationNetworkRequired {
+			code = "airplay_presentation_network_gateway_unavailable"
+		}
+		writeError(w, 422, code, airplay.GatewayLimitation(rejected, requirement))
+		return
+	}
+	gatewayScreen := airplayScreenByID(screens, gateway.ID)
+	// The gateway is the only display that needs the Presentation Network, so its
+	// network is the session's network. A follower's assignment is irrelevant and
+	// is deliberately not recorded.
+	var sessionNetworkID *uuid.UUID
+	sessionNetworkName := ""
+	if presentationNetworkRequired && gatewayScreen != nil {
+		sessionNetworkID = gatewayScreen.PresentationNetworkID
+		sessionNetworkName = gatewayScreen.PresentationNetworkName
+	}
+	if sessionNetworkID != nil && s.presentationNetworks != nil && !s.presentationNetworks.CredentialsAvailable() {
+		// Fail before the player spends a preparation window on a credential
+		// request that cannot succeed.
+		writeError(w, 422, "airplay_presentation_network_key_unavailable",
+			presentnet.KeyUnavailable(fmt.Sprintf("Presenting to %s over %s", targetName, sessionNetworkName)))
 		return
 	}
 	var audioID *uuid.UUID
@@ -304,16 +398,21 @@ func (s *server) createAirplaySession(w http.ResponseWriter, r *http.Request) {
 			transport = "unicast"
 		}
 	}
-	record := airplaySessionRecord{ID: sessionID, OrganizationID: org, Provider: "airplay", Status: "preparing", TargetType: input.TargetType, TargetID: input.TargetID, GatewayID: gatewayID, AudioID: audioID, ReceiverName: targetName, PIN: pin, DeviceID: deviceID, ExpiresAt: expiresAt, CreatedBy: &user.ID, CreatedAt: now, Transport: transport, Multicast: multicastAddress, VideoPort: airplay.VideoPort, AudioPort: airplay.AudioPort, Profile: string(profile), AudioMode: input.AudioMode}
+	record := airplaySessionRecord{ID: sessionID, OrganizationID: org, Provider: "airplay", Status: "preparing", TargetType: input.TargetType, TargetID: input.TargetID, GatewayID: gatewayID, AudioID: audioID, ReceiverName: targetName, PIN: pin, DeviceID: deviceID, ExpiresAt: expiresAt, CreatedBy: &user.ID, CreatedAt: now, Transport: transport, Multicast: multicastAddress, VideoPort: airplay.VideoPort, AudioPort: airplay.AudioPort, Profile: string(profile), AudioMode: input.AudioMode, PresentationNetworkID: sessionNetworkID, PresentationNetworkName: sessionNetworkName}
 	// Group preparation is bounded by a deadline stored with the session, not by
 	// a timer in this process. A restart mid-preparation must neither lose the
 	// bound nor restart it.
+	// A gateway that also has to authenticate to WPA2-Enterprise and take a DHCP
+	// lease needs a longer window than one that only starts a process. The bound
+	// stays durable — it is stamped into the row, not held in a timer — so a
+	// restart mid-preparation neither loses it nor restarts it, and a session with
+	// no Presentation Network keeps exactly the window it had before.
 	var prepareDeadline *time.Time
 	if input.TargetType == "group" {
-		deadline := airplayPreparationDeadline(now)
+		deadline := airplay.PreparationDeadline(now, sessionNetworkID != nil)
 		prepareDeadline = &deadline
 	}
-	if _, err = tx.Exec(r.Context(), `INSERT INTO external_presentation_sessions(id,organization_id,provider,status,target_type,target_id,gateway_screen_id,audio_screen_id,receiver_name,pin,device_id,expires_at,created_by,transport,multicast_address,video_port,audio_port,video_profile,audio_mode,prepare_deadline_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,NULLIF($15,'')::inet,$16,$17,$18,$19,$20)`, record.ID, record.OrganizationID, record.Provider, record.Status, record.TargetType, record.TargetID, record.GatewayID, record.AudioID, record.ReceiverName, record.PIN, record.DeviceID, record.ExpiresAt, user.ID, record.Transport, record.Multicast, record.VideoPort, record.AudioPort, record.Profile, record.AudioMode, prepareDeadline); err != nil {
+	if _, err = tx.Exec(r.Context(), `INSERT INTO external_presentation_sessions(id,organization_id,provider,status,target_type,target_id,gateway_screen_id,audio_screen_id,receiver_name,pin,device_id,expires_at,created_by,transport,multicast_address,video_port,audio_port,video_profile,audio_mode,prepare_deadline_at,presentation_network_id) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,NULLIF($15,'')::inet,$16,$17,$18,$19,$20,$21)`, record.ID, record.OrganizationID, record.Provider, record.Status, record.TargetType, record.TargetID, record.GatewayID, record.AudioID, record.ReceiverName, record.PIN, record.DeviceID, record.ExpiresAt, user.ID, record.Transport, record.Multicast, record.VideoPort, record.AudioPort, record.Profile, record.AudioMode, prepareDeadline, record.PresentationNetworkID); err != nil {
 		s.internalError(w, r, err)
 		return
 	}
@@ -463,7 +562,7 @@ func (s *server) loadAirplayTarget(ctx context.Context, targetType string, targe
 	if targetType == "group" {
 		where = `EXISTS(SELECT 1 FROM screen_group_memberships gm WHERE gm.screen_group_id=$1 AND gm.screen_id=sc.id)`
 	}
-	rows, err := s.db.Query(ctx, `SELECT sc.id,sc.name,sc.platform,COALESCE(host(sc.last_known_ip),''),sc.enabled,COALESCE(sc.last_heartbeat_at>now()-interval '5 minutes',false),COALESCE(ps.airplay_supported,false),COALESCE(ps.airplay_group_supported,false),COALESCE(ps.airplay_audio_available,false),COALESCE(ps.airplay_hardware_decode,false),COALESCE(NULLIF(ps.airplay_max_profile,''),'unsupported'),COALESCE(ps.airplay_multicast_supported,false),COALESCE(ts.network_link_type='ethernet',false) FROM screens sc LEFT JOIN screen_player_status ps ON ps.screen_id=sc.id LEFT JOIN screen_telemetry_snapshots ts ON ts.screen_id=sc.id WHERE sc.organization_id=$2 AND sc.archived_at IS NULL AND `+where+` ORDER BY lower(sc.name),sc.id`, append(args, org)...)
+	rows, err := s.db.Query(ctx, `SELECT `+airplayScreenColumns+` FROM screens sc `+airplayScreenJoins+` WHERE sc.organization_id=$2 AND sc.archived_at IS NULL AND `+where+` ORDER BY lower(sc.name),sc.id`, append(args, org)...)
 	if err != nil {
 		return uuid.Nil, "", nil, nil, err
 	}
@@ -471,12 +570,103 @@ func (s *server) loadAirplayTarget(ctx context.Context, targetType string, targe
 	screens := []airplayTargetScreen{}
 	for rows.Next() {
 		var screen airplayTargetScreen
-		if err := rows.Scan(&screen.ID, &screen.Name, &screen.Platform, &screen.LastKnownIP, &screen.Enabled, &screen.Online, &screen.AirPlaySupported, &screen.GroupSupported, &screen.AudioAvailable, &screen.HardwareDecode, &screen.MaxProfile, &screen.MulticastSupported, &screen.Wired); err != nil {
+		if err := scanAirplayTargetScreen(rows, &screen); err != nil {
 			return uuid.Nil, "", nil, nil, err
 		}
 		screens = append(screens, screen)
 	}
 	return org, name, preferred, screens, rows.Err()
+}
+
+// airplayScreenColumns and airplayScreenJoins are shared by the two places that
+// load AirPlay participants — session creation and session reads — so the two
+// cannot drift. A missing Presentation Network column in one of them would look
+// like an unassigned screen, which is precisely the difference between "keep
+// existing Ethernet behavior" and "join the sender's Wi-Fi".
+//
+// network_link_type is still the telemetry view of the *default-route* interface,
+// which is what `Wired` means here. wired_ipv4 is the separate, explicit fact
+// AirPlay transport uses.
+const airplayScreenColumns = `sc.id,sc.name,sc.platform,COALESCE(host(sc.last_known_ip),''),sc.enabled,
+	COALESCE(sc.last_heartbeat_at>now()-interval '5 minutes',false),
+	COALESCE(ps.airplay_supported,false),COALESCE(ps.airplay_group_supported,false),
+	COALESCE(ps.airplay_audio_available,false),COALESCE(ps.airplay_hardware_decode,false),
+	COALESCE(NULLIF(ps.airplay_max_profile,''),'unsupported'),COALESCE(ps.airplay_multicast_supported,false),
+	COALESCE(ts.network_link_type='ethernet',false),
+	pna.presentation_network_id,COALESCE(pn.name,''),
+	COALESCE(
+		ps.presentation_network_supported
+		AND ps.presentation_network_helper_state='ok'
+		AND ps.presentation_network_manager_available
+		AND ps.presentation_network_wifi_adapter
+		AND ps.presentation_network_state IN ('provisioned','connected')
+		AND ps.presentation_network_installed_id=pna.presentation_network_id
+		AND ps.presentation_network_installed_revision=pn.config_revision,
+		false),
+	COALESCE(ps.presentation_network_wifi_adapter,false),
+	ps.presentation_network_supported IS NOT NULL,
+	COALESCE(host(ps.wired_ipv4),''),ps.wired_ipv4 IS NOT NULL`
+
+const airplayScreenJoins = `LEFT JOIN screen_player_status ps ON ps.screen_id=sc.id
+	LEFT JOIN screen_telemetry_snapshots ts ON ts.screen_id=sc.id
+	LEFT JOIN screen_presentation_networks pna ON pna.screen_id=sc.id
+	LEFT JOIN presentation_networks pn ON pn.id=pna.presentation_network_id`
+
+func scanAirplayTargetScreen(rows pgx.Rows, screen *airplayTargetScreen) error {
+	return rows.Scan(&screen.ID, &screen.Name, &screen.Platform, &screen.LastKnownIP,
+		&screen.Enabled, &screen.Online, &screen.AirPlaySupported, &screen.GroupSupported,
+		&screen.AudioAvailable, &screen.HardwareDecode, &screen.MaxProfile,
+		&screen.MulticastSupported, &screen.Wired,
+		&screen.PresentationNetworkID, &screen.PresentationNetworkName,
+		&screen.PresentationNetworkReady, &screen.WifiAdapterPresent,
+		&screen.PresentationNetworkReported, &screen.WiredIPv4, &screen.WiredIPv4Reported)
+}
+
+func airplayScreenByID(screens []airplayTargetScreen, id string) *airplayTargetScreen {
+	parsed, err := uuid.Parse(id)
+	if err != nil {
+		return nil
+	}
+	for index := range screens {
+		if screens[index].ID == parsed {
+			return &screens[index]
+		}
+	}
+	return nil
+}
+
+// airplayWiredAddressError decides whether this display has an address group
+// video may be sent to, and says precisely what is missing when it does not.
+//
+// Three cases, in order:
+//
+//   - The player reported an explicit wired IPv4 address. Use it. This is the only
+//     value that stays unambiguous once a display can hold a temporary Wi-Fi
+//     address as well, and it is what prevents a Presentation Network address from
+//     accidentally becoming a GStreamer RTP destination.
+//   - The player reported nothing, and no Presentation Network is involved. Fall
+//     back to last_known_ip exactly as before, so upgrading the server does not
+//     break group AirPlay for a fleet whose players have not upgraded yet.
+//   - The player reported nothing and a Presentation Network *is* involved. Refuse
+//     with a precise error. This is the one situation where the historical address
+//     is genuinely ambiguous, and guessing would send a room's video to a Wi-Fi
+//     interface or to nowhere.
+func airplayWiredAddressError(screen airplayTargetScreen, presentationNetworkRequired bool) (string, string) {
+	if airplay.ValidWiredIPv4(screen.WiredIPv4) {
+		return "", ""
+	}
+	if presentationNetworkRequired || screen.WiredIPv4Reported {
+		return "airplay_wired_address_unavailable", fmt.Sprintf(
+			"%s has not reported a usable Ethernet IPv4 address for group video fan-out. Group AirPlay sends compressed video over Ethernet, so every display needs one.",
+			screen.Name)
+	}
+	switch {
+	case screen.LastKnownIP == "":
+		return "airplay_ip_unavailable", fmt.Sprintf("%s has no current LAN address for group video fan-out.", screen.Name)
+	case !airplay.ValidWiredIPv4(screen.LastKnownIP):
+		return "airplay_ip_invalid", fmt.Sprintf("%s has no usable IPv4 LAN address for group video fan-out.", screen.Name)
+	}
+	return "", ""
 }
 
 func boolPointer(value bool) *bool { return &value }
@@ -518,14 +708,21 @@ func airplayCommandPayload(record airplaySessionRecord, role, phase string, scre
 	destinations := []map[string]any{}
 	if role == "gateway" {
 		for _, screen := range screens {
-			host := screen.LastKnownIP
+			// The explicitly reported Ethernet address, never the temporary
+			// Presentation Network address. rtpHost() falls back to last_known_ip
+			// only for a player that predates wired-address reporting, and session
+			// creation has already refused that combination when a Presentation
+			// Network is involved.
+			host := screen.rtpHost()
 			if screen.ID == record.GatewayID {
+				// The gateway consumes its own forwarded stream locally, over the same
+				// transport as the rest of the room.
 				host = "127.0.0.1"
 			}
 			destinations = append(destinations, map[string]any{"screenId": screen.ID.String(), "host": host, "port": record.VideoPort})
 		}
 	}
-	return map[string]any{
+	payload := map[string]any{
 		"provider": "airplay", "sessionId": record.ID.String(), "role": role, "phase": phase,
 		"targetType": record.TargetType, "targetId": record.TargetID.String(),
 		"gatewayScreenId": record.GatewayID.String(), "audioScreenId": airplayAudioScreenID(record),
@@ -534,6 +731,15 @@ func airplayCommandPayload(record airplaySessionRecord, role, phase string, scre
 		"videoPort": record.VideoPort, "audioPort": record.AudioPort, "destinations": destinations,
 		"multicastAddress": record.Multicast, "profile": record.Profile, "audioMode": record.AudioMode,
 	}
+	// Only the gateway is told to join a Presentation Network, and it is told the
+	// identifier and revision — never the SSID's credential, which the player
+	// fetches over its own authenticated no-store channel. A follower's payload
+	// carries no Presentation Network field at all, so a follower can neither be
+	// asked to join Wi-Fi nor learn which network the gateway used.
+	if record.PresentationNetworkID != nil && (role == "gateway" || role == "single") {
+		payload["presentationNetworkId"] = record.PresentationNetworkID.String()
+	}
+	return payload
 }
 
 func (s *server) getAirplayRecord(ctx context.Context, id uuid.UUID) (airplaySessionRecord, error) {
@@ -545,18 +751,23 @@ func getAirplayRecordFrom(ctx context.Context, q airplayQuerier, id uuid.UUID) (
 	// host(), not ::text: casting an inet to text appends the netmask, and
 	// "239.255.42.7/32" is neither a valid multicast address in the command
 	// payload nor something the player's validator accepts.
-	err := q.QueryRow(ctx, `SELECT id,organization_id,provider,status,target_type,target_id,gateway_screen_id,audio_screen_id,receiver_name,COALESCE(pin,''),COALESCE(device_id,''),expires_at,created_by,created_at,ended_at,COALESCE(end_reason,''),transport,COALESCE(host(multicast_address),''),video_port,audio_port,video_profile,audio_mode FROM external_presentation_sessions WHERE id=$1`, id).Scan(&record.ID, &record.OrganizationID, &record.Provider, &record.Status, &record.TargetType, &record.TargetID, &record.GatewayID, &record.AudioID, &record.ReceiverName, &record.PIN, &record.DeviceID, &record.ExpiresAt, &record.CreatedBy, &record.CreatedAt, &record.EndedAt, &record.EndReason, &record.Transport, &record.Multicast, &record.VideoPort, &record.AudioPort, &record.Profile, &record.AudioMode)
+	err := q.QueryRow(ctx, `SELECT ep.id,ep.organization_id,ep.provider,ep.status,ep.target_type,ep.target_id,ep.gateway_screen_id,ep.audio_screen_id,ep.receiver_name,COALESCE(ep.pin,''),COALESCE(ep.device_id,''),ep.expires_at,ep.created_by,ep.created_at,ep.ended_at,COALESCE(ep.end_reason,''),ep.transport,COALESCE(host(ep.multicast_address),''),ep.video_port,ep.audio_port,ep.video_profile,ep.audio_mode,ep.presentation_network_id,COALESCE(pn.name,'') FROM external_presentation_sessions ep LEFT JOIN presentation_networks pn ON pn.id=ep.presentation_network_id WHERE ep.id=$1`, id).Scan(&record.ID, &record.OrganizationID, &record.Provider, &record.Status, &record.TargetType, &record.TargetID, &record.GatewayID, &record.AudioID, &record.ReceiverName, &record.PIN, &record.DeviceID, &record.ExpiresAt, &record.CreatedBy, &record.CreatedAt, &record.EndedAt, &record.EndReason, &record.Transport, &record.Multicast, &record.VideoPort, &record.AudioPort, &record.Profile, &record.AudioMode, &record.PresentationNetworkID, &record.PresentationNetworkName)
 	return record, err
 }
 
 func (s *server) airplaySessionResponse(ctx context.Context, record airplaySessionRecord, knownScreens []airplayTargetScreen) map[string]any {
 	states := []airplaySessionState{}
-	rows, err := s.db.Query(ctx, `SELECT st.screen_id,sc.name,st.role,st.state,st.last_updated_at,st.failure_code,st.safe_failure_message FROM external_presentation_screen_states st JOIN screens sc ON sc.id=st.screen_id WHERE st.session_id=$1 ORDER BY lower(sc.name),sc.id`, record.ID)
+	rows, err := s.db.Query(ctx, `SELECT st.screen_id,sc.name,st.role,st.state,st.last_updated_at,st.failure_code,st.safe_failure_message,
+		CASE WHEN st.role IN ('gateway','single') THEN ps.presentation_network_state ELSE NULL END
+		FROM external_presentation_screen_states st
+		JOIN screens sc ON sc.id=st.screen_id
+		LEFT JOIN screen_player_status ps ON ps.screen_id=st.screen_id
+		WHERE st.session_id=$1 ORDER BY lower(sc.name),sc.id`, record.ID)
 	if err == nil {
 		defer rows.Close()
 		for rows.Next() {
 			var state airplaySessionState
-			if rows.Scan(&state.ScreenID, &state.ScreenName, &state.Role, &state.State, &state.LastUpdatedAt, &state.FailureCode, &state.FailureMessage) == nil {
+			if rows.Scan(&state.ScreenID, &state.ScreenName, &state.Role, &state.State, &state.LastUpdatedAt, &state.FailureCode, &state.FailureMessage, &state.PresentationNetworkState) == nil {
 				states = append(states, state)
 			}
 		}
@@ -581,6 +792,12 @@ func (s *server) airplaySessionResponse(ctx context.Context, record airplaySessi
 		"transport": record.Transport, "videoProfile": record.Profile, "audioMode": record.AudioMode,
 		"screenCount": len(states), "readyCount": ready, "connectedCount": connected,
 		"failedCount": failed, "screens": states,
+		// The network the gateway joins, by name. Studio turns this into
+		// "Joining District Staff Wi-Fi…" during preparation so the dialog is not
+		// stuck on a generic "Preparing". The credential is not here, and the SSID
+		// is not here either — the display name is what an operator recognizes.
+		"presentationNetworkId":   record.PresentationNetworkID,
+		"presentationNetworkName": record.PresentationNetworkName,
 	}
 	if record.Status == "preparing" || record.Status == "waiting" || record.Status == "active" {
 		if record.PIN != "" {
@@ -598,7 +815,7 @@ func (s *server) airplaySessionScreens(ctx context.Context, sessionID uuid.UUID)
 }
 
 func airplaySessionScreensFrom(ctx context.Context, q airplayQuerier, sessionID uuid.UUID) ([]airplayTargetScreen, error) {
-	rows, err := q.Query(ctx, `SELECT sc.id,sc.name,sc.platform,COALESCE(host(sc.last_known_ip),''),sc.enabled,COALESCE(sc.last_heartbeat_at>now()-interval '5 minutes',false),COALESCE(ps.airplay_supported,false),COALESCE(ps.airplay_group_supported,false),COALESCE(ps.airplay_audio_available,false),COALESCE(ps.airplay_hardware_decode,false),COALESCE(NULLIF(ps.airplay_max_profile,''),'unsupported'),COALESCE(ps.airplay_multicast_supported,false),COALESCE(ts.network_link_type='ethernet',false) FROM external_presentation_screen_states st JOIN screens sc ON sc.id=st.screen_id LEFT JOIN screen_player_status ps ON ps.screen_id=sc.id LEFT JOIN screen_telemetry_snapshots ts ON ts.screen_id=sc.id WHERE st.session_id=$1 ORDER BY lower(sc.name),sc.id`, sessionID)
+	rows, err := q.Query(ctx, `SELECT `+airplayScreenColumns+` FROM external_presentation_screen_states st JOIN screens sc ON sc.id=st.screen_id `+airplayScreenJoins+` WHERE st.session_id=$1 ORDER BY lower(sc.name),sc.id`, sessionID)
 	if err != nil {
 		return nil, err
 	}
@@ -606,7 +823,7 @@ func airplaySessionScreensFrom(ctx context.Context, q airplayQuerier, sessionID 
 	result := []airplayTargetScreen{}
 	for rows.Next() {
 		var screen airplayTargetScreen
-		if err := rows.Scan(&screen.ID, &screen.Name, &screen.Platform, &screen.LastKnownIP, &screen.Enabled, &screen.Online, &screen.AirPlaySupported, &screen.GroupSupported, &screen.AudioAvailable, &screen.HardwareDecode, &screen.MaxProfile, &screen.MulticastSupported, &screen.Wired); err != nil {
+		if err := scanAirplayTargetScreen(rows, &screen); err != nil {
 			return nil, err
 		}
 		result = append(result, screen)
@@ -818,7 +1035,11 @@ func (s *server) fallbackAirplaySession(ctx context.Context, record airplaySessi
 	// The fallback restarts preparation, so it also restarts the durable
 	// preparation deadline. Reusing the original one would fail the unicast
 	// attempt immediately whenever multicast burned the first window.
-	if tag, execErr := s.db.Exec(ctx, `UPDATE external_presentation_sessions SET transport='unicast',multicast_address=NULL,status='preparing',ended_at=NULL,end_reason=NULL,prepare_deadline_at=now()+make_interval(secs=>$2) WHERE id=$1 AND status IN ('preparing','waiting','active') AND transport='multicast'`, record.ID, airplayPreparationWait.Seconds()); execErr != nil || tag.RowsAffected() != 1 {
+	// The fallback restarts preparation, so it re-stamps the deadline using the
+	// same rule as creation: a session whose gateway must also join a Presentation
+	// Network gets the longer window on the retry too.
+	fallbackWindow := airplay.PreparationDeadline(time.Now(), record.PresentationNetworkID != nil).Sub(time.Now())
+	if tag, execErr := s.db.Exec(ctx, `UPDATE external_presentation_sessions SET transport='unicast',multicast_address=NULL,status='preparing',ended_at=NULL,end_reason=NULL,prepare_deadline_at=now()+make_interval(secs=>$2) WHERE id=$1 AND status IN ('preparing','waiting','active') AND transport='multicast'`, record.ID, fallbackWindow.Seconds()); execErr != nil || tag.RowsAffected() != 1 {
 		return false
 	}
 	_, _ = s.db.Exec(ctx, `UPDATE player_commands SET state='cancelled',completed_at=now(),updated_at=now(),safe_result_code='airplay_transport_fallback',safe_result_message='Multicast was unavailable; Tilecast is restarting this session over unicast.' WHERE type='prepare_airplay_session' AND payload->>'sessionId'=$1 AND state IN ('pending','delivered','acknowledged','running')`, record.ID.String())
@@ -1014,7 +1235,7 @@ func validateAirplayCommandPayload(typ string, object map[string]any) error {
 		}
 		return nil
 	}
-	allowed := map[string]bool{"provider": true, "sessionId": true, "role": true, "phase": true, "targetType": true, "targetId": true, "gatewayScreenId": true, "audioScreenId": true, "receiverName": true, "pin": true, "deviceId": true, "expiresAt": true, "transport": true, "videoPort": true, "audioPort": true, "destinations": true, "multicastAddress": true, "profile": true, "audioMode": true}
+	allowed := map[string]bool{"provider": true, "sessionId": true, "role": true, "phase": true, "targetType": true, "targetId": true, "gatewayScreenId": true, "audioScreenId": true, "receiverName": true, "pin": true, "deviceId": true, "expiresAt": true, "transport": true, "videoPort": true, "audioPort": true, "destinations": true, "multicastAddress": true, "profile": true, "audioMode": true, "presentationNetworkId": true}
 	for key := range object {
 		if !allowed[key] {
 			return errors.New("AirPlay payload contains an unsupported field")
@@ -1048,6 +1269,20 @@ func validateAirplayCommandPayload(typ string, object map[string]any) error {
 	}
 	if _, err := uuid.Parse(fmt.Sprint(object["audioScreenId"])); err != nil {
 		return errors.New("AirPlay audio screen ID is invalid")
+	}
+	if raw, present := object["presentationNetworkId"]; present {
+		// An identifier and nothing else. A credential must never appear in a
+		// durable command payload, and a follower must never carry this field.
+		value, ok := raw.(string)
+		if !ok {
+			return errors.New("AirPlay Presentation Network ID is invalid")
+		}
+		if _, err := uuid.Parse(value); err != nil {
+			return errors.New("AirPlay Presentation Network ID is invalid")
+		}
+		if object["role"] == "receiver" {
+			return errors.New("an AirPlay group receiver must not be given a Presentation Network")
+		}
 	}
 	if pin, ok := object["pin"].(string); !ok || !airplayPINPattern.MatchString(pin) {
 		return errors.New("AirPlay PIN is invalid")

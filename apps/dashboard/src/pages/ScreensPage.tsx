@@ -58,6 +58,7 @@ import type {
 import { useAuth } from "../auth/AuthProvider";
 import { ScreenContentChain } from "../content/ScreenContentChain";
 import { AirPlayPresentDialog } from "../components/AirPlayPresentDialog";
+import { ScreenPresentationNetworkPanel } from "../components/ScreenPresentationNetworkPanel";
 import { QuickPresentDialog } from "../components/QuickPresentDialog";
 import { FormField } from "../components/FormField";
 import { FireTvAccessibilityAdbPanel } from "../components/FireTvAccessibilityAdbPanel";
@@ -3330,6 +3331,13 @@ export function ScreenDetailPage() {
               )}
             </dl>
           </div>
+          {screen.platform.toLowerCase() === "linux" && (
+            <ScreenPresentationNetworkPanel
+              screen={screen}
+              canManage={canManageScreens(auth.status?.user)}
+              csrfToken={auth.status?.csrfToken ?? ""}
+            />
+          )}
           <dl className="detail-list">
             <div>
               <dt>Reliability mode</dt>

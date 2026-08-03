@@ -12,8 +12,21 @@
  */
 
 import { promises as fs } from "fs";
+import { networkInterfaces as osNetworkInterfaces } from "os";
 import { logger } from "./log";
 import type { TelemetryGauges } from "./telemetry";
+
+/**
+ * The shape of one entry from os.networkInterfaces(). Declared locally so the
+ * selection logic can be tested against literal fixtures — Node reports `family`
+ * as the string "IPv4" on current releases and as the number 4 on some older
+ * ones, and both are accepted.
+ */
+export interface NodeInterfaceInfo {
+  address: string;
+  family: string | number;
+  internal: boolean;
+}
 
 const log = logger("system-probe");
 
@@ -169,6 +182,114 @@ export async function readNetworkLinkStatus(): Promise<NetworkLinkStatus> {
     status.wifiLinkSpeedMbps = parseLinkSpeedMbps(speed);
   }
   return status;
+}
+
+export interface WiredInterfaceStatus {
+  /** A managed Ethernet interface exists and is up. */
+  available: boolean;
+  /** Its usable unicast IPv4 address, or "" when there is none. */
+  ipv4: string;
+  /** The interface name, for logging only. Never reported to the server. */
+  interfaceName?: string;
+}
+
+/**
+ * Pick the Ethernet interface whose IPv4 address group AirPlay RTP is sent to.
+ *
+ * This is deliberately separate from readNetworkLinkStatus above. That function
+ * describes the *default-route* path, which is what the fleet's link-quality
+ * telemetry means and must keep meaning; a temporary Wi-Fi sidecar must never
+ * make those metrics describe the wrong interface. This one answers a different
+ * question — "where can another display send this room's video" — and it has to
+ * stay correct while a second, non-default Wi-Fi address exists.
+ *
+ * The default-route interface wins when it is itself Ethernet, because that is
+ * the interface actually carrying Tilecast traffic. Otherwise the first
+ * Ethernet-classified interface with a usable address is used, and the interfaces
+ * are considered in name order so two probes on the same box agree.
+ *
+ * Nothing is guessed. A box with no Ethernet address reports none, and the server
+ * then gives a precise AirPlay readiness error instead of being handed a
+ * destination that cannot work.
+ */
+export function selectWiredInterface(
+  interfaces: readonly {
+    name: string;
+    ipv4: string;
+    linkType: LinkType;
+  }[],
+  defaultRouteInterface?: string,
+): WiredInterfaceStatus {
+  const ethernet = interfaces
+    .filter((item) => item.linkType === "ethernet" && usableIpv4(item.ipv4))
+    .sort((left, right) => left.name.localeCompare(right.name));
+  if (ethernet.length === 0) {
+    // Distinguish "an Ethernet interface exists but has no address" from "no
+    // Ethernet interface at all": the first is a DHCP or cabling problem and the
+    // second is a hardware fact.
+    const anyEthernet = interfaces.some((item) => item.linkType === "ethernet");
+    return { available: anyEthernet, ipv4: "" };
+  }
+  const preferred =
+    ethernet.find((item) => item.name === defaultRouteInterface) ??
+    ethernet[0]!;
+  return {
+    available: true,
+    ipv4: preferred.ipv4,
+    interfaceName: preferred.name,
+  };
+}
+
+/**
+ * A usable group-RTP destination. Kept identical to the server's own check and to
+ * the player's validIpv4 in presentation-network.ts, because a disagreement
+ * between the two boundaries is how an unusable address gets through one of them.
+ */
+export function usableIpv4(value: string): boolean {
+  const parts = value.trim().split(".");
+  if (parts.length !== 4) return false;
+  const octets: number[] = [];
+  for (const part of parts) {
+    if (!/^(?:0|[1-9][0-9]{0,2})$/.test(part)) return false;
+    const octet = Number(part);
+    if (octet > 255) return false;
+    octets.push(octet);
+  }
+  const [first, second] = octets as [number, number, number, number];
+  // 0.x, loopback, multicast/reserved, and link-local are all addresses a
+  // dual-homed box can hold and none of them is reachable from another display.
+  return !(
+    first === 0 ||
+    first === 127 ||
+    first >= 224 ||
+    (first === 169 && second === 254)
+  );
+}
+
+/** Read the wired Ethernet facts from the OS, with no subprocess. */
+export async function readWiredInterfaceStatus(
+  enumerate: () => Record<string, NodeInterfaceInfo[] | undefined> = () =>
+    osNetworkInterfaces(),
+): Promise<WiredInterfaceStatus> {
+  const route = await readFile("/proc/net/route");
+  // Off Linux there is no procfs and no wired fact to report. Returning nothing
+  // is correct: a guessed address here would become a GStreamer destination.
+  if (route === undefined) return { available: false, ipv4: "" };
+  const defaultRouteInterface = parseDefaultRouteInterface(route);
+  const candidates: { name: string; ipv4: string; linkType: LinkType }[] = [];
+  const table = enumerate();
+  for (const [name, addresses] of Object.entries(table)) {
+    if (!addresses) continue;
+    const wireless = await directoryExists(`/sys/class/net/${name}/wireless`);
+    const linkType = classifyLinkType(name, wireless);
+    const ipv4 = addresses.find(
+      (address) =>
+        (address.family === "IPv4" || address.family === 4) &&
+        !address.internal,
+    );
+    candidates.push({ name, ipv4: ipv4?.address ?? "", linkType });
+  }
+  return selectWiredInterface(candidates, defaultRouteInterface);
 }
 
 /**
