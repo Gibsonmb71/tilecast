@@ -120,7 +120,7 @@ func TestPlaylistSubmissionStaysFrozenWhileTheDraftMoves(t *testing.T) {
 	if err != nil || afterApprove.ManifestVersion != before.ManifestVersion {
 		t.Fatalf("approval changed manifest: before=%d after=%d err=%v", before.ManifestVersion, afterApprove.ManifestVersion, err)
 	}
-	if _, err = workflow.PublishSubmission(ctx, owner.User.ID, "owner", submission.ID, "manual"); err != nil {
+	if _, err = workflow.PublishSubmission(ctx, owner.User.ID, "owner", submission.ID); err != nil {
 		t.Fatal(err)
 	}
 	afterPublish, _, err := service.BuildManifest(ctx, screenID)

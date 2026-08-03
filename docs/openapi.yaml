@@ -2009,16 +2009,31 @@ paths:
                 published,
                 publication_failed,
                 superseded,
-                cancelled,
               ]
       responses:
-        "200": { description: Submission list and current review policy }
+        "200":
+          description: Submission list and current review policy
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data: { $ref: "#/components/schemas/ContentSubmissionList" }
   /api/v1/content-submissions/{id}:
     parameters: [{ $ref: "#/components/parameters/ResourceID" }]
     get:
       operationId: getContentSubmission
       responses:
-        "200": { description: Exact immutable submission snapshot }
+        "200":
+          description: Exact immutable submission snapshot
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data: { $ref: "#/components/schemas/ContentSubmission" }
         "404": { description: Submission not found }
   /api/v1/content-submissions/{type}/{id}:
     parameters:
@@ -2071,10 +2086,6 @@ paths:
     post:
       operationId: publishContentSubmission
       parameters: [{ $ref: "#/components/parameters/CSRFToken" }]
-      requestBody:
-        content:
-          application/json:
-            schema: { $ref: "#/components/schemas/PublishSubmissionRequest" }
       responses:
         "201":
           {
@@ -2116,7 +2127,23 @@ paths:
       operationId: listPublicationHistory
       responses:
         "200":
-          { description: "Immutable publication checkpoints, newest first" }
+          description: Immutable publication checkpoints, newest first
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: object
+                    required: [items]
+                    properties:
+                      items:
+                        type: array
+                        items:
+                          {
+                            $ref: "#/components/schemas/PublicationHistoryItem",
+                          }
   /api/v1/content-history/{type}/{id}/compare:
     parameters:
       - name: type
@@ -2135,7 +2162,25 @@ paths:
     get:
       operationId: comparePublications
       responses:
-        "200": { description: Semantic publication differences }
+        "200":
+          description: Semantic publication differences
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: object
+                    required:
+                      [fromPublicationId, toPublicationId, changed, changes]
+                    properties:
+                      fromPublicationId: { type: string, format: uuid }
+                      toPublicationId: { type: string, format: uuid }
+                      changed: { type: boolean }
+                      changes:
+                        type: array
+                        items: { $ref: "#/components/schemas/SemanticChange" }
         "404": { description: Publication not found }
   /api/v1/content-history/{type}/{id}/publications/{publicationId}/restore-draft:
     parameters:
@@ -2187,7 +2232,25 @@ paths:
             name: pageSize,
             schema: { type: integer, minimum: 1, maximum: 100 },
           }
-      responses: { "200": { description: Campaign library } }
+      responses:
+        "200":
+          description: Campaign library
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: object
+                    required: [items, total, page, pageSize]
+                    properties:
+                      items:
+                        type: array
+                        items: { $ref: "#/components/schemas/Campaign" }
+                      total: { type: integer, minimum: 0 }
+                      page: { type: integer }
+                      pageSize: { type: integer }
     post:
       operationId: createCampaign
       parameters: [{ $ref: "#/components/parameters/CSRFToken" }]
@@ -2197,12 +2260,29 @@ paths:
           application/json:
             schema: { $ref: "#/components/schemas/CampaignDetailsRequest" }
       responses:
-        "201": { description: Campaign draft created }
+        "201":
+          description: Campaign draft created
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data: { $ref: "#/components/schemas/Campaign" }
   /api/v1/campaigns/{id}:
     parameters: [{ $ref: "#/components/parameters/ResourceID" }]
     get:
       operationId: getCampaign
-      responses: { "200": { description: Campaign draft and lifecycle state } }
+      responses:
+        "200":
+          description: Campaign draft and lifecycle state
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data: { $ref: "#/components/schemas/Campaign" }
     delete:
       operationId: archiveCampaign
       parameters: [{ $ref: "#/components/parameters/CSRFToken" }]
@@ -2218,7 +2298,15 @@ paths:
           application/json:
             schema: { $ref: "#/components/schemas/CampaignDraftRequest" }
       responses:
-        "200": { description: Campaign draft saved }
+        "200":
+          description: Campaign draft saved
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data: { $ref: "#/components/schemas/Campaign" }
         "409": { description: Draft revision conflict }
         "422": { description: Campaign shape invalid }
   /api/v1/campaigns/{id}/preflight:
@@ -2226,17 +2314,35 @@ paths:
     get:
       operationId: preflightCampaign
       responses:
-        {
-          "200":
-            {
-              description: "Readiness, target, revision, and schedule preflight",
-            },
-        }
+        "200":
+          description: Readiness, target, revision, and schedule preflight
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data: { $ref: "#/components/schemas/CampaignPreflight" }
   /api/v1/campaigns/{id}/releases:
     parameters: [{ $ref: "#/components/parameters/ResourceID" }]
     get:
       operationId: listCampaignReleases
-      responses: { "200": { description: Immutable Campaign release history } }
+      responses:
+        "200":
+          description: Immutable Campaign release history
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: object
+                    required: [items]
+                    properties:
+                      items:
+                        type: array
+                        items: { $ref: "#/components/schemas/CampaignRelease" }
   /api/v1/campaigns/{id}/releases/{releaseId}/restore:
     parameters:
       - { $ref: "#/components/parameters/ResourceID" }
@@ -2248,10 +2354,15 @@ paths:
       operationId: restoreCampaignRelease
       parameters: [{ $ref: "#/components/parameters/CSRFToken" }]
       responses:
-        {
-          "200":
-            { description: Release copied into the working Campaign draft },
-        }
+        "200":
+          description: Release copied into the working Campaign draft
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data: { $ref: "#/components/schemas/Campaign" }
   /api/v1/campaigns/{id}/publish:
     parameters: [{ $ref: "#/components/parameters/ResourceID" }]
     post:
@@ -2741,13 +2852,6 @@ components:
       required: [note]
       properties:
         note: { type: string, minLength: 1, maxLength: 4000 }
-    PublishSubmissionRequest:
-      type: object
-      additionalProperties: false
-      properties:
-        method:
-          type: string
-          enum: [manual, automatic_after_approval, scheduled, rollback]
     SchedulePublicationRequest:
       type: object
       additionalProperties: false
@@ -2792,7 +2896,6 @@ components:
               scheduled,
               published,
               superseded,
-              cancelled,
               publication_failed,
             ]
         reviewRequired: { type: boolean }
@@ -2812,7 +2915,7 @@ components:
       type: object
       required: [policy, allowSelfApproval, autoPublishOnApproval, items]
       properties:
-        policy: { type: string, enum: [off, contributors, everyone] }
+        policy: { type: string, enum: ["off", contributors, everyone] }
         allowSelfApproval: { type: boolean }
         autoPublishOnApproval: { type: boolean }
         items:
@@ -2925,6 +3028,8 @@ components:
           destinationCount,
           screenCount,
           locationCount,
+          previewedScreenCount,
+          previewScreenLimit,
         ]
       properties:
         valid: { type: boolean }
@@ -2942,6 +3047,13 @@ components:
         destinationCount: { type: integer, minimum: 0 }
         screenCount: { type: integer, minimum: 0 }
         locationCount: { type: integer, minimum: 0 }
+        previewedScreenCount: { type: integer, minimum: 0 }
+        previewScreenLimit:
+          {
+            type: integer,
+            minimum: 1,
+            description: Maximum number of target screens used for scheduler-overlap previews.,
+          }
     CampaignRelease:
       type: object
       required:

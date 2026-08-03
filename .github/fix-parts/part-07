@@ -1,8 +1,0 @@
-path = "docs/content-review.md"
-replace_one(
-    path,
-    '''Older submissions may become `superseded`, `cancelled`, or\n`publication_failed`. A submission that is still active is unique per content''',
-    '''Older submissions may become `superseded` or `publication_failed`. Cancelling a\nscheduled publication returns that immutable submission to `approved`; it does\nnot create a separate cancelled submission state. A submission that is still active is unique per content''',
-)
-
-print("editorial review fixes applied")

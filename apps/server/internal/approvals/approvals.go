@@ -419,6 +419,34 @@ type PublicationResult struct {
 	Published  editorial.Published `json:"published"`
 }
 
+type PublicationHistoryItem struct {
+	ID                      uuid.UUID  `json:"id"`
+	Revision                int64      `json:"revision"`
+	NativeRevisionID        *uuid.UUID `json:"nativeRevisionId,omitempty"`
+	SubmissionID            *uuid.UUID `json:"submissionId,omitempty"`
+	CampaignReleaseID       *uuid.UUID `json:"campaignReleaseId,omitempty"`
+	PublishedBy             *uuid.UUID `json:"publishedBy,omitempty"`
+	PublisherName           string     `json:"publisherName"`
+	PublishedAt             time.Time  `json:"publishedAt"`
+	SupersedesPublicationID *uuid.UUID `json:"supersedesPublicationId,omitempty"`
+	Method                  string     `json:"method"`
+	AffectedScreenCount     int        `json:"affectedScreenCount"`
+	SnapshotSHA256          *string    `json:"snapshotSha256,omitempty"`
+}
+
+type SemanticChange struct {
+	Kind        string `json:"kind"`
+	Path        string `json:"path"`
+	Description string `json:"description"`
+}
+
+type PublicationComparison struct {
+	FromPublicationID uuid.UUID        `json:"fromPublicationId"`
+	ToPublicationID   uuid.UUID        `json:"toPublicationId"`
+	Changed           bool             `json:"changed"`
+	Changes           []SemanticChange `json:"changes"`
+}
+
 // Rollback publishes the exact snapshot represented by a previous
 // publication. It never moves a pointer backward: the provider creates a new
 // native revision and publication_history records method=rollback. Review
@@ -448,7 +476,7 @@ func (s *Service) Rollback(ctx context.Context, userID uuid.UUID, role, contentT
 	if historyContentType != contentType || historyContentID != contentID {
 		return PublicationResult{}, fmt.Errorf("%w: publication belongs to a different content object", ErrConflict)
 	}
-	raw, err := rollbackSnapshotTx(ctx, tx, contentType, nativeRevisionID, sourceSubmissionID, campaignReleaseID)
+	raw, err := rollbackSnapshotTx(ctx, tx, contentType, nativeRevisionID, sourceSubmissionID, campaignReleaseID, true)
 	if err != nil {
 		return PublicationResult{}, err
 	}
@@ -458,6 +486,9 @@ func (s *Service) Rollback(ctx context.Context, userID uuid.UUID, role, contentT
 	}
 	if err = provider.ValidateSnapshotTx(ctx, tx, contentID, raw); err != nil {
 		return PublicationResult{}, fmt.Errorf("%w: %v", ErrValidation, err)
+	}
+	if err = lockEditorialDraftTx(ctx, tx, contentType, contentID); err != nil {
+		return PublicationResult{}, err
 	}
 	var active bool
 	if err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM content_submissions WHERE content_type=$1 AND content_id=$2 AND status IN ('in_review','approved','scheduled'))`, contentType, contentID).Scan(&active); err != nil {
@@ -535,7 +566,7 @@ func canonicalSnapshot(raw json.RawMessage) ([]byte, string, error) {
 	return canonical, hex.EncodeToString(sum[:]), nil
 }
 
-func rollbackSnapshotTx(ctx context.Context, tx pgx.Tx, contentType string, nativeRevisionID, sourceSubmissionID, campaignReleaseID *uuid.UUID) (json.RawMessage, error) {
+func rollbackSnapshotTx(ctx context.Context, tx pgx.Tx, contentType string, nativeRevisionID, sourceSubmissionID, campaignReleaseID *uuid.UUID, materializePlaylistItemIDs bool) (json.RawMessage, error) {
 	if sourceSubmissionID != nil {
 		var raw []byte
 		if err := tx.QueryRow(ctx, `SELECT snapshot FROM content_submissions WHERE id=$1`, *sourceSubmissionID).Scan(&raw); err == nil {
@@ -588,9 +619,11 @@ func rollbackSnapshotTx(ctx context.Context, tx pgx.Tx, contentType string, nati
 	if err := json.Unmarshal(items, &decodedItems); err != nil {
 		return nil, err
 	}
-	for _, item := range decodedItems {
-		if _, ok := item["id"]; !ok {
-			item["id"] = uuid.New()
+	if materializePlaylistItemIDs {
+		for _, item := range decodedItems {
+			if id, ok := item["id"].(string); !ok || id == "" {
+				item["id"] = uuid.New()
+			}
 		}
 	}
 	var decodedTags any
@@ -663,6 +696,9 @@ func (s *Service) submit(ctx context.Context, userID uuid.UUID, role, contentTyp
 	}
 	if err = provider.ValidateSnapshotTx(ctx, tx, contentID, snapshot.Document); err != nil {
 		return Submission{}, fmt.Errorf("%w: %v", ErrValidation, err)
+	}
+	if err = lockEditorialDraftTx(ctx, tx, contentType, contentID); err != nil {
+		return Submission{}, err
 	}
 	var active bool
 	if err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM content_submissions WHERE content_type=$1 AND content_id=$2 AND status IN ('in_review','approved','scheduled'))`, contentType, contentID).Scan(&active); err != nil {
@@ -861,19 +897,200 @@ func (s *Service) ListSubmissions(ctx context.Context, state string) (Submission
 	if err != nil {
 		return SubmissionList{}, err
 	}
-	defer rows.Close()
 	result := SubmissionList{Items: []Submission{}}
 	for rows.Next() {
 		var item Submission
 		if err = rows.Scan(&item.ID, &item.ContentType, &item.ContentID, &item.WorkingRevision, &item.Snapshot, &item.SnapshotSHA256, &item.SubmittedBy, &item.SubmitterName, &item.SubmittedAt, &item.BasedPublishedRevision, &item.BasedPublishedRevisionID, &item.Status, &item.ReviewRequired, &item.AllowSelfApproval, &item.ReviewNote, &item.ReviewedBy, &item.ReviewerName, &item.ReviewedAt, &item.RequestedPublicationAt, &item.PublicationFailureReason, &item.PublishedAt); err != nil {
-			return SubmissionList{}, err
-		}
-		if err = s.enrichSubmission(ctx, &item); err != nil {
+			rows.Close()
 			return SubmissionList{}, err
 		}
 		result.Items = append(result.Items, item)
 	}
-	return result, rows.Err()
+	if err = rows.Err(); err != nil {
+		rows.Close()
+		return SubmissionList{}, err
+	}
+	rows.Close()
+	if err = s.enrichSubmissionList(ctx, result.Items); err != nil {
+		return SubmissionList{}, err
+	}
+	return result, nil
+}
+
+func (s *Service) enrichSubmissionList(ctx context.Context, items []Submission) error {
+	type contentIndexes map[uuid.UUID][]int
+	indexesFor := func(contentType string) (contentIndexes, []uuid.UUID) {
+		indexes := contentIndexes{}
+		ids := []uuid.UUID{}
+		seen := map[uuid.UUID]bool{}
+		for index := range items {
+			if items[index].ContentType != contentType {
+				continue
+			}
+			contentID := items[index].ContentID
+			indexes[contentID] = append(indexes[contentID], index)
+			if !seen[contentID] {
+				seen[contentID] = true
+				ids = append(ids, contentID)
+			}
+		}
+		return indexes, ids
+	}
+	copyPublished := func(value *int64) *int64 {
+		if value == nil {
+			return nil
+		}
+		copy := *value
+		return &copy
+	}
+
+	playlistIndexes, playlistIDs := indexesFor(TypePlaylist)
+	if len(playlistIDs) > 0 {
+		rows, err := s.db.Query(ctx, `
+			WITH requested AS (SELECT unnest($1::uuid[]) AS content_id),
+			affected AS (
+				SELECT a.playlist_id AS content_id,a.screen_id FROM screen_playlist_assignments a WHERE a.playlist_id=ANY($1::uuid[])
+				UNION SELECT a.playlist_id,m.screen_id FROM screen_group_playlist_assignments a JOIN screen_group_memberships m ON m.screen_group_id=a.screen_group_id WHERE a.playlist_id=ANY($1::uuid[])
+				UNION SELECT s.playlist_id,t.screen_id FROM schedules s JOIN schedule_targets t ON t.schedule_id=s.id WHERE s.playlist_id=ANY($1::uuid[]) AND s.deleted_at IS NULL AND t.screen_id IS NOT NULL
+				UNION SELECT s.playlist_id,m.screen_id FROM schedules s JOIN schedule_targets t ON t.schedule_id=s.id JOIN screen_group_memberships m ON m.screen_group_id=t.screen_group_id WHERE s.playlist_id=ANY($1::uuid[]) AND s.deleted_at IS NULL
+			)
+			SELECT r.content_id,COALESCE(d.name,p.name,''),COALESCE(d.revision,p.revision,0),p.revision,
+			       count(DISTINCT sc.id)::int,count(DISTINCT sc.location_id)::int
+			FROM requested r
+			LEFT JOIN playlists p ON p.id=r.content_id
+			LEFT JOIN playlist_drafts d ON d.playlist_id=r.content_id
+			LEFT JOIN affected a ON a.content_id=r.content_id
+			LEFT JOIN screens sc ON sc.id=a.screen_id AND sc.archived_at IS NULL
+			GROUP BY r.content_id,d.name,p.name,d.revision,p.revision`, playlistIDs)
+		if err != nil {
+			return err
+		}
+		for rows.Next() {
+			var id uuid.UUID
+			var name string
+			var working int64
+			var published *int64
+			var screens, locations int
+			if err = rows.Scan(&id, &name, &working, &published, &screens, &locations); err != nil {
+				rows.Close()
+				return err
+			}
+			for _, index := range playlistIndexes[id] {
+				items[index].ContentName = name
+				items[index].NewerWorkingDraft = working > items[index].WorkingRevision
+				items[index].CurrentPublishedRevision = copyPublished(published)
+				items[index].AffectedScreenCount = screens
+				items[index].AffectedLocationCount = locations
+			}
+		}
+		if err = rows.Err(); err != nil {
+			rows.Close()
+			return err
+		}
+		rows.Close()
+	}
+
+	layoutIndexes, layoutIDs := indexesFor(TypeLayout)
+	if len(layoutIDs) > 0 {
+		rows, err := s.db.Query(ctx, `
+			WITH requested AS (SELECT unnest($1::uuid[]) AS content_id),
+			affected AS (
+				SELECT a.layout_id AS content_id,a.screen_id FROM screen_playlist_assignments a WHERE a.layout_id=ANY($1::uuid[])
+				UNION SELECT a.layout_id,m.screen_id FROM screen_group_playlist_assignments a JOIN screen_group_memberships m ON m.screen_group_id=a.screen_group_id WHERE a.layout_id=ANY($1::uuid[])
+				UNION SELECT s.layout_id,t.screen_id FROM schedules s JOIN schedule_targets t ON t.schedule_id=s.id WHERE s.layout_id=ANY($1::uuid[]) AND s.deleted_at IS NULL AND t.screen_id IS NOT NULL
+				UNION SELECT s.layout_id,m.screen_id FROM schedules s JOIN schedule_targets t ON t.schedule_id=s.id JOIN screen_group_memberships m ON m.screen_group_id=t.screen_group_id WHERE s.layout_id=ANY($1::uuid[]) AND s.deleted_at IS NULL
+			)
+			SELECT r.content_id,COALESCE(l.name,''),COALESCE(l.draft_revision,0),lr.revision,
+			       count(DISTINCT sc.id)::int,count(DISTINCT sc.location_id)::int
+			FROM requested r
+			LEFT JOIN layouts l ON l.id=r.content_id
+			LEFT JOIN layout_revisions lr ON lr.id=l.published_revision_id
+			LEFT JOIN affected a ON a.content_id=r.content_id
+			LEFT JOIN screens sc ON sc.id=a.screen_id AND sc.archived_at IS NULL
+			GROUP BY r.content_id,l.name,l.draft_revision,lr.revision`, layoutIDs)
+		if err != nil {
+			return err
+		}
+		for rows.Next() {
+			var id uuid.UUID
+			var name string
+			var working int64
+			var published *int64
+			var screens, locations int
+			if err = rows.Scan(&id, &name, &working, &published, &screens, &locations); err != nil {
+				rows.Close()
+				return err
+			}
+			for _, index := range layoutIndexes[id] {
+				items[index].ContentName = name
+				items[index].NewerWorkingDraft = working > items[index].WorkingRevision
+				items[index].CurrentPublishedRevision = copyPublished(published)
+				items[index].AffectedScreenCount = screens
+				items[index].AffectedLocationCount = locations
+			}
+		}
+		if err = rows.Err(); err != nil {
+			rows.Close()
+			return err
+		}
+		rows.Close()
+	}
+
+	campaignSubmissionIndexes := map[uuid.UUID]int{}
+	campaignSubmissionIDs := []uuid.UUID{}
+	for index := range items {
+		if items[index].ContentType == TypeCampaign {
+			campaignSubmissionIndexes[items[index].ID] = index
+			campaignSubmissionIDs = append(campaignSubmissionIDs, items[index].ID)
+		}
+	}
+	if len(campaignSubmissionIDs) > 0 {
+		rows, err := s.db.Query(ctx, `
+			WITH requested AS (
+				SELECT id AS submission_id,content_id,snapshot FROM content_submissions WHERE id=ANY($1::uuid[])
+			), destinations AS (
+				SELECT r.submission_id,d.type,d.id
+				FROM requested r
+				CROSS JOIN LATERAL jsonb_to_recordset(CASE WHEN jsonb_typeof(r.snapshot->'destinations')='array' THEN r.snapshot->'destinations' ELSE '[]'::jsonb END) AS d(type text,id uuid)
+			), affected AS (
+				SELECT d.submission_id,d.id AS screen_id FROM destinations d WHERE d.type='screen'
+				UNION SELECT d.submission_id,m.screen_id FROM destinations d JOIN screen_group_memberships m ON m.screen_group_id=d.id WHERE d.type='group'
+			)
+			SELECT r.submission_id,COALESCE(c.name,''),COALESCE(c.draft_revision,0),release.release_number,
+			       count(DISTINCT sc.id)::int,count(DISTINCT sc.location_id)::int
+			FROM requested r
+			LEFT JOIN campaigns c ON c.id=r.content_id
+			LEFT JOIN LATERAL (SELECT release_number FROM campaign_releases WHERE campaign_id=r.content_id AND status='published' ORDER BY release_number DESC LIMIT 1) release ON TRUE
+			LEFT JOIN affected a ON a.submission_id=r.submission_id
+			LEFT JOIN screens sc ON sc.id=a.screen_id AND sc.archived_at IS NULL
+			GROUP BY r.submission_id,c.name,c.draft_revision,release.release_number`, campaignSubmissionIDs)
+		if err != nil {
+			return err
+		}
+		for rows.Next() {
+			var submissionID uuid.UUID
+			var name string
+			var working int64
+			var published *int64
+			var screens, locations int
+			if err = rows.Scan(&submissionID, &name, &working, &published, &screens, &locations); err != nil {
+				rows.Close()
+				return err
+			}
+			index := campaignSubmissionIndexes[submissionID]
+			items[index].ContentName = name
+			items[index].NewerWorkingDraft = working > items[index].WorkingRevision
+			items[index].CurrentPublishedRevision = copyPublished(published)
+			items[index].AffectedScreenCount = screens
+			items[index].AffectedLocationCount = locations
+		}
+		if err = rows.Err(); err != nil {
+			rows.Close()
+			return err
+		}
+		rows.Close()
+	}
+	return nil
 }
 
 func (s *Service) Approve(ctx context.Context, reviewerID uuid.UUID, role string, submissionID uuid.UUID, note string) (PublicationResult, error) {
@@ -1030,11 +1247,11 @@ func (s *Service) CancelSchedule(ctx context.Context, userID uuid.UUID, role str
 	return s.GetSubmission(ctx, submissionID)
 }
 
-func (s *Service) PublishSubmission(ctx context.Context, userID uuid.UUID, role string, submissionID uuid.UUID, method string) (PublicationResult, error) {
+func (s *Service) PublishSubmission(ctx context.Context, userID uuid.UUID, role string, submissionID uuid.UUID) (PublicationResult, error) {
 	if !canPublish(role) {
 		return PublicationResult{}, fmt.Errorf("%w: this role cannot publish content", ErrValidation)
 	}
-	return s.publishSubmission(ctx, userID, role, submissionID, method, true)
+	return s.publishSubmission(ctx, userID, role, submissionID, "manual", true)
 }
 
 func (s *Service) publishSubmission(ctx context.Context, userID uuid.UUID, role string, submissionID uuid.UUID, method string, enforceRole bool) (PublicationResult, error) {
@@ -1206,25 +1423,19 @@ func (s *Service) publishScheduled(ctx context.Context, id uuid.UUID) error {
 	return nil
 }
 
-func (s *Service) GetPublicationHistory(ctx context.Context, contentType string, contentID uuid.UUID) ([]map[string]any, error) {
+func (s *Service) GetPublicationHistory(ctx context.Context, contentType string, contentID uuid.UUID) ([]PublicationHistoryItem, error) {
 	rows, err := s.db.Query(ctx, `SELECT h.id,h.content_revision,h.native_revision_id,h.submission_id,h.campaign_release_id,h.published_by,COALESCE(u.name,''),h.published_at,h.supersedes_publication_id,h.method,h.affected_screen_count,h.snapshot_sha256 FROM publication_history h LEFT JOIN users u ON u.id=h.published_by WHERE h.content_type=$1 AND h.content_id=$2 ORDER BY h.published_at DESC,h.id DESC`, contentType, contentID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []map[string]any{}
+	items := []PublicationHistoryItem{}
 	for rows.Next() {
-		var id uuid.UUID
-		var revision int64
-		var nativeID, submissionID, byID, supersedes, campaignReleaseID *uuid.UUID
-		var byName, method string
-		var publishedAt time.Time
-		var affected int
-		var digest *string
-		if err = rows.Scan(&id, &revision, &nativeID, &submissionID, &campaignReleaseID, &byID, &byName, &publishedAt, &supersedes, &method, &affected, &digest); err != nil {
+		var item PublicationHistoryItem
+		if err = rows.Scan(&item.ID, &item.Revision, &item.NativeRevisionID, &item.SubmissionID, &item.CampaignReleaseID, &item.PublishedBy, &item.PublisherName, &item.PublishedAt, &item.SupersedesPublicationID, &item.Method, &item.AffectedScreenCount, &item.SnapshotSHA256); err != nil {
 			return nil, err
 		}
-		items = append(items, map[string]any{"id": id, "revision": revision, "nativeRevisionId": nativeID, "submissionId": submissionID, "campaignReleaseId": campaignReleaseID, "publishedBy": byID, "publisherName": byName, "publishedAt": publishedAt, "supersedesPublicationId": supersedes, "method": method, "affectedScreenCount": affected, "snapshotSha256": digest})
+		items = append(items, item)
 	}
 	return items, rows.Err()
 }
@@ -1233,28 +1444,28 @@ func (s *Service) GetPublicationHistory(ctx context.Context, contentType string,
 // publication checkpoints. The raw snapshots remain available through the
 // submission/history endpoints, but Studio should lead with changes an
 // operator can understand rather than JSON noise.
-func (s *Service) ComparePublications(ctx context.Context, contentType string, contentID, fromID, toID uuid.UUID) (map[string]any, error) {
+func (s *Service) ComparePublications(ctx context.Context, contentType string, contentID, fromID, toID uuid.UUID) (PublicationComparison, error) {
 	if contentType != TypePlaylist && contentType != TypeLayout && contentType != TypeCampaign {
-		return nil, fmt.Errorf("%w: unknown content type %q", ErrValidation, contentType)
+		return PublicationComparison{}, fmt.Errorf("%w: unknown content type %q", ErrValidation, contentType)
 	}
 	tx, err := s.db.Begin(ctx)
 	if err != nil {
-		return nil, err
+		return PublicationComparison{}, err
 	}
 	defer tx.Rollback(ctx)
 	from, err := publicationSnapshotTx(ctx, tx, contentType, contentID, fromID)
 	if err != nil {
-		return nil, err
+		return PublicationComparison{}, err
 	}
 	to, err := publicationSnapshotTx(ctx, tx, contentType, contentID, toID)
 	if err != nil {
-		return nil, err
+		return PublicationComparison{}, err
 	}
 	if err = tx.Commit(ctx); err != nil {
-		return nil, err
+		return PublicationComparison{}, err
 	}
 	changes := semanticChanges(contentType, from, to)
-	return map[string]any{"fromPublicationId": fromID, "toPublicationId": toID, "changed": len(changes) > 0, "changes": changes}, nil
+	return PublicationComparison{FromPublicationID: fromID, ToPublicationID: toID, Changed: len(changes) > 0, Changes: changes}, nil
 }
 
 func publicationSnapshotTx(ctx context.Context, tx pgx.Tx, contentType string, contentID, publicationID uuid.UUID) (json.RawMessage, error) {
@@ -1269,23 +1480,17 @@ func publicationSnapshotTx(ctx context.Context, tx pgx.Tx, contentType string, c
 	if historyContentType != contentType || historyContentID != contentID {
 		return nil, fmt.Errorf("%w: publication belongs to a different content object", ErrConflict)
 	}
-	return rollbackSnapshotTx(ctx, tx, contentType, nativeRevisionID, sourceSubmissionID, campaignReleaseID)
+	return rollbackSnapshotTx(ctx, tx, contentType, nativeRevisionID, sourceSubmissionID, campaignReleaseID, false)
 }
 
-type semanticChange struct {
-	Kind        string `json:"kind"`
-	Path        string `json:"path"`
-	Description string `json:"description"`
-}
-
-func semanticChanges(contentType string, from, to json.RawMessage) []semanticChange {
+func semanticChanges(contentType string, from, to json.RawMessage) []SemanticChange {
 	var before, after map[string]any
 	if json.Unmarshal(from, &before) != nil || json.Unmarshal(to, &after) != nil {
-		return []semanticChange{{Kind: "changed", Path: "/", Description: "The published snapshot changed."}}
+		return []SemanticChange{{Kind: "changed", Path: "/", Description: "The published snapshot changed."}}
 	}
-	changes := []semanticChange{}
+	changes := []SemanticChange{}
 	add := func(kind, path, description string) {
-		changes = append(changes, semanticChange{Kind: kind, Path: path, Description: description})
+		changes = append(changes, SemanticChange{Kind: kind, Path: path, Description: description})
 	}
 	if contentType == TypePlaylist {
 		for _, key := range []string{"name", "description", "sourceType", "tagMatch", "tagImageDurationMs"} {
@@ -1428,7 +1633,7 @@ func (s *Service) RestorePublicationToDraft(ctx context.Context, userID uuid.UUI
 	if err = lockEditorialDraftTx(ctx, tx, contentType, contentID); err != nil {
 		return editorial.Snapshot{}, err
 	}
-	raw, err := rollbackSnapshotTx(ctx, tx, contentType, nativeRevisionID, sourceSubmissionID, campaignReleaseID)
+	raw, err := rollbackSnapshotTx(ctx, tx, contentType, nativeRevisionID, sourceSubmissionID, campaignReleaseID, true)
 	if err != nil {
 		return editorial.Snapshot{}, err
 	}
