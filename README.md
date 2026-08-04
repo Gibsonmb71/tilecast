@@ -9,10 +9,15 @@
       srcset=".github/logos/tilecast-logo-black.svg"
     >
     <img
-      alt="Togos/tilecast-logo-black.svg"
-      width="300"
+      alt="Tilecast"
+      src=".github/logos/tilecast-logo-black.svg"
+      width="240"
     >
   </picture>
+</h1>
+
+<p align="center">
+  <strong>Open signage, built to stay on.</strong>
 </p>
 
 <p align="center">
@@ -31,9 +36,7 @@
 
 ---
 
-Tilecast is an open-source digital signage platform for organizations that want to run their own signage infrastructure without relying on a paid cloud service.
-
-Run the Tilecast Server on your own hardware, manage displays through **Tilecast Studio**, and connect Android TV or Linux devices running **Tilecast Player**.
+Tilecast is an open-source digital signage platform for organizations that want to run their own signage infrastructure without relying on a paid cloud service. Run the Tilecast Server on your own hardware, manage displays through **Tilecast Studio**, and connect Android TV or Linux devices running **Tilecast Player**.
 
 ## Features
 
