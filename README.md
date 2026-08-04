@@ -17,7 +17,7 @@
 </h1>
 
 <p align="center">
-  <strong>Open signage, built to stay on.</strong>
+  <strong>Actually open source signage.</strong>
 </p>
 
 <p align="center">
