@@ -5,6 +5,9 @@ import type { Asset } from "../../api/types";
 export function AssetPreview({ asset }: { asset: Asset }) {
   const [failedImageUrl, setFailedImageUrl] = useState<string>();
   const imageUrl = asset.thumbnailUrl;
+  const isSuperwide = Boolean(
+    asset.width && asset.height && asset.width / asset.height >= 2.4,
+  );
 
   if (imageUrl && imageUrl !== failedImageUrl) {
     return (
@@ -12,6 +15,7 @@ export function AssetPreview({ asset }: { asset: Asset }) {
         src={imageUrl}
         alt=""
         draggable={false}
+        style={isSuperwide ? { objectFit: "contain" } : undefined}
         onError={() => setFailedImageUrl(imageUrl)}
       />
     );
