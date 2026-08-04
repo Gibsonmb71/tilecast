@@ -62,7 +62,8 @@ Tilecast currently provides two Player platforms:
 | Platform       | Support                                                     |
 | -------------- | ----------------------------------------------------------- |
 | **Android TV** | Fire TV, Google TV, and other compatible Android TV devices |
-| **Linux**      | x86_64 signage computers with kiosk and systemd support     |
+| **Linux**      | x86_64 signage computers with kiosk and systemd support
+| **ARM Linux**  | Working on it    |
 
 Both platforms support the core Tilecast playback system, including pairing, playlists, layouts, widgets, scheduling, offline caching, remote management, and live previews.
 
