@@ -301,7 +301,10 @@ func (s *Service) BulkOrganize(ctx context.Context, userID uuid.UUID, in BulkOrg
 			return err
 		}
 	}
-	_, err = tx.Exec(ctx, `INSERT INTO audit_logs(id,user_id,action,resource_type,resource_id,metadata) VALUES($1,$2,'content.bulk_organized','asset_batch',$3,jsonb_build_object('assetCount',$4))`, uuid.New(), userID, uuid.New().String(), len(in.AssetIDs))
+	// jsonb_build_object cannot infer an untyped bind parameter on PostgreSQL's
+	// extended query path. Give the audit count an explicit type so organizing
+	// content does not fail and roll the entire transaction back at the last step.
+	_, err = tx.Exec(ctx, `INSERT INTO audit_logs(id,user_id,action,resource_type,resource_id,metadata) VALUES($1,$2,'content.bulk_organized','asset_batch',$3,jsonb_build_object('assetCount',$4::integer))`, uuid.New(), userID, uuid.New().String(), len(in.AssetIDs))
 	if err != nil {
 		return err
 	}
