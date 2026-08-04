@@ -4,6 +4,9 @@ import { History } from "lucide-react";
 import { api } from "../api/client";
 import { useAuth } from "../auth/AuthProvider";
 
+const initialRevisionCount = 5;
+const revisionPageSize = 10;
+
 // A restore is a new edit, not a rewind: it produces a new revision, so the
 // state it replaced stays in the history and the restore can itself be undone.
 export function PlaylistRevisionsPanel({
@@ -17,6 +20,9 @@ export function PlaylistRevisionsPanel({
   const client = useQueryClient();
   const csrf = auth.status?.csrfToken ?? "";
   const [result, setResult] = useState<string>();
+  const [visibleRevisionCount, setVisibleRevisionCount] = useState(
+    initialRevisionCount,
+  );
 
   const revisions = useQuery({
     queryKey: ["playlist-revisions", playlistId],
@@ -49,6 +55,10 @@ export function PlaylistRevisionsPanel({
       </div>
     );
 
+  const revisionItems = revisions.data?.items ?? [];
+  const visibleRevisions = revisionItems.slice(0, visibleRevisionCount);
+  const hiddenRevisionCount = revisionItems.length - visibleRevisions.length;
+
   return (
     <section className="settings-subsection">
       <header>
@@ -71,7 +81,7 @@ export function PlaylistRevisionsPanel({
       )}
 
       <div className="backup-job-list">
-        {revisions.data?.items.map((revision) => (
+        {visibleRevisions.map((revision) => (
           <div key={revision.revision}>
             <span>
               <strong>
@@ -109,6 +119,35 @@ export function PlaylistRevisionsPanel({
           </div>
         ))}
       </div>
+
+      {(hiddenRevisionCount > 0 ||
+        visibleRevisionCount > initialRevisionCount) && (
+        <div className="form-actions">
+          {hiddenRevisionCount > 0 && (
+            <button
+              type="button"
+              className="button button--quiet button--compact"
+              onClick={() =>
+                setVisibleRevisionCount((current) =>
+                  Math.min(current + revisionPageSize, revisionItems.length),
+                )
+              }
+            >
+              Show {Math.min(revisionPageSize, hiddenRevisionCount)} older revision
+              {Math.min(revisionPageSize, hiddenRevisionCount) === 1 ? "" : "s"}
+            </button>
+          )}
+          {visibleRevisionCount > initialRevisionCount && (
+            <button
+              type="button"
+              className="button button--quiet button--compact"
+              onClick={() => setVisibleRevisionCount(initialRevisionCount)}
+            >
+              Show recent only
+            </button>
+          )}
+        </div>
+      )}
     </section>
   );
 }
