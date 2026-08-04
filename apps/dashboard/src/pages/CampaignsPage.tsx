@@ -19,6 +19,7 @@ import type {
 import { useAuth } from "../auth/AuthProvider";
 import {
   Button,
+  Dialog,
   EmptyState,
   Field,
   Notice,
@@ -83,15 +84,25 @@ function CampaignLibrary() {
   const auth = useAuth();
   const csrf = auth.status?.csrfToken ?? "";
   const navigate = useNavigate();
+  const [creating, setCreating] = useState(false);
   const [name, setName] = useState("");
+  const canCreate = ["owner", "administrator", "editor"].includes(
+    auth.status?.user?.role ?? "viewer",
+  );
   const query = useQuery({
     queryKey: ["campaigns"],
     queryFn: () => api.campaigns(),
   });
   const create = useMutation({
-    mutationFn: () => api.createCampaign({ name, timezone: "UTC" }, csrf),
+    mutationFn: () =>
+      api.createCampaign({ name: name.trim(), timezone: "UTC" }, csrf),
     onSuccess: (campaign) => void navigate(`/campaigns/${campaign.id}`),
   });
+  const closeCreate = () => {
+    setCreating(false);
+    setName("");
+    create.reset();
+  };
 
   return (
     <section>
@@ -100,34 +111,13 @@ function CampaignLibrary() {
         title="Campaigns"
         description="Coordinate immutable content releases across screens and groups. A release reuses the scheduler and never changes what is live until it is published."
         actions={
-          ["owner", "administrator", "editor"].includes(
-            auth.status?.user?.role ?? "viewer",
-          ) ? (
-            <form
-              className="inline-form"
-              onSubmit={(event) => {
-                event.preventDefault();
-                if (name.trim()) create.mutate();
-              }}
-            >
-              <input
-                aria-label="New campaign name"
-                placeholder="Campaign name"
-                value={name}
-                onChange={(event) => setName(event.target.value)}
-              />
-              <Button
-                variant="primary"
-                type="submit"
-                disabled={create.isPending}
-              >
-                <Plus size={16} aria-hidden="true" /> Create campaign
-              </Button>
-            </form>
+          canCreate ? (
+            <Button variant="primary" onClick={() => setCreating(true)}>
+              <Plus size={16} aria-hidden="true" /> Create campaign
+            </Button>
           ) : undefined
         }
       />
-      {create.error && <Notice variant="danger">{create.error.message}</Notice>}
       {query.isLoading ? (
         <div className="table-loading">Loading campaigns…</div>
       ) : !query.data?.items.length ? (
@@ -159,6 +149,29 @@ function CampaignLibrary() {
           ))}
         </div>
       )}
+      <Dialog open={creating} title="Create campaign" onClose={closeCreate}>
+        <Field label="Name">
+          <input
+            autoFocus
+            value={name}
+            onChange={(event) => setName(event.target.value)}
+          />
+        </Field>
+        {create.error && <Notice variant="danger">{create.error.message}</Notice>}
+        <div className="form-actions">
+          <Button variant="quiet" onClick={closeCreate}>
+            Cancel
+          </Button>
+          <Button
+            variant="primary"
+            disabled={!name.trim()}
+            loading={create.isPending}
+            onClick={() => create.mutate()}
+          >
+            Create campaign
+          </Button>
+        </div>
+      </Dialog>
     </section>
   );
 }
