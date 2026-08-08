@@ -12,7 +12,7 @@ import type {
   DataSourceDetail,
   WidgetDefinition,
 } from "../api/types";
-import { DefinitionForm, dataSourceKeysIn } from "./DefinitionForm";
+import { DefinitionForm } from "./DefinitionForm";
 import { previewDatasetMaps, type PreviewDatasets } from "./previewRecords";
 import { DeclarativePresentationPreview } from "./SourceEditors";
 import { PreviewTimeControl } from "./PreviewTimeControl";
@@ -22,6 +22,10 @@ import {
   type PreviewTime,
 } from "./previewTime";
 import { captureWidgetPreview } from "./widgetPreviewCapture";
+import {
+  widgetPreviewConfiguration,
+  widgetPreviewDataSourceIds,
+} from "./widgetPreviewSources";
 
 export function GenericWidgetEditor({
   definition,
@@ -51,26 +55,38 @@ export function GenericWidgetEditor({
   );
   const [previewTime, setPreviewTime] =
     useState<PreviewTime>(initialPreviewTime);
+  const managedDataSourceId = asset?.widget?.managedDataSourceId;
+  const previewConfiguration = widgetPreviewConfiguration(
+    configuration,
+    managedDataSourceId,
+  );
+  const isAppRecipe = Boolean(
+    (definition as WidgetDefinition & { recipe?: unknown }).recipe,
+  );
   const managedSourceDiagnostics = useQuery({
-    queryKey: ["data-source-diagnostics", asset?.widget?.managedDataSourceId],
-    queryFn: () =>
-      api.dataSourceDiagnostics(asset?.widget?.managedDataSourceId ?? ""),
-    enabled: Boolean(asset?.widget?.managedDataSourceId),
+    queryKey: ["data-source-diagnostics", managedDataSourceId],
+    queryFn: () => api.dataSourceDiagnostics(managedDataSourceId ?? ""),
+    enabled: Boolean(managedDataSourceId),
     retry: false,
     refetchInterval: 10_000,
   });
   const compiledPreview = useQuery({
-    queryKey: ["compiled-widget-preview", definition.id, configuration],
-    queryFn: () => api.compileWidgetPreview(definition.id, configuration, csrf),
+    queryKey: [
+      "compiled-widget-preview",
+      definition.id,
+      previewConfiguration,
+    ],
+    queryFn: () =>
+      api.compileWidgetPreview(definition.id, previewConfiguration, csrf),
     retry: false,
   });
-  // Every `data_source` control in the definition is followed, not just a field literally named
-  // `dataSourceId`, because a Widget may reference more than one Data Source. The first declared
-  // source drives the rendered preview; all of them gate saving so the captured thumbnail is
-  // never uploaded with data still in flight.
-  const dataSourceIds = dataSourceKeysIn(
+  // Follow every author-declared `data_source` control and explicitly include an App Recipe's
+  // hidden managed source. The managed source comes first because source-backed Apps intentionally
+  // do not expose a data_source control even though their presentation binds to sourceId.
+  const dataSourceIds = widgetPreviewDataSourceIds(
     definition.configurationSchema.fields,
     configuration,
+    managedDataSourceId,
   );
   const sourcePreviews = useQueries({
     queries: dataSourceIds.map((id) => ({
@@ -93,15 +109,25 @@ export function GenericWidgetEditor({
   );
   const save = useMutation({
     mutationFn: async () => {
-      if (!previewRef.current || !compiledPreview.data || sourcesLoading)
-        throw new Error("Wait for the Widget preview before saving.");
-      const previewImage = await captureWidgetPreview(previewRef.current);
       const input = {
         provider: definition.id,
         name,
         description,
         configuration,
       };
+
+      // An App Recipe's managed Data Source is provisioned/updated by the save itself. Capturing
+      // before that transaction necessarily depicts the old or empty source. Let the snapshot
+      // backfill capture the saved App after its managed source exists and has been reconnected.
+      if (isAppRecipe) {
+        return asset
+          ? api.updateWidget(asset.id, input, csrf)
+          : api.createWidget(input, csrf);
+      }
+
+      if (!previewRef.current || !compiledPreview.data || sourcesLoading)
+        throw new Error("Wait for the Widget preview before saving.");
+      const previewImage = await captureWidgetPreview(previewRef.current);
       const saved = asset
         ? api.updateWidget(asset.id, input, csrf)
         : api.createWidget(input, csrf);
