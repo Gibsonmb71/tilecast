@@ -20,9 +20,8 @@ export function PlaylistRevisionsPanel({
   const client = useQueryClient();
   const csrf = auth.status?.csrfToken ?? "";
   const [result, setResult] = useState<string>();
-  const [visibleRevisionCount, setVisibleRevisionCount] = useState(
-    initialRevisionCount,
-  );
+  const [visibleRevisionCount, setVisibleRevisionCount] =
+    useState(initialRevisionCount);
 
   const revisions = useQuery({
     queryKey: ["playlist-revisions", playlistId],
@@ -133,7 +132,8 @@ export function PlaylistRevisionsPanel({
                 )
               }
             >
-              Show {Math.min(revisionPageSize, hiddenRevisionCount)} older revision
+              Show {Math.min(revisionPageSize, hiddenRevisionCount)} older
+              revision
               {Math.min(revisionPageSize, hiddenRevisionCount) === 1 ? "" : "s"}
             </button>
           )}

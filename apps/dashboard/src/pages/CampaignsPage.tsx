@@ -157,7 +157,9 @@ function CampaignLibrary() {
             onChange={(event) => setName(event.target.value)}
           />
         </Field>
-        {create.error && <Notice variant="danger">{create.error.message}</Notice>}
+        {create.error && (
+          <Notice variant="danger">{create.error.message}</Notice>
+        )}
         <div className="form-actions">
           <Button variant="quiet" onClick={closeCreate}>
             Cancel
