@@ -40,18 +40,18 @@ Tilecast is an open-source digital signage platform for organizations that want 
 
 ## Features
 
-* **Self-hosted** — your server, database, media, and players stay under your control.
-* **Media library** — upload and organize images and videos with folders, collections, tags, availability dates, and expiration.
-* **Playlists & layouts** — sequence content or build multi-zone screen layouts with media, widgets, text, shapes, and playlist zones.
-* **Scheduling** — target content to screens and groups with scheduled assignments and takeovers.
-* **Widgets** — clocks, countdowns, QR codes, websites, YouTube, tickers, menus, tables, agendas, weather, metrics, and more.
-* **Data Sources** — connect reusable Calendar, RSS, Atom, JSON, CSV, weather, transit, alerts, manual data, and other structured sources to visual content.
-* **Offline playback** — players cache content and continue operating when the server or network is temporarily unavailable.
-* **Fleet management** — monitor screens, send remote commands, organize displays, manage groups, perform bulk changes, and view live previews.
-* **Reliability tools** — unattended startup, watchdog recovery, safe mode, kiosk controls, and player health reporting.
-* **Team workflows** — roles, content review, publishing controls, screen scopes, and multi-factor authentication.
-* **Integrations** — API access, integration tokens, webhooks, notifications, and Prometheus-compatible fleet health.
-* **Built-in plugins** — submission forms, countdown bars, emergency alerts, watermarks, and other signage workflows.
+- **Self-hosted** — your server, database, media, and players stay under your control.
+- **Media library** — upload and organize images and videos with folders, collections, tags, availability dates, and expiration.
+- **Playlists & layouts** — sequence content or build multi-zone screen layouts with media, widgets, text, shapes, and playlist zones.
+- **Scheduling** — target content to screens and groups with scheduled assignments and takeovers.
+- **Widgets** — clocks, countdowns, QR codes, websites, YouTube, tickers, menus, tables, agendas, weather, metrics, and more.
+- **Data Sources** — connect reusable Calendar, RSS, Atom, JSON, CSV, weather, transit, alerts, manual data, and other structured sources to visual content.
+- **Offline playback** — players cache content and continue operating when the server or network is temporarily unavailable.
+- **Fleet management** — monitor screens, send remote commands, organize displays, manage groups, perform bulk changes, and view live previews.
+- **Reliability tools** — unattended startup, watchdog recovery, safe mode, kiosk controls, and player health reporting.
+- **Team workflows** — roles, content review, publishing controls, screen scopes, and multi-factor authentication.
+- **Integrations** — API access, integration tokens, webhooks, notifications, and Prometheus-compatible fleet health.
+- **Built-in plugins** — submission forms, countdown bars, emergency alerts, watermarks, and other signage workflows.
 
 See [Widgets, Data Sources, and Layouts](docs/widgets-and-layouts.md) for a detailed overview of Tilecast's content system.
 
@@ -62,23 +62,23 @@ Tilecast currently provides two Player platforms:
 | Platform       | Support                                                     |
 | -------------- | ----------------------------------------------------------- |
 | **Android TV** | Fire TV, Google TV, and other compatible Android TV devices |
-| **Linux**      | x86_64 signage computers with kiosk and systemd support
-| **ARM Linux**  | Working on it    |
+| **Linux**      | x86_64 signage computers with kiosk and systemd support     |
+| **ARM Linux**  | Working on it                                               |
 
 Both platforms support the core Tilecast playback system, including pairing, playlists, layouts, widgets, scheduling, offline caching, remote management, and live previews.
 
 For installation and deployment:
 
-* [Install Tilecast Player](https://github.com/Gibsonmb71/tilecast/wiki/Install-Tilecast-Player)
-* [Reliability and Kiosk](https://github.com/Gibsonmb71/tilecast/wiki/Reliability-and-Kiosk)
-* [Troubleshooting](https://github.com/Gibsonmb71/tilecast/wiki/Troubleshooting)
+- [Install Tilecast Player](https://github.com/Gibsonmb71/tilecast/wiki/Install-Tilecast-Player)
+- [Reliability and Kiosk](https://github.com/Gibsonmb71/tilecast/wiki/Reliability-and-Kiosk)
+- [Troubleshooting](https://github.com/Gibsonmb71/tilecast/wiki/Troubleshooting)
 
 ## Quick start
 
 ### Requirements
 
-* Docker Engine
-* Docker Compose v2
+- Docker Engine
+- Docker Compose v2
 
 Clone the repository and create your environment file:
 
@@ -123,25 +123,25 @@ The [Tilecast Wiki](https://github.com/Gibsonmb71/tilecast/wiki) contains setup 
 
 Technical documentation is also maintained in [`docs/`](docs/), including:
 
-* [Deployment](docs/deployment.md)
-* [Architecture](docs/architecture.md)
-* [Widgets, Data Sources, and Layouts](docs/widgets-and-layouts.md)
-* [Display Control](docs/display-control.md)
-* [API](docs/api.md)
-* [Integrations](docs/integrations.md)
-* [Built-in Plugins](docs/plugins.md)
-* [Content Review](docs/content-review.md)
-* [Multi-factor Authentication](docs/multi-factor-authentication.md)
+- [Deployment](docs/deployment.md)
+- [Architecture](docs/architecture.md)
+- [Widgets, Data Sources, and Layouts](docs/widgets-and-layouts.md)
+- [Display Control](docs/display-control.md)
+- [API](docs/api.md)
+- [Integrations](docs/integrations.md)
+- [Built-in Plugins](docs/plugins.md)
+- [Content Review](docs/content-review.md)
+- [Multi-factor Authentication](docs/multi-factor-authentication.md)
 
 ## Development
 
 Tilecast is primarily built with:
 
-* **Go** — server
-* **React + TypeScript** — Studio
-* **Kotlin** — Android Player
-* **Electron** — Linux Player
-* **PostgreSQL** — database
+- **Go** — server
+- **React + TypeScript** — Studio
+- **Kotlin** — Android Player
+- **Electron** — Linux Player
+- **PostgreSQL** — database
 
 See [Development Setup](docs/development.md) for local development instructions.
 

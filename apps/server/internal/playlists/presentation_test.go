@@ -88,6 +88,72 @@ func TestCompileWebPresentationIsHTTPSAndLifecycleBounded(t *testing.T) {
 	}
 }
 
+func TestDefinitionWebPresentationCompilesProviderURLAndPeriodicReload(t *testing.T) {
+	presentation, err := presentationTestService().compileWidgetPresentation("google-slides", json.RawMessage(`{
+		"slidesUrl":"https://docs.google.com/presentation/d/1234567890abcdef/edit#slide=id.p",
+		"autoAdvance":true,"loop":true,"slideDurationSeconds":12,"refreshIntervalSeconds":900
+	}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if presentation.Kind != "web" || presentation.Web == nil || presentation.RequiredCapabilities["web.remote"] != 2 {
+		t.Fatalf("presentation=%#v", presentation)
+	}
+	if presentation.Web.URL != "https://docs.google.com/presentation/d/1234567890abcdef/embed?delayms=12000&loop=true&start=true" || presentation.Web.Reload == nil || presentation.Web.Reload.Mode != "periodic" || presentation.Web.Reload.IntervalSeconds != 900 {
+		t.Fatalf("web=%#v", presentation.Web)
+	}
+	encoded, err := json.Marshal(presentation)
+	if err != nil || !strings.Contains(string(encoded), `"reload":{"mode":"periodic","intervalSeconds":900}`) {
+		t.Fatalf("encoded=%s err=%v", encoded, err)
+	}
+	if _, err = presentationTestService().compileWidgetPresentation("google-slides", json.RawMessage(`{"slidesUrl":"https://evil.example/presentation/d/1234567890abcdef/edit","refreshIntervalSeconds":900}`)); err == nil {
+		t.Fatal("wrong provider host was accepted")
+	}
+}
+
+func TestWebReloadRequiresManifestV15WithoutChangingOlderWebContent(t *testing.T) {
+	manifest := Manifest{Widgets: []ManifestWidget{{Presentation: &WidgetPresentation{
+		Kind: "web",
+		Web:  &WebSandboxPresentation{Reload: &WebReload{Mode: "periodic", IntervalSeconds: 900}},
+	}}}}
+	if !manifestHasWebReload(manifest) {
+		t.Fatal("periodic reload did not require manifest v15")
+	}
+	manifest.Widgets[0].Presentation.Web.Reload = nil
+	if manifestHasWebReload(manifest) {
+		t.Fatal("ordinary constrained web content was unnecessarily upgraded")
+	}
+}
+
+func TestNewsFeedAndRSSTickerCompileToProviderAgnosticNativeNodes(t *testing.T) {
+	news, err := presentationTestService().compileWidgetPresentation("espn", json.RawMessage(`{
+		"feedUrl":"https://www.espn.com/espn/rss/news","heading":"ESPN","maxStories":8,
+		"displayStyle":"headlines","showDescription":true,"showPublicationTime":true,
+		"showSource":false,"skipWhenEmpty":true,"refreshIntervalSeconds":900,
+		"emptyState":"No headlines","sourceId":"11111111-1111-1111-1111-111111111111"
+	}`))
+	if err != nil || news.Native == nil || news.Native.Root.Type != "surface" || news.RequiredCapabilities["playback.auto_skip"] != 1 {
+		t.Fatalf("news=%#v err=%v", news, err)
+	}
+	encoded, _ := json.Marshal(news)
+	if strings.Contains(string(encoded), "$ifConfig") || strings.Contains(string(encoded), "espn") {
+		t.Fatalf("compiled native presentation leaked catalog instructions: %s", encoded)
+	}
+
+	ticker, err := presentationTestService().compileWidgetPresentation("rss-ticker", json.RawMessage(`{
+		"feedUrl":"https://example.com/feed.xml","leadingLabel":"NEWS","contentMode":"title_source",
+		"separator":" • ","speed":"normal","direction":"left","maxStories":15,"refreshIntervalSeconds":900,
+		"emptyState":"No headlines","sourceId":"11111111-1111-1111-1111-111111111111"
+	}`))
+	if err != nil || ticker.Native == nil || ticker.RequiredCapabilities["content.marquee"] != 1 {
+		t.Fatalf("ticker=%#v err=%v", ticker, err)
+	}
+	encoded, _ = json.Marshal(ticker)
+	if !strings.Contains(string(encoded), `"fields":["title","source"]`) || !strings.Contains(string(encoded), `"separator":" • "`) {
+		t.Fatalf("ticker did not compile a multi-record marquee binding: %s", encoded)
+	}
+}
+
 func TestProjectMultiDatasetDocument(t *testing.T) {
 	raw := json.RawMessage(`{"datasets":[{"id":"current","kind":"object","fields":[{"key":"aqi","label":"AQI","type":"integer"}],"values":{"aqi":"42"},"attribution":"Example"},{"id":"hourly","kind":"time_series","fields":[{"key":"pm2_5","label":"PM2.5","type":"number"}],"points":[{"at":"2026-07-16T12:00:00Z","values":{"pm2_5":"8.5"}}]}]}`)
 	document, err := projectDataDocument(raw)

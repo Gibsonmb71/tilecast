@@ -660,9 +660,14 @@ func (s *Service) availableDataSourceFields(provider string, raw json.RawMessage
 	}
 	add(config.Fields.Title, "title", "Title", "text")
 	add(config.Fields.Subtitle, "subtitle", "Subtitle", "text")
-	add(config.Fields.Date, "date", "Date", "date")
+	dateType := "date"
+	if provider == "rss" || provider == "atom" {
+		dateType = "datetime"
+	}
+	add(config.Fields.Date, "date", "Publication time", dateType)
 	add(config.Fields.Author, "author", "Author", "text")
 	add(config.Fields.Description, "description", "Description", "text")
+	add(provider == "rss" || provider == "atom", "source", "Source", "text")
 	add(config.Fields.Image, "imageUrl", "Image", "url")
 	add(config.Fields.Link, "link", "Link", "url")
 	if config.Mapping != nil {

@@ -45,10 +45,20 @@ export function GenericWidgetEditor({
     asset?.description ?? definition.description,
   );
   const [configuration, setConfiguration] = useState<Record<string, unknown>>(
-    asset?.widget?.configuration ?? definition.defaultConfiguration,
+    asset?.widget?.authorConfiguration ??
+      asset?.widget?.configuration ??
+      definition.defaultConfiguration,
   );
   const [previewTime, setPreviewTime] =
     useState<PreviewTime>(initialPreviewTime);
+  const managedSourceDiagnostics = useQuery({
+    queryKey: ["data-source-diagnostics", asset?.widget?.managedDataSourceId],
+    queryFn: () =>
+      api.dataSourceDiagnostics(asset?.widget?.managedDataSourceId ?? ""),
+    enabled: Boolean(asset?.widget?.managedDataSourceId),
+    retry: false,
+    refetchInterval: 10_000,
+  });
   const compiledPreview = useQuery({
     queryKey: ["compiled-widget-preview", definition.id, configuration],
     queryFn: () => api.compileWidgetPreview(definition.id, configuration, csrf),
@@ -156,6 +166,26 @@ export function GenericWidgetEditor({
         readOnly={readOnly}
         csrf={csrf}
       />
+      {managedSourceDiagnostics.data && (
+        <div className="source-diagnostics" aria-label="App source health">
+          <strong>App source</strong>
+          <p>
+            {managedSourceDiagnostics.data.parseStatus || "Pending"} ·{" "}
+            {managedSourceDiagnostics.data.availableItemCount} items
+            {managedSourceDiagnostics.data.usingCachedData
+              ? " · using cached data"
+              : ""}
+          </p>
+          <p>
+            Last successful update:{" "}
+            {managedSourceDiagnostics.data.lastSuccessfulRefresh
+              ? new Date(
+                  managedSourceDiagnostics.data.lastSuccessfulRefresh,
+                ).toLocaleString()
+              : "not yet"}
+          </p>
+        </div>
+      )}
     </GenericEditorShell>
   );
 }

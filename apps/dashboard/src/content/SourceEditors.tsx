@@ -54,10 +54,8 @@ export function WidgetProviderGallery({
     queryFn: api.contentDefinitions,
     staleTime: 5 * 60_000,
   });
-  const releaseDefined =
-    definitions.data?.widgets?.filter(
-      (definition) => !definition.legacyEditor,
-    ) ?? [];
+  const [search, setSearch] = useState("");
+  const [category, setCategory] = useState("All");
   useEffect(() => {
     const escape = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
@@ -68,10 +66,86 @@ export function WidgetProviderGallery({
     addEventListener("keydown", escape);
     return () => removeEventListener("keydown", escape);
   }, [onClose]);
+
+  const catalog = definitions.data?.widgets ?? [];
+  const categories = [
+    "News",
+    "Google",
+    "Design & Documents",
+    "Dashboards",
+    "Feeds",
+    "Video",
+    "Social",
+    "Building Blocks / Advanced",
+  ];
+  const galleryCategory = (definition: (typeof catalog)[number]) => {
+    if (categories.includes(definition.category)) return definition.category;
+    if (definition.id === "youtube") return "Video";
+    return "Building Blocks / Advanced";
+  };
+  const needle = search.trim().toLowerCase();
+  const visible = catalog.filter((definition) => {
+    if (category !== "All" && galleryCategory(definition) !== category)
+      return false;
+    if (!needle) return true;
+    return [
+      definition.name,
+      definition.description,
+      definition.category,
+      ...(definition.keywords ?? []),
+    ]
+      .join(" ")
+      .toLowerCase()
+      .includes(needle);
+  });
+  const sections =
+    category === "All"
+      ? categories
+          .map((name) => ({
+            name,
+            items: visible.filter(
+              (definition) => galleryCategory(definition) === name,
+            ),
+          }))
+          .filter((section) => section.items.length > 0)
+      : [{ name: category, items: visible }];
+
+  const card = (definition: (typeof catalog)[number]) => {
+    const disabled = definition.availability?.enabled === false;
+    return (
+      <button
+        type="button"
+        key={definition.id}
+        disabled={disabled}
+        aria-describedby={
+          disabled ? `widget-availability-${definition.id}` : undefined
+        }
+        onClick={() => onChoose(definition.id)}
+      >
+        <WidgetThumbnail
+          name={definition.thumbnail ?? definition.id}
+          label={definition.name}
+        />
+        <strong>{definition.name}</strong>
+        <span>{definition.description}</span>
+        {disabled && (
+          <small id={`widget-availability-${definition.id}`}>
+            {definition.availability?.reason}
+          </small>
+        )}
+      </button>
+    );
+  };
+
+  const featured = visible.filter(
+    (definition) =>
+      definition.featured && definition.availability?.enabled !== false,
+  );
+
   return (
     <div className="details-backdrop" role={page ? undefined : "presentation"}>
       <section
-        className="source-gallery"
+        className="source-gallery source-gallery--catalog"
         role={page ? undefined : "dialog"}
         aria-modal={page ? undefined : true}
         aria-labelledby="source-gallery-title"
@@ -79,241 +153,70 @@ export function WidgetProviderGallery({
         <header>
           <div>
             <h2 id="source-gallery-title">Create Widget</h2>
-            <p>
-              Choose what you want to show. If a Widget needs connected data,
-              you can choose or create it in the next step.
-            </p>
+            <p>Choose an App or building block for your signage.</p>
           </div>
           <button className="icon-button" aria-label="Close" onClick={onClose}>
             <X size={18} />
           </button>
         </header>
+        <div className="widget-catalog-toolbar">
+          <label className="widget-catalog-search">
+            <span className="sr-only">Search Widget catalog</span>
+            <input
+              type="search"
+              value={search}
+              placeholder="Search Apps and Widgets"
+              onChange={(event) => setSearch(event.target.value)}
+            />
+          </label>
+          <div
+            className="widget-catalog-categories"
+            aria-label="Widget categories"
+          >
+            {["All", ...categories].map((name) => (
+              <button
+                type="button"
+                key={name}
+                className={category === name ? "is-active" : ""}
+                aria-pressed={category === name}
+                onClick={() => setCategory(name)}
+              >
+                {name}
+              </button>
+            ))}
+          </div>
+        </div>
         <div className="source-provider-groups">
-          {releaseDefined.length > 0 && (
-            <section className="source-provider-group">
+          {category === "All" && !needle && featured.length > 0 && (
+            <section className="source-provider-group source-provider-group--featured">
               <header className="source-provider-group__heading">
-                <h3>Included with this release</h3>
-                <p>
-                  Additional Widget types provided by this Tilecast release.
-                </p>
+                <h3>Featured</h3>
+                <p>Recommended integrations for common signage needs.</p>
               </header>
-              <div className="source-provider-grid">
-                {releaseDefined.map((definition) => (
-                  <button
-                    type="button"
-                    key={definition.id}
-                    onClick={() => onChoose(definition.id)}
-                  >
-                    <WidgetThumbnail
-                      name={definition.thumbnail ?? definition.id}
-                      label={definition.name}
-                    />
-                    <strong>{definition.name}</strong>
-                    <span>{definition.description}</span>
-                  </button>
-                ))}
-              </div>
+              <div className="source-provider-grid">{featured.map(card)}</div>
             </section>
           )}
-          <section className="source-provider-group">
-            <header className="source-provider-group__heading">
-              <h3>Web and video</h3>
-              <p>Show a webpage or play YouTube content.</p>
-            </header>
-            <div className="source-provider-grid">
-              <button type="button" onClick={() => onChoose("website")}>
-                <WidgetThumbnail name="website" label="Website" />
-                <strong>Website</strong>
-                <span>Display an approved webpage.</span>
-              </button>
-              <button type="button" onClick={() => onChoose("youtube")}>
-                <WidgetThumbnail name="youtube" label="YouTube" />
-                <strong>YouTube</strong>
-                <span>
-                  Play a YouTube video or playlist without an API key.
-                </span>
-              </button>
-            </div>
-          </section>
-          <section className="source-provider-group">
-            <header className="source-provider-group__heading">
-              <h3>Essentials</h3>
-              <p>Simple Widgets that do not need a Data Source.</p>
-            </header>
-            <div className="source-provider-grid">
-              <button type="button" onClick={() => onChoose("clock")}>
-                <WidgetThumbnail name="clock" label="Clock" />
-                <strong>Clock</strong>
-                <span>Show live local time in a configured timezone.</span>
-              </button>
-              <button type="button" onClick={() => onChoose("date")}>
-                <WidgetThumbnail name="date" label="Date" />
-                <strong>Date</strong>
-                <span>Show a live localized calendar date.</span>
-              </button>
-              <button type="button" onClick={() => onChoose("qrcode")}>
-                <WidgetThumbnail name="qrcode" label="QR Code" />
-                <strong>QR Code</strong>
-                <span>Display text or a URL as a scannable code.</span>
-              </button>
-              <button type="button" onClick={() => onChoose("countdown")}>
-                <WidgetThumbnail name="countdown" label="Countdown" />
-                <strong>Countdown</strong>
-                <span>
-                  Count down to or up from a configured date and time.
-                </span>
-              </button>
-            </div>
-          </section>
-          <section className="source-provider-group">
-            <header className="source-provider-group__heading">
-              <h3>Display connected data</h3>
-              <p>
-                Choose how records should look. You can connect the data next.
-              </p>
-            </header>
-            <div className="source-provider-grid">
-              <button type="button" onClick={() => onChoose("ticker")}>
-                <WidgetThumbnail name="ticker" label="Ticker" />
-                <strong>Ticker</strong>
-                <span>Scroll a selected field from a Data Source.</span>
-              </button>
-              <button type="button" onClick={() => onChoose("menu")}>
-                <WidgetThumbnail name="menu" label="Menu" />
-                <strong>Menu</strong>
-                <span>Format selected fields as a signage menu.</span>
-              </button>
-              <button type="button" onClick={() => onChoose("list")}>
-                <WidgetThumbnail name="list" label="List" />
-                <strong>List</strong>
-                <span>Present records from a reusable Data Source.</span>
-              </button>
-              <button type="button" onClick={() => onChoose("table")}>
-                <WidgetThumbnail name="table" label="Table" />
-                <strong>Table</strong>
-                <span>Show selected fields in structured columns.</span>
-              </button>
-              <button type="button" onClick={() => onChoose("agenda")}>
-                <WidgetThumbnail name="agenda" label="Agenda" />
-                <strong>Agenda</strong>
-                <span>Display dated records in agenda form.</span>
-              </button>
-              <button type="button" onClick={() => onChoose("metric")}>
-                <WidgetThumbnail name="metric" label="Metric" />
-                <strong>Metric</strong>
-                <span>Highlight a numeric value from a Data Source.</span>
-              </button>
-              <button type="button" onClick={() => onChoose("cards")}>
-                <WidgetThumbnail name="cards" label="Cards" />
-                <strong>Cards</strong>
-                <span>Arrange reusable records in a responsive card grid.</span>
-              </button>
-              <button type="button" onClick={() => onChoose("weather")}>
-                <WidgetThumbnail name="weather" label="Weather" />
-                <strong>Weather</strong>
-                <span>Show current conditions and a daily forecast.</span>
-              </button>
-              <button type="button" onClick={() => onChoose("spotlight")}>
-                <WidgetThumbnail name="spotlight" label="Spotlight" />
-                <strong>Spotlight</strong>
-                <span>Feature one record with optional uploaded artwork.</span>
-              </button>
-              <button type="button" onClick={() => onChoose("stat_grid")}>
-                <WidgetThumbnail name="stat_grid" label="Stat Grid" />
-                <strong>Stat Grid</strong>
-                <span>Arrange numeric values in a responsive grid.</span>
-              </button>
-              <button type="button" onClick={() => onChoose("chart")}>
-                <WidgetThumbnail name="chart" label="Chart" />
-                <strong>Chart</strong>
-                <span>Plot up to four numeric series.</span>
-              </button>
-              <button type="button" onClick={() => onChoose("progress")}>
-                <WidgetThumbnail name="progress" label="Progress" />
-                <strong>Progress</strong>
-                <span>Show progress toward a numeric target.</span>
-              </button>
-            </div>
-          </section>
-          <section className="source-provider-group">
-            <header className="source-provider-group__heading">
-              <h3>Schedules and time</h3>
-              <p>Show milestones or time across multiple locations.</p>
-            </header>
-            <div className="source-provider-grid">
-              <button type="button" onClick={() => onChoose("timeline")}>
-                <WidgetThumbnail name="timeline" label="Timeline" />
-                <strong>Timeline</strong>
-                <span>Show dated milestones and their current status.</span>
-              </button>
-              <button type="button" onClick={() => onChoose("world_clock")}>
-                <WidgetThumbnail name="world_clock" label="World Clock" />
-                <strong>World Clock</strong>
-                <span>Show live time across multiple locations.</span>
-              </button>
-            </div>
-          </section>
-          <section className="source-provider-group">
-            <header className="source-provider-group__heading">
-              <h3>Common starting points</h3>
-              <p>Start with familiar signage patterns and customize them.</p>
-            </header>
-            <div className="source-provider-grid">
-              {[
-                [
-                  "leaderboard",
-                  "list",
-                  "Leaderboard",
-                  "Rank names and scores.",
-                ],
-                [
-                  "status_board",
-                  "cards",
-                  "Status Board",
-                  "Show operational states with badges.",
-                ],
-                [
-                  "queue_board",
-                  "list",
-                  "Queue Board",
-                  "Highlight the current and upcoming entries.",
-                ],
-                [
-                  "schedule_departures",
-                  "agenda",
-                  "Schedule / Departures",
-                  "Show times, destinations, and status.",
-                ],
-                [
-                  "opening_hours",
-                  "table",
-                  "Opening Hours",
-                  "Present today and weekly hours.",
-                ],
-                [
-                  "directory",
-                  "cards",
-                  "Directory",
-                  "Show people, roles, locations, and contacts.",
-                ],
-              ].map(([preset, underlying, label, description]) => (
-                <button
-                  type="button"
-                  key={preset}
-                  onClick={() =>
-                    onChoose(
-                      underlying as WidgetProvider,
-                      preset as WidgetPreset,
-                    )
-                  }
-                >
-                  <WidgetThumbnail name={underlying} label={label!} />
-                  <strong>{label}</strong>
-                  <span>{description}</span>
-                </button>
-              ))}
-            </div>
-          </section>
+          {sections.map((section) => (
+            <section className="source-provider-group" key={section.name}>
+              <header className="source-provider-group__heading">
+                <h3>{section.name}</h3>
+              </header>
+              {section.items.length > 0 ? (
+                <div className="source-provider-grid">
+                  {section.items.map(card)}
+                </div>
+              ) : (
+                <p className="source-gallery__no-results">
+                  No Widgets match this search.
+                </p>
+              )}
+            </section>
+          ))}
+          {visible.length === 0 && (
+            <p className="source-gallery__no-results">
+              No Apps or Widgets match “{search}”.
+            </p>
+          )}
         </div>
       </section>
     </div>

@@ -15,6 +15,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/tilecast/tilecast/apps/server/internal/contentdefs"
 	"github.com/tilecast/tilecast/apps/server/internal/manifestchanges"
 )
 
@@ -26,6 +27,10 @@ type configNormalizer interface {
 
 type websiteWidgetProvider struct{ service *Service }
 type youtubeWidgetProvider struct{ service *Service }
+type webDefinitionWidgetProvider struct {
+	service    *Service
+	definition contentdefs.WidgetDefinition
+}
 
 var youtubeIDPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{6,128}$`)
 
@@ -151,8 +156,26 @@ func (p youtubeWidgetProvider) Normalize(ctx context.Context, raw json.RawMessag
 	return config, nil
 }
 
+func (p webDefinitionWidgetProvider) Normalize(ctx context.Context, raw json.RawMessage) (any, error) {
+	normalized, err := (definitionConfigNormalizer{service: p.service, schema: p.definition.ConfigurationSchema}).Normalize(ctx, raw)
+	if err != nil {
+		return nil, err
+	}
+	configuration := normalized.(map[string]any)
+	if _, _, err = contentdefs.WebPresentationURL(p.definition, configuration); err != nil {
+		return nil, err
+	}
+	return configuration, nil
+}
+
 func (s *Service) widgetProvider(name string) (configNormalizer, error) {
 	if definition, ok := s.definitions.Widget(name); ok && !definition.LegacyEditor {
+		if !definition.Availability.IsEnabled() {
+			return nil, errors.New(definition.Availability.Reason)
+		}
+		if definition.Runtime == "web" {
+			return webDefinitionWidgetProvider{service: s, definition: definition}, nil
+		}
 		return definitionConfigNormalizer{service: s, schema: definition.ConfigurationSchema}, nil
 	}
 	switch name {
@@ -204,6 +227,9 @@ func (s *Service) CreateWidget(ctx context.Context, user uuid.UUID, input Widget
 	}
 	if err := validatePreset(input.Provider, input.PresetID); err != nil {
 		return Asset{}, err
+	}
+	if definition, ok := s.definitions.Widget(input.Provider); ok && definition.Recipe != nil {
+		return s.createAppRecipeWidget(ctx, user, input, definition)
 	}
 	provider, err := s.widgetProvider(input.Provider)
 	if err != nil {
@@ -270,11 +296,19 @@ func (s *Service) UpdateWidget(ctx context.Context, id, user uuid.UUID, input Wi
 	if input.Provider != existing.Widget.Provider {
 		return Asset{}, errors.New("widget provider cannot be changed")
 	}
+	input.Name = strings.TrimSpace(input.Name)
+	input.Description = strings.TrimSpace(input.Description)
+	if input.Name == "" || len(input.Name) > 180 || len(input.Description) > 2000 {
+		return Asset{}, errors.New("widget name or description is invalid")
+	}
 	if input.PresetID == nil {
 		input.PresetID = existing.Widget.PresetID
 	}
 	if err := validatePreset(input.Provider, input.PresetID); err != nil {
 		return Asset{}, err
+	}
+	if definition, ok := s.definitions.Widget(input.Provider); ok && definition.Recipe != nil {
+		return s.updateAppRecipeWidget(ctx, id, user, input, definition, *existing.Widget)
 	}
 	provider, err := s.widgetProvider(input.Provider)
 	if err != nil {
@@ -287,10 +321,6 @@ func (s *Service) UpdateWidget(ctx context.Context, id, user uuid.UUID, input Wi
 	if input.Provider == "website" {
 		config := configuration.(WebsiteConfig)
 		return s.UpdateWebsite(ctx, id, user, WebsiteInput{Name: input.Name, Description: input.Description, WebsiteConfig: config, javascriptSet: true, domStorageSet: true})
-	}
-	input.Name = strings.TrimSpace(input.Name)
-	if input.Name == "" || len(input.Name) > 180 || len(input.Description) > 2000 {
-		return Asset{}, errors.New("widget name or description is invalid")
 	}
 	encoded, _ := json.Marshal(configuration)
 	tx, err := s.db.Begin(ctx)
@@ -389,7 +419,11 @@ func (s *Service) DuplicateWidget(ctx context.Context, id, user uuid.UUID) (Asse
 	if err != nil || asset.Widget == nil {
 		return Asset{}, ErrNotFound
 	}
-	copied, err := s.CreateWidget(ctx, user, WidgetInput{Provider: asset.Widget.Provider, PresetID: asset.Widget.PresetID, Name: asset.Name + " copy", Description: asset.Description, Configuration: asset.Widget.Configuration})
+	configuration := asset.Widget.Configuration
+	if len(asset.Widget.AuthorConfiguration) > 0 {
+		configuration = asset.Widget.AuthorConfiguration
+	}
+	copied, err := s.CreateWidget(ctx, user, WidgetInput{Provider: asset.Widget.Provider, PresetID: asset.Widget.PresetID, Name: asset.Name + " copy", Description: asset.Description, Configuration: configuration})
 	if err != nil {
 		return Asset{}, err
 	}
@@ -404,7 +438,7 @@ func (s *Service) DuplicateWidget(ctx context.Context, id, user uuid.UUID) (Asse
 
 func (s *Service) loadWidget(ctx context.Context, id uuid.UUID) (*Widget, error) {
 	var widget Widget
-	err := s.db.QueryRow(ctx, `SELECT provider,preset_id,config_version,configuration FROM widgets WHERE asset_id=$1`, id).Scan(&widget.Provider, &widget.PresetID, &widget.ConfigVersion, &widget.Configuration)
+	err := s.db.QueryRow(ctx, `SELECT provider,preset_id,config_version,configuration,app_configuration,managed_data_source_id FROM widgets WHERE asset_id=$1`, id).Scan(&widget.Provider, &widget.PresetID, &widget.ConfigVersion, &widget.Configuration, &widget.AuthorConfiguration, &widget.ManagedDataSourceID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
 	}

@@ -992,7 +992,8 @@ func (s *Service) DeleteAsset(ctx context.Context, id, userID uuid.UUID) error {
 		return errors.New("asset is in use by a playlist, Layout, or shared configuration")
 	}
 	var assetType, assetOrigin string
-	if err := tx.QueryRow(ctx, `SELECT type,origin FROM assets WHERE id=$1 AND deleted_at IS NULL`, id).Scan(&assetType, &assetOrigin); errors.Is(err, pgx.ErrNoRows) {
+	var managedDataSourceID *uuid.UUID
+	if err := tx.QueryRow(ctx, `SELECT asset.type,asset.origin,widget.managed_data_source_id FROM assets asset LEFT JOIN widgets widget ON widget.asset_id=asset.id WHERE asset.id=$1 AND asset.deleted_at IS NULL`, id).Scan(&assetType, &assetOrigin, &managedDataSourceID); errors.Is(err, pgx.ErrNoRows) {
 		return ErrNotFound
 	} else if err != nil {
 		return err
@@ -1016,6 +1017,21 @@ func (s *Service) DeleteAsset(ctx context.Context, id, userID uuid.UUID) error {
 		return nil
 	}
 	if assetType == "widget" {
+		if managedDataSourceID != nil {
+			var shared bool
+			if err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM widgets other JOIN assets a ON a.id=other.asset_id AND a.deleted_at IS NULL WHERE other.asset_id<>$2::uuid AND EXISTS(SELECT 1 FROM jsonb_each_text(other.configuration) field WHERE field.value=($1::uuid)::text)) OR EXISTS(SELECT 1 FROM layout_draft_dependencies WHERE dependency_id=$1::uuid AND dependency_type='data_source') OR EXISTS(SELECT 1 FROM layout_revision_dependencies WHERE dependency_id=$1::uuid AND dependency_type='data_source')`, *managedDataSourceID, id).Scan(&shared); err != nil {
+				return err
+			}
+			if shared {
+				// A managed source that gained another consumer becomes an ordinary shared
+				// Data Source instead of being silently destroyed with its original App.
+				if _, err = tx.Exec(ctx, `UPDATE data_sources SET system_managed=FALSE,updated_at=now() WHERE id=$1`, *managedDataSourceID); err != nil {
+					return err
+				}
+			} else if _, err = tx.Exec(ctx, `UPDATE data_sources SET deleted_at=now(),updated_at=now() WHERE id=$1 AND system_managed=TRUE`, *managedDataSourceID); err != nil {
+				return err
+			}
+		}
 		if _, err = tx.Exec(ctx, `DELETE FROM website_assets WHERE asset_id=$1`, id); err != nil {
 			return err
 		}

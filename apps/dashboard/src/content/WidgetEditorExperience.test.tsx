@@ -2,6 +2,7 @@
 import "@testing-library/jest-dom/vitest";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import type { ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { api } from "../api/client";
@@ -27,7 +28,58 @@ function renderEditor(editor: ReactNode) {
     revision: "1",
     compilerVersion: "1",
     fingerprint: "test",
-    widgets: [],
+    widgets: [
+      {
+        id: "espn",
+        version: 1,
+        name: "ESPN",
+        description: "Sports headlines and stories from ESPN.",
+        category: "News",
+        icon: "espn",
+        kind: "app",
+        featured: true,
+        runtime: "native",
+        configurationSchema: { fields: [] },
+        defaultConfiguration: {},
+        presentationSchemaVersion: 1,
+        requiredCapabilities: {},
+        emptyStateBehavior: "placeholder",
+      },
+      {
+        id: "google-sheets-display",
+        version: 1,
+        name: "Google Sheets",
+        description: "Display a published Google spreadsheet.",
+        category: "Google",
+        icon: "google-sheets",
+        kind: "app",
+        runtime: "web",
+        configurationSchema: { fields: [] },
+        defaultConfiguration: {},
+        presentationSchemaVersion: 1,
+        requiredCapabilities: {},
+        emptyStateBehavior: "placeholder",
+      },
+      {
+        id: "notion",
+        version: 1,
+        name: "Notion",
+        description: "Display a published Notion page.",
+        category: "Design & Documents",
+        icon: "notion",
+        kind: "app",
+        availability: {
+          enabled: false,
+          reason: "No dependable first-party signage embed contract.",
+        },
+        runtime: "web",
+        configurationSchema: { fields: [] },
+        defaultConfiguration: {},
+        presentationSchemaVersion: 1,
+        requiredCapabilities: {},
+        emptyStateBehavior: "placeholder",
+      },
+    ],
     dataSources: [],
   });
   const client = new QueryClient({
@@ -39,28 +91,21 @@ function renderEditor(editor: ReactNode) {
 }
 
 describe("Widget editor experience", () => {
-  it("organizes Widget choices by what the editor wants to show", () => {
+  it("organizes and searches the integration catalog", async () => {
     renderEditor(
       <WidgetProviderGallery onChoose={vi.fn()} onClose={vi.fn()} page />,
     );
 
     expect(
-      screen.getByText(
-        "Choose what you want to show. If a Widget needs connected data, you can choose or create it in the next step.",
-      ),
+      await screen.findByRole("heading", { name: "Featured" }),
     ).toBeTruthy();
-    expect(screen.getByRole("heading", { name: "Essentials" })).toBeTruthy();
-    expect(
-      screen.getByText("Simple Widgets that do not need a Data Source."),
-    ).toBeTruthy();
-    expect(
-      screen.getByRole("heading", { name: "Display connected data" }),
-    ).toBeTruthy();
-    expect(
-      screen.getByText(
-        "Choose how records should look. You can connect the data next.",
-      ),
-    ).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "News" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Google" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /Notion/ })).toBeDisabled();
+
+    await userEvent.type(screen.getByRole("searchbox"), "spreadsheet");
+    expect(screen.getByRole("button", { name: /Google Sheets/ })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /ESPN/ })).toBeNull();
   });
 
   it("groups built-in Widget settings and keeps a named live preview", () => {

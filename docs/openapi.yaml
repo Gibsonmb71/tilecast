@@ -1442,7 +1442,7 @@ paths:
   /api/v1/widgets:
     post:
       operationId: createWidget
-      description: Creates a reusable Widget from the closed widget provider registry. Data-driven Widgets reference one compatible Data Source by dataSourceId.
+      description: Creates a reusable Widget or catalog App. An App recipe may atomically provision one hidden managed Data Source while preserving normal dependency and manifest behavior.
       requestBody:
         required: true
         content:
@@ -4245,30 +4245,8 @@ components:
       enum: [image, video, widget]
     WidgetProvider:
       type: string
-      description: Closed renderable Widget provider registry.
-      enum:
-        [
-          website,
-          youtube,
-          clock,
-          date,
-          qrcode,
-          countdown,
-          ticker,
-          menu,
-          list,
-          table,
-          agenda,
-          metric,
-          cards,
-          weather,
-          spotlight,
-          stat_grid,
-          chart,
-          progress,
-          timeline,
-          world_clock,
-        ]
+      pattern: "^[a-z][a-z0-9_-]{0,79}$"
+      description: Closed renderable Widget or App identifier from the release-owned content-definition catalog.
     DataSourceProvider:
       type: string
       description: Non-visual Data Source providers.
@@ -4306,6 +4284,13 @@ components:
             nullable: true,
           }
         configVersion: { type: integer, minimum: 1 }
+        authorConfiguration:
+          type: object
+          description: Author-facing App settings before managed-resource IDs are injected.
+        managedDataSourceId:
+          type: string
+          format: uuid
+          description: Explicit ownership link for a catalog App's hidden managed Data Source.
         configuration:
           {
             type: object,

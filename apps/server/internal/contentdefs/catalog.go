@@ -14,7 +14,7 @@ import (
 	"sync"
 )
 
-const CompilerVersion = "definition-compiler-v1"
+const CompilerVersion = "definition-compiler-v2"
 
 var supportedControls = map[string]bool{
 	"text": true, "multiline_text": true, "number": true, "integer": true,
@@ -38,6 +38,11 @@ var supportedNodes = map[string]bool{
 var DerivedConfigurationKeys = map[string]bool{
 	// Written by playlist manifest projection from the author's imageAssetId selection.
 	"imageVariantId": true,
+	// App recipes inject these release-owned values after provisioning their managed
+	// Data Source. Authors never submit either key directly.
+	"managedDataSourceId": true,
+	"sourceId":            true,
+	"appProviderName":     true,
 }
 
 // supportedOutputFieldTypes bounds the typed values a Data Source may declare. The set
@@ -223,6 +228,10 @@ type WidgetDefinition struct {
 	// to a generic preview when the name is empty or unknown, so a definition never has to
 	// ship one and an unknown name never breaks the gallery.
 	Thumbnail                 string              `json:"thumbnail,omitempty"`
+	Kind                      string              `json:"kind,omitempty"`
+	Featured                  bool                `json:"featured,omitempty"`
+	Keywords                  []string            `json:"keywords,omitempty"`
+	Availability              Availability        `json:"availability,omitempty"`
 	Runtime                   string              `json:"runtime"`
 	ConfigurationSchema       ConfigurationSchema `json:"configurationSchema"`
 	DefaultConfiguration      map[string]any      `json:"defaultConfiguration"`
@@ -230,12 +239,54 @@ type WidgetDefinition struct {
 	RequiredFieldTypes        map[string]string   `json:"requiredFieldTypes,omitempty"`
 	PresentationSchemaVersion int                 `json:"presentationSchemaVersion"`
 	PresentationTemplate      json.RawMessage     `json:"presentationTemplate,omitempty"`
+	PresentationBase          string              `json:"presentationBase,omitempty"`
 	RequiredCapabilities      map[string]int      `json:"requiredCapabilities"`
 	EmptyStateBehavior        string              `json:"emptyStateBehavior"`
 	LegacyEditor              bool                `json:"legacyEditor,omitempty"`
 	RequiresManifestV13       bool                `json:"requiresManifestV13,omitempty"`
 	Setup                     Setup               `json:"setup,omitempty"`
+	Recipe                    *AppRecipe          `json:"recipe,omitempty"`
+	WebIntegration            *WebIntegration     `json:"webIntegration,omitempty"`
 	Deprecation               Deprecation         `json:"deprecation"`
+}
+
+// Availability lets a release advertise a recognizable integration without claiming
+// that an unsupported or retired provider mechanism works. Disabled entries remain
+// discoverable in Studio with a release-owned explanation.
+type Availability struct {
+	Enabled *bool  `json:"enabled,omitempty"`
+	Reason  string `json:"reason,omitempty"`
+}
+
+func (a Availability) IsEnabled() bool { return a.Enabled == nil || *a.Enabled }
+
+// AppRecipe provisions one managed Data Source behind a user-facing Widget App.
+// ConfigurationTemplate is release-owned JSON and may only substitute values through
+// the closed {$config:"field"} form used by presentation templates.
+type AppRecipe struct {
+	DataSource ManagedDataSourceRecipe `json:"dataSource"`
+}
+
+type ManagedDataSourceRecipe struct {
+	Provider              string          `json:"provider"`
+	Name                  string          `json:"name"`
+	Description           string          `json:"description,omitempty"`
+	ConfigurationTemplate json.RawMessage `json:"configurationTemplate"`
+}
+
+// WebIntegration describes a release-owned remote web App. Transform is a closed
+// built-in operation; definitions cannot contain script, regex replacement, or code.
+type WebIntegration struct {
+	URLField            string   `json:"urlField"`
+	AllowedHosts        []string `json:"allowedHosts,omitempty"`
+	AllowAnyHTTPSHost   bool     `json:"allowAnyHttpsHost,omitempty"`
+	RequiredPathPrefix  string   `json:"requiredPathPrefix,omitempty"`
+	Transform           string   `json:"transform"`
+	ReloadIntervalField string   `json:"reloadIntervalField,omitempty"`
+	LoadTimeoutSeconds  int      `json:"loadTimeoutSeconds,omitempty"`
+	Lifecycle           string   `json:"lifecycle,omitempty"`
+	WarmSeconds         int      `json:"warmSeconds,omitempty"`
+	FallbackBehavior    string   `json:"fallbackBehavior,omitempty"`
 }
 
 type DataSourceDefinition struct {
@@ -297,6 +348,9 @@ func New(widgets []WidgetDefinition, dataSources []DataSourceDefinition) (*Catal
 	if catalog.DataSources == nil {
 		catalog.DataSources = []DataSourceDefinition{}
 	}
+	if err := inheritPresentationBases(catalog.Widgets); err != nil {
+		return nil, err
+	}
 	if err := catalog.validate(); err != nil {
 		return nil, err
 	}
@@ -348,12 +402,48 @@ func load() (*Catalog, error) {
 		catalog.Widgets = append(catalog.Widgets, envelope.Widgets...)
 		catalog.DataSources = append(catalog.DataSources, envelope.DataSources...)
 	}
+	if err := inheritPresentationBases(catalog.Widgets); err != nil {
+		return nil, err
+	}
 	if err := catalog.validate(); err != nil {
 		return nil, err
 	}
 	catalog.Fingerprint = hex.EncodeToString(hasher.Sum(nil))
 	catalog.Revision = catalog.Fingerprint[:16]
 	return catalog, nil
+}
+
+func inheritPresentationBases(widgets []WidgetDefinition) error {
+	byID := map[string]WidgetDefinition{}
+	for _, definition := range widgets {
+		byID[definition.ID] = definition
+	}
+	for index := range widgets {
+		baseID := widgets[index].PresentationBase
+		if baseID == "" {
+			continue
+		}
+		base, ok := byID[baseID]
+		if !ok || base.PresentationBase != "" {
+			return fmt.Errorf("Widget definition %q has an invalid presentation base %q", widgets[index].ID, baseID)
+		}
+		if widgets[index].Runtime != base.Runtime {
+			return fmt.Errorf("Widget definition %q presentation base has a different runtime", widgets[index].ID)
+		}
+		if len(widgets[index].PresentationTemplate) == 0 {
+			widgets[index].PresentationTemplate = append(json.RawMessage(nil), base.PresentationTemplate...)
+		}
+		if widgets[index].PresentationSchemaVersion == 0 {
+			widgets[index].PresentationSchemaVersion = base.PresentationSchemaVersion
+		}
+		if len(widgets[index].RequiredCapabilities) == 0 {
+			widgets[index].RequiredCapabilities = map[string]int{}
+			for capability, version := range base.RequiredCapabilities {
+				widgets[index].RequiredCapabilities[capability] = version
+			}
+		}
+	}
+	return nil
 }
 
 func (c *Catalog) validate() error {
@@ -366,6 +456,12 @@ func (c *Catalog) validate() error {
 		}
 		if definition.Runtime != "native" && definition.Runtime != "web" {
 			return fmt.Errorf("Widget definition %q has an invalid runtime", definition.ID)
+		}
+		if definition.Kind != "" && definition.Kind != "widget" && definition.Kind != "app" {
+			return fmt.Errorf("Widget definition %q has an invalid catalog kind", definition.ID)
+		}
+		if !definition.Availability.IsEnabled() && strings.TrimSpace(definition.Availability.Reason) == "" {
+			return fmt.Errorf("Widget definition %q is disabled without an availability reason", definition.ID)
 		}
 		if err := validateSchema(definition.ConfigurationSchema); err != nil {
 			return fmt.Errorf("Widget definition %q: %w", definition.ID, err)
@@ -380,10 +476,14 @@ func (c *Catalog) validate() error {
 			return fmt.Errorf("Widget definition %q: %w", definition.ID, err)
 		}
 		if !definition.LegacyEditor {
-			if len(definition.PresentationTemplate) == 0 {
-				return fmt.Errorf("Widget definition %q is missing a presentation template", definition.ID)
-			}
-			if err := validateTemplate(definition.PresentationTemplate, definition.ConfigurationSchema, definition.RequiredCapabilities); err != nil {
+			if definition.Runtime == "native" {
+				if len(definition.PresentationTemplate) == 0 {
+					return fmt.Errorf("Widget definition %q is missing a presentation template", definition.ID)
+				}
+				if err := validateTemplate(definition.PresentationTemplate, definition.ConfigurationSchema, definition.RequiredCapabilities); err != nil {
+					return fmt.Errorf("Widget definition %q: %w", definition.ID, err)
+				}
+			} else if err := validateWebIntegration(definition.WebIntegration, definition.ConfigurationSchema); err != nil {
 				return fmt.Errorf("Widget definition %q: %w", definition.ID, err)
 			}
 		}
@@ -421,6 +521,28 @@ func (c *Catalog) validate() error {
 		c.dataSourcesByID[definition.ID] = definition
 	}
 	for _, definition := range c.Widgets {
+		if definition.Recipe != nil {
+			if !definition.Availability.IsEnabled() {
+				return fmt.Errorf("Widget definition %q cannot provision resources while disabled", definition.ID)
+			}
+			if _, ok := c.dataSourcesByID[definition.Recipe.DataSource.Provider]; !ok {
+				return fmt.Errorf("Widget definition %q recipe references unknown Data Source %q", definition.ID, definition.Recipe.DataSource.Provider)
+			}
+			if strings.TrimSpace(definition.Recipe.DataSource.Name) == "" || len(definition.Recipe.DataSource.ConfigurationTemplate) == 0 {
+				return fmt.Errorf("Widget definition %q has an incomplete App recipe", definition.ID)
+			}
+			var template any
+			if err := json.Unmarshal(definition.Recipe.DataSource.ConfigurationTemplate, &template); err != nil {
+				return fmt.Errorf("Widget definition %q has invalid recipe configuration: %w", definition.ID, err)
+			}
+			fields := map[string]FieldDefinition{}
+			for _, field := range definition.ConfigurationSchema.Fields {
+				fields[field.Key] = field
+			}
+			if err := walkRecipeTemplate(template, fields); err != nil {
+				return fmt.Errorf("Widget definition %q: %w", definition.ID, err)
+			}
+		}
 		if err := validateDeprecation("Widget", definition.ID, definition.Deprecation, func(id string) bool { _, ok := c.widgetsByID[id]; return ok }); err != nil {
 			return err
 		}
@@ -428,6 +550,75 @@ func (c *Catalog) validate() error {
 	for _, definition := range c.DataSources {
 		if err := validateDeprecation("Data Source", definition.ID, definition.Deprecation, func(id string) bool { _, ok := c.dataSourcesByID[id]; return ok }); err != nil {
 			return err
+		}
+	}
+	return nil
+}
+
+func validateWebIntegration(spec *WebIntegration, schema ConfigurationSchema) error {
+	if spec == nil {
+		return errors.New("web runtime is missing its integration descriptor")
+	}
+	fields := map[string]FieldDefinition{}
+	for _, field := range schema.Fields {
+		fields[field.Key] = field
+	}
+	if field, ok := fields[spec.URLField]; !ok || field.Control != "url" {
+		return errors.New("web integration URL field must name a URL control")
+	}
+	if spec.AllowAnyHTTPSHost == (len(spec.AllowedHosts) > 0) {
+		return errors.New("web integration must declare either fixed hosts or a per-URL HTTPS host")
+	}
+	for _, host := range spec.AllowedHosts {
+		if host == "" || strings.ToLower(host) != host || strings.ContainsAny(host, "/:@{}") {
+			return fmt.Errorf("web integration host %q is invalid", host)
+		}
+	}
+	switch spec.Transform {
+	case "passthrough", "google_sheets", "google_slides", "canva_embed":
+	default:
+		return fmt.Errorf("web integration transform %q is unsupported", spec.Transform)
+	}
+	if spec.ReloadIntervalField != "" {
+		field, ok := fields[spec.ReloadIntervalField]
+		if !ok || field.Control != "integer" || field.Minimum == nil || *field.Minimum < 30 || field.Maximum == nil || *field.Maximum > 86400 {
+			return errors.New("web reload field must be an integer bounded between 30 and 86400 seconds")
+		}
+	}
+	if spec.LoadTimeoutSeconds != 0 && (spec.LoadTimeoutSeconds < 5 || spec.LoadTimeoutSeconds > 120) {
+		return errors.New("web load timeout must be between 5 and 120 seconds")
+	}
+	if spec.Lifecycle != "" && spec.Lifecycle != "destroy_on_hide" && spec.Lifecycle != "keep_warm" {
+		return errors.New("web lifecycle is invalid")
+	}
+	if spec.WarmSeconds < 0 || spec.WarmSeconds > 300 {
+		return errors.New("web warm duration is invalid")
+	}
+	return nil
+}
+
+func walkRecipeTemplate(value any, fields map[string]FieldDefinition) error {
+	switch typed := value.(type) {
+	case []any:
+		for _, item := range typed {
+			if err := walkRecipeTemplate(item, fields); err != nil {
+				return err
+			}
+		}
+	case map[string]any:
+		if key, ok := typed["$config"].(string); ok {
+			if len(typed) != 1 {
+				return errors.New("recipe configuration substitutions may only contain $config")
+			}
+			if _, exists := fields[key]; !exists {
+				return fmt.Errorf("recipe references unknown configuration %q", key)
+			}
+			return nil
+		}
+		for _, item := range typed {
+			if err := walkRecipeTemplate(item, fields); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
@@ -787,6 +978,21 @@ func walkTemplate(value any, fields map[string]FieldDefinition) error {
 			field, exists := fields[key]
 			if !exists || field.Control != "boolean" {
 				return fmt.Errorf("presentation template condition %q is not a boolean configuration field", key)
+			}
+		}
+		if condition, ok := typed["$ifConfigEquals"].(map[string]any); ok {
+			key, keyOK := condition["key"].(string)
+			value, valueOK := condition["value"].(string)
+			field, exists := fields[key]
+			if !keyOK || !valueOK || !exists || field.Control != "select" {
+				return errors.New("presentation equality condition must name a select configuration field and text value")
+			}
+			valid := false
+			for _, option := range field.Options {
+				valid = valid || option.Value == value
+			}
+			if !valid {
+				return fmt.Errorf("presentation equality condition %q is not a declared option", value)
 			}
 		}
 		if nodeType, ok := typed["type"].(string); ok && !supportedNodes[nodeType] {

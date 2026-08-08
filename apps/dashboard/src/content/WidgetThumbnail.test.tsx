@@ -36,6 +36,21 @@ const GALLERY_WIDGETS = [
   "schedule-board",
   "recognition-board",
   "school-status-banner",
+  "news-feed",
+  "espn",
+  "bbc-news",
+  "sky-news",
+  "the-guardian",
+  "rss",
+  "google-sheets",
+  "google-slides",
+  "canva",
+  "grafana",
+  "power-bi",
+  "tableau",
+  "looker-studio",
+  "airtable",
+  "smartsheet",
 ];
 
 afterEach(cleanup);

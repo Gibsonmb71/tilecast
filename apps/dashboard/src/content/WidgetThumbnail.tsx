@@ -320,6 +320,35 @@ const THUMBNAILS: Record<string, Shape[]> = {
   ],
 };
 
+// Integration definitions name their own previews in the Server catalog. Most can reuse
+// an established signage composition: the preview communicates the rendered result while
+// the adjacent card carries the provider identity, without bundling trademark artwork or
+// creating a second provider registry in Studio.
+const newsPreview: Shape[] = [
+  accent(14, 12, 48, 7),
+  block(14, 25, 132, 20, 0.12),
+  bar(20, 31, 92, 6, 0.5),
+  bar(20, 39, 64, 3, 0.24),
+  ...rows(3, 54, 10, [118, 102, 110], 14, 5),
+];
+Object.assign(THUMBNAILS, {
+  "news-feed": newsPreview,
+  espn: newsPreview,
+  "bbc-news": newsPreview,
+  "sky-news": newsPreview,
+  "the-guardian": newsPreview,
+  rss: newsPreview,
+  "google-sheets": THUMBNAILS.table,
+  "google-slides": THUMBNAILS["image-notice"],
+  canva: THUMBNAILS["image-notice"],
+  grafana: THUMBNAILS.chart,
+  "power-bi": THUMBNAILS.stat_grid,
+  tableau: THUMBNAILS.chart,
+  "looker-studio": THUMBNAILS.chart,
+  airtable: THUMBNAILS.table,
+  smartsheet: THUMBNAILS.table,
+});
+
 /** The preview used when a definition names no thumbnail, or names an unknown one. */
 const FALLBACK: Shape[] = [
   block(20, 18, 120, 54, 0.12),

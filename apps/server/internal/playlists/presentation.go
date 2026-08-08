@@ -15,7 +15,7 @@ import (
 const (
 	DataDocumentSchemaVersion = 1
 	PresentationSchemaVersion = 1
-	WebRuntimeVersion         = 1
+	WebRuntimeVersion         = 2
 )
 
 var NativePresentationCapabilities = map[string]int{
@@ -161,20 +161,26 @@ type PresentationCondition struct {
 }
 
 type WebSandboxPresentation struct {
-	Mode                  string   `json:"mode"`
-	URL                   string   `json:"url,omitempty"`
-	BundleID              string   `json:"bundleId,omitempty"`
-	EntryPoint            string   `json:"entryPoint,omitempty"`
-	IntegritySHA256       string   `json:"integritySha256,omitempty"`
-	PackageSize           int64    `json:"packageSize,omitempty"`
-	DownloadPath          string   `json:"downloadPath,omitempty"`
-	AllowedHosts          []string `json:"allowedHosts"`
-	ExternalNetworkAccess bool     `json:"externalNetworkAccess"`
-	OnlineOnly            bool     `json:"onlineOnly"`
-	FallbackBehavior      string   `json:"fallbackBehavior"`
-	LoadTimeoutSeconds    int      `json:"loadTimeoutSeconds"`
-	Lifecycle             string   `json:"lifecycle"`
-	WarmSeconds           int      `json:"warmSeconds"`
+	Mode                  string     `json:"mode"`
+	URL                   string     `json:"url,omitempty"`
+	BundleID              string     `json:"bundleId,omitempty"`
+	EntryPoint            string     `json:"entryPoint,omitempty"`
+	IntegritySHA256       string     `json:"integritySha256,omitempty"`
+	PackageSize           int64      `json:"packageSize,omitempty"`
+	DownloadPath          string     `json:"downloadPath,omitempty"`
+	AllowedHosts          []string   `json:"allowedHosts"`
+	ExternalNetworkAccess bool       `json:"externalNetworkAccess"`
+	OnlineOnly            bool       `json:"onlineOnly"`
+	FallbackBehavior      string     `json:"fallbackBehavior"`
+	LoadTimeoutSeconds    int        `json:"loadTimeoutSeconds"`
+	Lifecycle             string     `json:"lifecycle"`
+	WarmSeconds           int        `json:"warmSeconds"`
+	Reload                *WebReload `json:"reload,omitempty"`
+}
+
+type WebReload struct {
+	Mode            string `json:"mode"`
+	IntervalSeconds int    `json:"intervalSeconds"`
 }
 
 type typedRecordProjection struct {
@@ -392,6 +398,9 @@ func compileDefinitionPresentation(definition contentdefs.WidgetDefinition, raw 
 	if err := json.Unmarshal(raw, &configuration); err != nil {
 		return nil, err
 	}
+	if definition.Runtime == "web" {
+		return compileDefinitionWebPresentation(definition, configuration)
+	}
 	var template any
 	if err := json.Unmarshal(definition.PresentationTemplate, &template); err != nil {
 		return nil, err
@@ -441,6 +450,41 @@ func compileDefinitionPresentation(definition contentdefs.WidgetDefinition, raw 
 	}, nil
 }
 
+func compileDefinitionWebPresentation(definition contentdefs.WidgetDefinition, configuration map[string]any) (*WidgetPresentation, error) {
+	webURL, hosts, err := contentdefs.WebPresentationURL(definition, configuration)
+	if err != nil {
+		return nil, err
+	}
+	spec := definition.WebIntegration
+	timeout := spec.LoadTimeoutSeconds
+	if timeout == 0 {
+		timeout = 20
+	}
+	lifecycle := spec.Lifecycle
+	if lifecycle == "" {
+		lifecycle = "destroy_on_hide"
+	}
+	fallback := spec.FallbackBehavior
+	if fallback == "" {
+		fallback = "placeholder"
+	}
+	descriptor := &WebSandboxPresentation{
+		Mode: "remote", URL: webURL, AllowedHosts: hosts, ExternalNetworkAccess: true,
+		OnlineOnly: true, FallbackBehavior: fallback, LoadTimeoutSeconds: timeout,
+		Lifecycle: lifecycle, WarmSeconds: spec.WarmSeconds,
+	}
+	if spec.ReloadIntervalField != "" {
+		interval := intValue(configuration[spec.ReloadIntervalField], 0)
+		if interval >= 30 && interval <= 86400 {
+			descriptor.Reload = &WebReload{Mode: "periodic", IntervalSeconds: interval}
+		}
+	}
+	return &WidgetPresentation{
+		SchemaVersion: definition.PresentationSchemaVersion, Kind: "web",
+		RequiredCapabilities: definition.RequiredCapabilities, Web: descriptor,
+	}, nil
+}
+
 func resolveDefinitionTemplate(value any, configuration map[string]any) (any, bool, error) {
 	switch typed := value.(type) {
 	case []any:
@@ -482,9 +526,17 @@ func resolveDefinitionTemplate(value any, configuration map[string]any) (any, bo
 				return nil, false, nil
 			}
 		}
+		if condition, ok := typed["$ifConfigEquals"].(map[string]any); ok {
+			key, _ := condition["key"].(string)
+			wanted, _ := condition["value"].(string)
+			actual, _ := configuration[key].(string)
+			if key == "" || actual != wanted {
+				return nil, false, nil
+			}
+		}
 		result := make(map[string]any, len(typed))
 		for key, item := range typed {
-			if key == "$ifConfig" {
+			if key == "$ifConfig" || key == "$ifConfigEquals" {
 				continue
 			}
 			resolved, included, err := resolveDefinitionTemplate(item, configuration)

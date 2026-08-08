@@ -2,6 +2,7 @@ package media
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -56,6 +57,38 @@ func TestStructuredSourceParsers(t *testing.T) {
 	feedRecords, err := parseFeed([]byte(`<?xml version="1.0"?><rss><channel><item><title>Board news</title><description><![CDATA[<b>Approved</b>]]></description><link>https://example.com/news</link></item></channel></rss>`), config)
 	if err != nil || len(feedRecords) != 1 || feedRecords[0].Description != "Approved" || !strings.HasPrefix(feedRecords[0].Link, "https://") {
 		t.Fatalf("feed records=%#v err=%v", feedRecords, err)
+	}
+}
+
+func TestFeedParserNormalizesAtomMediaAndDeduplicatesEntries(t *testing.T) {
+	config := StructuredSourceConfig{MaxItems: 10, Sort: "source"}
+	raw := []byte(`<?xml version="1.0"?>
+<feed xmlns="http://www.w3.org/2005/Atom" xmlns:media="http://search.yahoo.com/mrss/">
+  <title>Example Wire</title>
+  <entry><id>story-1</id><title>First story</title><summary>Summary</summary><updated>2026-08-08T12:30:00Z</updated><author><name>Reporter</name></author><link href="https://example.com/first"/><media:thumbnail url="https://cdn.example.com/first.jpg"/></entry>
+  <entry><id>story-1</id><title>Duplicate story</title></entry>
+</feed>`)
+	records, err := parseFeed(raw, config)
+	if err != nil || len(records) != 1 {
+		t.Fatalf("records=%#v err=%v", records, err)
+	}
+	record := records[0]
+	if record.ID == "" || record.Title != "First story" || record.Description != "Summary" || record.Author != "Reporter" || record.Date != "2026-08-08T12:30:00Z" || record.Source != "Example Wire" || record.ImageURL != "https://cdn.example.com/first.jpg" {
+		t.Fatalf("record=%#v", record)
+	}
+}
+
+func TestFeedParserBoundsEntriesAndRejectsMalformedXML(t *testing.T) {
+	var items strings.Builder
+	for index := 0; index < structuredMaxItems+25; index++ {
+		items.WriteString(fmt.Sprintf(`<item><guid>story-%d</guid><title>Story %d</title></item>`, index, index))
+	}
+	records, err := parseFeed([]byte(`<rss><channel><title>Wire</title>`+items.String()+`</channel></rss>`), StructuredSourceConfig{MaxItems: structuredMaxItems, Sort: "source"})
+	if err != nil || len(records) != structuredMaxItems {
+		t.Fatalf("count=%d err=%v", len(records), err)
+	}
+	if _, err = parseFeed([]byte(`<rss><channel><item>`), StructuredSourceConfig{MaxItems: 10}); err == nil {
+		t.Fatal("malformed XML was accepted")
 	}
 }
 
