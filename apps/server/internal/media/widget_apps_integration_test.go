@@ -88,13 +88,14 @@ func TestAppRecipeManagedSourceLifecycle(t *testing.T) {
 		t.Fatalf("managed source was not edited: url=%q err=%v", sourceURL, err)
 	}
 
-	// Simulate an advanced consumer retaining the managed source through a nested
-	// configuration. The old jsonb_each_text cleanup missed this shape entirely.
+	// Simulate a legacy/advanced consumer retaining the managed source through a nested
+	// configuration. The old jsonb_each_text cleanup missed this shape entirely; the
+	// declarative repeating_group path is covered separately by the dependency unit test.
 	consumerID := uuid.New()
 	if _, err = pool.Exec(ctx, `INSERT INTO assets(id,organization_id,name,type,original_filename,detected_mime_type,sha256,original_size,processing_status,created_by) SELECT $1,id,'Shared consumer','widget','','application/vnd.tilecast.widget+json',''::bytea,0,'ready',$2 FROM organization_settings WHERE singleton`, consumerID, owner.User.ID); err != nil {
 		t.Fatal(err)
 	}
-	if _, err = pool.Exec(ctx, `INSERT INTO widgets(asset_id,provider,configuration) VALUES($1,'list',jsonb_build_object('groups',jsonb_build_array(jsonb_build_object('dataSourceId',$2::text))))`, consumerID, originalSource); err != nil {
+	if _, err = pool.Exec(ctx, `INSERT INTO widgets(asset_id,provider,configuration) VALUES($1,'legacy-test',jsonb_build_object('groups',jsonb_build_array(jsonb_build_object('dataSourceId',$2::text))))`, consumerID, originalSource); err != nil {
 		t.Fatal(err)
 	}
 	usage, err := service.dataSourceWidgetUsage(ctx, originalSource)
