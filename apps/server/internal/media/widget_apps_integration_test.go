@@ -88,14 +88,21 @@ func TestAppRecipeManagedSourceLifecycle(t *testing.T) {
 		t.Fatalf("managed source was not edited: url=%q err=%v", sourceURL, err)
 	}
 
-	// Simulate an advanced consumer retaining the managed source. Deletion must promote
-	// it to a visible shared Data Source rather than silently destroy it.
+	// Simulate an advanced consumer retaining the managed source through a nested
+	// configuration. The old jsonb_each_text cleanup missed this shape entirely.
 	consumerID := uuid.New()
 	if _, err = pool.Exec(ctx, `INSERT INTO assets(id,organization_id,name,type,original_filename,detected_mime_type,sha256,original_size,processing_status,created_by) SELECT $1,id,'Shared consumer','widget','','application/vnd.tilecast.widget+json',''::bytea,0,'ready',$2 FROM organization_settings WHERE singleton`, consumerID, owner.User.ID); err != nil {
 		t.Fatal(err)
 	}
-	if _, err = pool.Exec(ctx, `INSERT INTO widgets(asset_id,provider,configuration) VALUES($1,'list',jsonb_build_object('dataSourceId',$2::text))`, consumerID, originalSource); err != nil {
+	if _, err = pool.Exec(ctx, `INSERT INTO widgets(asset_id,provider,configuration) VALUES($1,'list',jsonb_build_object('groups',jsonb_build_array(jsonb_build_object('dataSourceId',$2::text))))`, consumerID, originalSource); err != nil {
 		t.Fatal(err)
+	}
+	usage, err := service.dataSourceWidgetUsage(ctx, originalSource)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(usage) != 2 {
+		t.Fatalf("expected owner App and nested consumer in usage, got %#v", usage)
 	}
 	if err = service.DeleteAsset(ctx, app.ID, owner.User.ID); err != nil {
 		t.Fatalf("delete shared App: %v", err)
