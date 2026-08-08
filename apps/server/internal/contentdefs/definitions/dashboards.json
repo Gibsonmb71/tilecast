@@ -22,6 +22,14 @@
             "required": true
           },
           {
+            "key": "trustedHost",
+            "label": "Trusted Grafana host",
+            "description": "Enter the exact hostname or IP address from the dashboard URL, without https://, a path, or a port. This explicitly approves that host for Player access.",
+            "control": "text",
+            "required": true,
+            "maxLength": 253
+          },
+          {
             "key": "refreshIntervalSeconds",
             "label": "Reload interval",
             "control": "integer",
@@ -34,6 +42,7 @@
       },
       "defaultConfiguration": {
         "dashboardUrl": "",
+        "trustedHost": "",
         "refreshIntervalSeconds": 300
       },
       "presentationSchemaVersion": 1,
@@ -53,9 +62,10 @@
         "eyebrow": "Grafana",
         "steps": [
           "Create an externally shared dashboard in Grafana.",
-          "Paste its public HTTPS URL."
+          "Paste its HTTPS URL.",
+          "Enter the URL's exact hostname or IP address to explicitly trust that destination."
         ],
-        "tip": "Tilecast cannot bypass Grafana authentication, CSP, or embedding policy. Public links may expose dashboard data."
+        "tip": "Self-hosted and private-network Grafana hosts are supported only when you explicitly trust the exact host. Tilecast cannot bypass Grafana authentication, CSP, or embedding policy."
       },
       "deprecation": {}
     },

@@ -3,6 +3,7 @@ package contentdefs
 import (
 	"errors"
 	"fmt"
+	"net"
 	"net/url"
 	"regexp"
 	"strings"
@@ -22,10 +23,21 @@ func WebPresentationURL(definition WidgetDefinition, configuration map[string]an
 	raw, _ := configuration[spec.URLField].(string)
 	parsed, err := url.Parse(strings.TrimSpace(raw))
 	if err != nil || parsed.Scheme != "https" || parsed.Hostname() == "" || parsed.User != nil || len(raw) > 2048 {
-		return "", nil, errors.New("integration URL must be a public HTTPS URL")
+		return "", nil, errors.New("integration URL must be an HTTPS URL")
 	}
-	host := strings.ToLower(parsed.Hostname())
-	if !spec.AllowAnyHTTPSHost && !containsHost(spec.AllowedHosts, host) {
+	host := canonicalHTTPSHost(parsed.Hostname())
+	if spec.AllowAnyHTTPSHost {
+		// Open-host definitions are reserved for integrations such as self-hosted Grafana where
+		// a fixed release allowlist is impossible. They still require the author to approve the
+		// exact hostname explicitly instead of turning a branded App into an unrestricted Website.
+		trustedHost, trustErr := trustedHTTPSHost(configuration["trustedHost"])
+		if trustErr != nil {
+			return "", nil, trustErr
+		}
+		if trustedHost != host {
+			return "", nil, errors.New("integration URL must use the explicitly trusted host")
+		}
+	} else if !containsHost(spec.AllowedHosts, host) {
 		return "", nil, fmt.Errorf("integration URL must use %s", strings.Join(spec.AllowedHosts, " or "))
 	}
 	if spec.RequiredPathPrefix != "" && !strings.HasPrefix(parsed.EscapedPath(), spec.RequiredPathPrefix) {
@@ -104,6 +116,39 @@ func WebPresentationURL(definition WidgetDefinition, configuration map[string]an
 	return parsed.String(), hosts, nil
 }
 
+func trustedHTTPSHost(value any) (string, error) {
+	raw := strings.TrimSpace(stringConfig(value))
+	if raw == "" {
+		return "", errors.New("integration requires an explicitly trusted HTTPS host")
+	}
+	candidate := strings.Trim(raw, "[]")
+	if ip := net.ParseIP(candidate); ip != nil {
+		return ip.String(), nil
+	}
+	candidate = strings.ToLower(strings.TrimSuffix(candidate, "."))
+	if candidate == "" || len(candidate) > 253 || strings.ContainsAny(candidate, "/:@?#") || strings.Contains(candidate, "..") {
+		return "", errors.New("trusted host must be a hostname or IP address, without a scheme, path, or port")
+	}
+	for _, label := range strings.Split(candidate, ".") {
+		if label == "" || len(label) > 63 || label[0] == '-' || label[len(label)-1] == '-' {
+			return "", errors.New("trusted host must be a valid hostname or IP address")
+		}
+		for _, character := range label {
+			if (character < 'a' || character > 'z') && (character < '0' || character > '9') && character != '-' {
+				return "", errors.New("trusted host must be a valid hostname or IP address")
+			}
+		}
+	}
+	return candidate, nil
+}
+
+func canonicalHTTPSHost(host string) string {
+	if ip := net.ParseIP(strings.Trim(host, "[]")); ip != nil {
+		return ip.String()
+	}
+	return strings.ToLower(strings.TrimSuffix(host, "."))
+}
+
 func stringConfig(value any) string {
 	text, _ := value.(string)
 	return text
@@ -111,7 +156,7 @@ func stringConfig(value any) string {
 
 func containsHost(hosts []string, wanted string) bool {
 	for _, host := range hosts {
-		if host == wanted {
+		if canonicalHTTPSHost(host) == wanted {
 			return true
 		}
 	}

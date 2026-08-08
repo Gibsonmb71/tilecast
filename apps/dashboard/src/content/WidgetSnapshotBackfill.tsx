@@ -3,10 +3,13 @@ import { useEffect, useRef, useState } from "react";
 import { api } from "../api/client";
 import type { Asset, WidgetDefinition } from "../api/types";
 import { useAuth } from "../auth/AuthProvider";
-import { dataSourceKeysIn } from "./DefinitionForm";
 import { previewDatasetMaps, type PreviewDatasets } from "./previewRecords";
 import { DeclarativePresentationPreview } from "./SourceEditors";
 import { captureWidgetPreview } from "./widgetPreviewCapture";
+import {
+  widgetPreviewConfiguration,
+  widgetPreviewDataSourceIds,
+} from "./widgetPreviewSources";
 
 // A Widget's library preview is a JPEG captured from a rendered Widget, and only a browser can
 // produce one. The editor uploads a capture whenever someone saves, which leaves every Widget that
@@ -76,7 +79,13 @@ function WidgetSnapshotCapture({
   const previewRef = useRef<HTMLDivElement>(null);
   const uploaded = useRef(false);
   const provider = asset.widget!.provider;
-  const configuration = asset.widget!.configuration as Record<string, unknown>;
+  const authorConfiguration = (asset.widget!.authorConfiguration ??
+    asset.widget!.configuration) as Record<string, unknown>;
+  const managedDataSourceId = asset.widget!.managedDataSourceId;
+  const configuration = widgetPreviewConfiguration(
+    authorConfiguration,
+    managedDataSourceId,
+  );
 
   const definitions = useQuery({
     queryKey: ["content-definitions"],
@@ -93,15 +102,22 @@ function WidgetSnapshotCapture({
     retry: false,
   });
 
-  // Follow every `data_source` control the definition declares, exactly as the editor does, so a
-  // Widget reading several sources is captured with the data it actually shows. Widgets whose
-  // provider predates the declarative schema fall back to their single `dataSourceId` field.
+  // Follow every author-declared data_source and the hidden managed App source. If a definition is
+  // temporarily unavailable, keep enough legacy fallback behavior to capture stored Widgets while
+  // still honoring managedDataSourceId directly from the asset.
   const declaredSources = definition
-    ? dataSourceKeysIn(definition.configurationSchema.fields, configuration)
-    : typeof configuration.dataSourceId === "string" &&
-        configuration.dataSourceId
-      ? [configuration.dataSourceId]
-      : [];
+    ? widgetPreviewDataSourceIds(
+        definition.configurationSchema.fields,
+        authorConfiguration,
+        managedDataSourceId,
+      )
+    : [
+        ...(managedDataSourceId ? [managedDataSourceId] : []),
+        ...(typeof authorConfiguration.dataSourceId === "string" &&
+        authorConfiguration.dataSourceId
+          ? [authorConfiguration.dataSourceId]
+          : []),
+      ].filter((id, index, ids) => ids.indexOf(id) === index);
   const sourcePreviews = useQueries({
     queries: declaredSources.map((id) => ({
       queryKey: ["widget-data-source-preview", id],
@@ -167,9 +183,9 @@ function WidgetSnapshotCapture({
             source={sourcePreviews[0]?.data}
             datasets={previewDatasets}
             assetImageUrl={
-              typeof configuration.imageAssetId === "string" &&
-              configuration.imageAssetId
-                ? api.assetPreviewUrl(configuration.imageAssetId)
+              typeof authorConfiguration.imageAssetId === "string" &&
+              authorConfiguration.imageAssetId
+                ? api.assetPreviewUrl(authorConfiguration.imageAssetId)
                 : undefined
             }
           />

@@ -1018,9 +1018,9 @@ func (s *Service) DeleteAsset(ctx context.Context, id, userID uuid.UUID) error {
 	}
 	if assetType == "widget" {
 		if managedDataSourceID != nil {
-			var shared bool
-			if err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM widgets other JOIN assets a ON a.id=other.asset_id AND a.deleted_at IS NULL WHERE other.asset_id<>$2::uuid AND EXISTS(SELECT 1 FROM jsonb_each_text(other.configuration) field WHERE field.value=($1::uuid)::text)) OR EXISTS(SELECT 1 FROM layout_draft_dependencies WHERE dependency_id=$1::uuid AND dependency_type='data_source') OR EXISTS(SELECT 1 FROM layout_revision_dependencies WHERE dependency_id=$1::uuid AND dependency_type='data_source')`, *managedDataSourceID, id).Scan(&shared); err != nil {
-				return err
+			shared, usageErr := s.dataSourceHasExternalConsumersInTx(ctx, tx, *managedDataSourceID, id)
+			if usageErr != nil {
+				return usageErr
 			}
 			if shared {
 				// A managed source that gained another consumer becomes an ordinary shared

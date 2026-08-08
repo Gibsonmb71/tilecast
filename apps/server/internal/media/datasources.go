@@ -702,25 +702,7 @@ func uniqueDataSourceFields(fields []DataSourceField) []DataSourceField {
 }
 
 func (s *Service) dataSourceWidgetUsage(ctx context.Context, id uuid.UUID) ([]DataSourceWidgetUsage, error) {
-	// A Widget references a Data Source whenever one of its configuration values is
-	// the Source's ID. Matching any configured value (rather than a single fixed
-	// dataSourceId key) covers release-defined Widgets that expose one or more
-	// data_source selectors under arbitrary keys; Data Source IDs are globally
-	// unique, so this never collides with an unrelated reference.
-	rows, err := s.db.Query(ctx, `SELECT a.id,a.name,w.provider FROM widgets w JOIN assets a ON a.id=w.asset_id AND a.deleted_at IS NULL WHERE EXISTS(SELECT 1 FROM jsonb_each_text(w.configuration) field WHERE field.value=$1::text) ORDER BY lower(a.name),a.id`, id.String())
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	usage := []DataSourceWidgetUsage{}
-	for rows.Next() {
-		var u DataSourceWidgetUsage
-		if err = rows.Scan(&u.ID, &u.Name, &u.Provider); err != nil {
-			return nil, err
-		}
-		usage = append(usage, u)
-	}
-	return usage, rows.Err()
+	return s.dataSourceWidgetUsageWith(ctx, s.db, id, nil)
 }
 
 func (s *Service) dataSourceBindingUsage(ctx context.Context, id uuid.UUID) ([]DataSourceBindingUsage, error) {

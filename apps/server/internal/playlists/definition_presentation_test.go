@@ -40,6 +40,9 @@ func TestEveryReleaseWidgetCompilesFromItsDefaults(t *testing.T) {
 					path = "/design/1234567890abcdef/view"
 				}
 				configuration[definition.WebIntegration.URLField] = "https://" + host + path
+				if definition.WebIntegration.AllowAnyHTTPSHost {
+					configuration["trustedHost"] = host
+				}
 			}
 			raw, err := json.Marshal(configuration)
 			if err != nil {
