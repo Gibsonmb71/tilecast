@@ -425,6 +425,7 @@ class ManifestSyncManager(
 		}else{
 			val web=presentation.web?:error("Web descriptor is missing")
 			require(web.mode in setOf("remote","bundle")&&web.allowedHosts.size<=25&&web.loadTimeoutSeconds in 1..120&&web.warmSeconds in 0..300)
+			web.reload?.let { reload -> require(reload.mode=="periodic"&&reload.intervalSeconds in 30..86400) }
 			if(web.mode=="remote")require(web.onlineOnly&&android.net.Uri.parse(web.url).scheme=="https")
 			else require(web.packageSize in 1..PresentationCapabilities.webBundleLimitBytes&&Regex("^[0-9a-f]{64}$").matches(web.integritySha256))
 		}

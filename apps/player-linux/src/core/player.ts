@@ -2206,6 +2206,47 @@ export class PlayerRuntime {
       if (widget.provider === "youtube") {
         return this.buildYouTubeItem(item, widget);
       }
+      if (widget.presentation?.kind === "web") {
+        const web = widget.presentation.web;
+        if (!web || web.mode !== "remote" || !web.url) {
+          return null;
+        }
+        const interval =
+          web.reload?.mode === "periodic" &&
+          Number.isInteger(web.reload.intervalSeconds) &&
+          web.reload.intervalSeconds >= 30 &&
+          web.reload.intervalSeconds <= 86_400
+            ? web.reload.intervalSeconds
+            : null;
+        return {
+          id: item.id,
+          kind: "website",
+          src: web.url,
+          durationMs: settings.durationMs,
+          fitMode: settings.fitMode,
+          transition: settings.transition,
+          audioEnabled: settings.audioEnabled,
+          volume: settings.volume,
+          videoStartOffsetMs: null,
+          videoEndOffsetMs: null,
+          website: {
+            loadTimeoutSeconds: web.loadTimeoutSeconds ?? 20,
+            refreshIntervalSeconds: interval,
+            zoomPercent: 100,
+            javascriptEnabled: true,
+            domStorageEnabled: true,
+            cookiePolicy: "first_party",
+            reloadPolicy: interval === null ? "on_each_activation" : "interval",
+            customUserAgent: "",
+            scrollX: 0,
+            scrollY: 0,
+            backgroundColor: "#0E141B",
+            failureBehavior: web.fallbackBehavior ?? "placeholder",
+            fallbackSrc: null,
+            allowedHosts: web.allowedHosts ?? [],
+          },
+        };
+      }
       const payload = renderWidget(widget, {
         dataSources: maps.dataSources,
         at,
@@ -2746,7 +2787,7 @@ export class PlayerRuntime {
         "selection.temporal": 1,
         "playback.auto_skip": 1,
       },
-      webRuntimeVersion: 1,
+      webRuntimeVersion: 2,
       webBundleLimitBytes: 20 * 1024 * 1024,
       uptimeSeconds: Math.floor((Date.now() - this.startedAt) / 1_000),
       playbackState: this.playbackState,

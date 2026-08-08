@@ -1,0 +1,203 @@
+{
+  "widgets": [
+    {
+      "id": "google-sheets-display",
+      "version": 1,
+      "name": "Google Sheets",
+      "description": "Display a published Google spreadsheet.",
+      "category": "Google",
+      "icon": "google-sheets",
+      "thumbnail": "google-sheets",
+      "kind": "app",
+      "featured": true,
+      "keywords": ["spreadsheet", "table", "google"],
+      "runtime": "web",
+      "configurationSchema": {
+        "fields": [
+          {
+            "key": "sheetUrl",
+            "label": "Google Sheets URL",
+            "description": "Use a spreadsheet that is published to the web or shared for public viewing.",
+            "control": "url",
+            "required": true
+          },
+          {
+            "key": "sheetGid",
+            "label": "Sheet tab ID",
+            "description": "Optional numeric gid from the sheet URL. Tilecast also detects #gid= automatically.",
+            "control": "text",
+            "maxLength": 20,
+            "default": ""
+          },
+          {
+            "key": "sheetRange",
+            "label": "Cell range",
+            "description": "Optional published range such as A1:F30 or Lobby!A1:F30.",
+            "control": "text",
+            "maxLength": 120,
+            "default": ""
+          },
+          {
+            "key": "showTabs",
+            "label": "Show sheet tabs",
+            "control": "boolean",
+            "default": true
+          },
+          {
+            "key": "showHeaders",
+            "label": "Show row and column headings",
+            "control": "boolean",
+            "default": false
+          },
+          {
+            "key": "refreshIntervalSeconds",
+            "label": "Reload interval",
+            "control": "integer",
+            "required": true,
+            "minimum": 60,
+            "maximum": 86400,
+            "default": 900
+          }
+        ]
+      },
+      "defaultConfiguration": {
+        "sheetUrl": "",
+        "sheetGid": "",
+        "sheetRange": "",
+        "showTabs": true,
+        "showHeaders": false,
+        "refreshIntervalSeconds": 900
+      },
+      "presentationSchemaVersion": 1,
+      "requiredCapabilities": { "web.remote": 2 },
+      "emptyStateBehavior": "placeholder",
+      "webIntegration": {
+        "urlField": "sheetUrl",
+        "allowedHosts": ["docs.google.com"],
+        "transform": "google_sheets",
+        "reloadIntervalField": "refreshIntervalSeconds",
+        "loadTimeoutSeconds": 30,
+        "lifecycle": "keep_warm",
+        "warmSeconds": 60,
+        "fallbackBehavior": "placeholder"
+      },
+      "setup": {
+        "eyebrow": "Google",
+        "steps": [
+          "Publish the spreadsheet to the web or enable public view access.",
+          "Paste the normal Google Sheets URL."
+        ],
+        "tip": "Private spreadsheets require a future server-side Google Connection and remain unavailable here."
+      },
+      "deprecation": {}
+    },
+    {
+      "id": "google-slides",
+      "version": 1,
+      "name": "Google Slides",
+      "description": "Play a published Google Slides presentation.",
+      "category": "Google",
+      "icon": "google-slides",
+      "thumbnail": "google-slides",
+      "kind": "app",
+      "featured": true,
+      "keywords": ["presentation", "slides", "google"],
+      "runtime": "web",
+      "configurationSchema": {
+        "fields": [
+          {
+            "key": "slidesUrl",
+            "label": "Google Slides URL",
+            "description": "Use a presentation that is published to the web or shared for public viewing.",
+            "control": "url",
+            "required": true
+          },
+          {
+            "key": "autoAdvance",
+            "label": "Start automatically",
+            "control": "boolean",
+            "default": true
+          },
+          {
+            "key": "loop",
+            "label": "Loop presentation",
+            "control": "boolean",
+            "default": true
+          },
+          {
+            "key": "slideDurationSeconds",
+            "label": "Slide duration",
+            "control": "integer",
+            "required": true,
+            "minimum": 3,
+            "maximum": 60,
+            "default": 10
+          },
+          {
+            "key": "refreshIntervalSeconds",
+            "label": "Reload interval",
+            "control": "integer",
+            "required": true,
+            "minimum": 60,
+            "maximum": 86400,
+            "default": 1800
+          }
+        ]
+      },
+      "defaultConfiguration": {
+        "slidesUrl": "",
+        "autoAdvance": true,
+        "loop": true,
+        "slideDurationSeconds": 10,
+        "refreshIntervalSeconds": 1800
+      },
+      "presentationSchemaVersion": 1,
+      "requiredCapabilities": { "web.remote": 2 },
+      "emptyStateBehavior": "placeholder",
+      "webIntegration": {
+        "urlField": "slidesUrl",
+        "allowedHosts": ["docs.google.com"],
+        "transform": "google_slides",
+        "reloadIntervalField": "refreshIntervalSeconds",
+        "loadTimeoutSeconds": 30,
+        "lifecycle": "keep_warm",
+        "warmSeconds": 60,
+        "fallbackBehavior": "placeholder"
+      },
+      "setup": {
+        "eyebrow": "Google",
+        "steps": [
+          "Publish the presentation to the web or enable public view access.",
+          "Paste the normal Google Slides URL."
+        ],
+        "tip": "Tilecast converts supported links to Google's presentation embed URL."
+      },
+      "deprecation": {}
+    },
+    {
+      "id": "google-sheets-data",
+      "version": 1,
+      "name": "Google Sheets Data",
+      "description": "Read published spreadsheet rows as structured Tilecast records.",
+      "category": "Google",
+      "icon": "google-sheets",
+      "kind": "app",
+      "availability": {
+        "enabled": false,
+        "reason": "Private and published-sheet field mapping needs the planned server-side Connections and typed import workflow."
+      },
+      "runtime": "native",
+      "configurationSchema": { "fields": [] },
+      "defaultConfiguration": {},
+      "presentationSchemaVersion": 1,
+      "requiredCapabilities": { "content.text": 1 },
+      "emptyStateBehavior": "placeholder",
+      "legacyEditor": true,
+      "setup": {
+        "tip": "Use the existing Google Sheet Data Source for published CSV imports today."
+      },
+      "deprecation": {}
+    }
+  ],
+  "dataSources": []
+}

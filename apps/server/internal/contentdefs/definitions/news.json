@@ -1,0 +1,1456 @@
+{
+  "widgets": [
+    {
+      "id": "news-feed",
+      "version": 1,
+      "name": "News Feed",
+      "description": "Present normalized news and feed records in a TV-ready layout.",
+      "category": "Building Blocks / Advanced",
+      "icon": "newspaper",
+      "thumbnail": "news-feed",
+      "kind": "widget",
+      "keywords": ["news", "rss", "atom", "headlines"],
+      "runtime": "native",
+      "configurationSchema": {
+        "fields": [
+          {
+            "key": "sourceId",
+            "label": "Data Source",
+            "control": "data_source",
+            "required": true,
+            "acceptedDataSourceKinds": ["records"],
+            "requiredFields": { "title": "text" }
+          },
+          {
+            "key": "heading",
+            "label": "Heading",
+            "control": "text",
+            "required": true,
+            "maxLength": 80,
+            "default": "Latest news"
+          },
+          {
+            "key": "maxStories",
+            "label": "Stories",
+            "control": "integer",
+            "required": true,
+            "minimum": 1,
+            "maximum": 20,
+            "default": 8
+          },
+          {
+            "key": "displayStyle",
+            "label": "Display style",
+            "control": "select",
+            "required": true,
+            "default": "headlines",
+            "options": [
+              { "value": "featured", "label": "Featured" },
+              { "value": "headlines", "label": "Headlines" },
+              { "value": "compact", "label": "Compact" }
+            ]
+          },
+          {
+            "key": "showDescription",
+            "label": "Show descriptions",
+            "control": "boolean",
+            "default": true
+          },
+          {
+            "key": "showPublicationTime",
+            "label": "Show publication time",
+            "control": "boolean",
+            "default": true
+          },
+          {
+            "key": "showSource",
+            "label": "Show source",
+            "control": "boolean",
+            "default": true
+          },
+          {
+            "key": "skipWhenEmpty",
+            "label": "Skip when empty",
+            "control": "boolean",
+            "default": false
+          },
+          {
+            "key": "emptyState",
+            "label": "Empty-state text",
+            "control": "text",
+            "required": true,
+            "maxLength": 160,
+            "default": "No stories available"
+          }
+        ]
+      },
+      "defaultConfiguration": {
+        "sourceId": "",
+        "heading": "Latest news",
+        "maxStories": 8,
+        "displayStyle": "headlines",
+        "showDescription": true,
+        "showPublicationTime": true,
+        "showSource": true,
+        "skipWhenEmpty": false,
+        "emptyState": "No stories available"
+      },
+      "acceptedDataSourceKinds": ["records"],
+      "requiredFieldTypes": { "title": "text" },
+      "presentationSchemaVersion": 1,
+      "presentationTemplate": {
+        "type": "surface",
+        "props": {
+          "backgroundColor": "#101820",
+          "padding": 24,
+          "autoSkipWhenEmpty": { "$config": "skipWhenEmpty" },
+          "emptyCondition": {
+            "binding": {
+              "source": "dataset",
+              "dataset": { "$config": "sourceId", "suffix": ":records" },
+              "path": "title"
+            },
+            "op": "empty"
+          }
+        },
+        "children": [
+          {
+            "type": "column",
+            "props": { "gap": 18 },
+            "children": [
+              {
+                "type": "text",
+                "props": { "role": "label", "color": "#62d6c8", "maxLines": 1 },
+                "binding": {
+                  "source": "literal",
+                  "value": { "$config": "heading" }
+                }
+              },
+              {
+                "$ifConfigEquals": {
+                  "key": "displayStyle",
+                  "value": "featured"
+                },
+                "type": "repeat",
+                "props": { "emptyState": { "$config": "emptyState" } },
+                "repeat": {
+                  "dataset": { "$config": "sourceId", "suffix": ":records" },
+                  "limit": { "$config": "maxStories" }
+                },
+                "children": [
+                  {
+                    "type": "column",
+                    "props": {
+                      "gap": 8,
+                      "padding": 14,
+                      "background": "#172531",
+                      "radius": 8
+                    },
+                    "children": [
+                      {
+                        "type": "text",
+                        "props": {
+                          "role": "title",
+                          "fontSize": 30,
+                          "maxLines": 2,
+                          "color": "#ffffff"
+                        },
+                        "binding": { "source": "repeat", "path": "title" }
+                      },
+                      {
+                        "$ifConfig": "showDescription",
+                        "type": "text",
+                        "props": {
+                          "role": "body",
+                          "fontSize": 20,
+                          "maxLines": 3,
+                          "color": "#c6d0d8"
+                        },
+                        "binding": { "source": "repeat", "path": "description" }
+                      },
+                      {
+                        "type": "row",
+                        "props": { "gap": 12 },
+                        "children": [
+                          {
+                            "$ifConfig": "showSource",
+                            "type": "text",
+                            "props": {
+                              "role": "label",
+                              "fontSize": 16,
+                              "color": "#62d6c8"
+                            },
+                            "binding": { "source": "repeat", "path": "source" }
+                          },
+                          {
+                            "$ifConfig": "showPublicationTime",
+                            "type": "text",
+                            "props": {
+                              "role": "body",
+                              "fontSize": 16,
+                              "color": "#9eabb5"
+                            },
+                            "binding": {
+                              "source": "repeat",
+                              "path": "date",
+                              "format": "datetime"
+                            }
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "$ifConfigEquals": {
+                  "key": "displayStyle",
+                  "value": "headlines"
+                },
+                "type": "repeat",
+                "props": { "emptyState": { "$config": "emptyState" } },
+                "repeat": {
+                  "dataset": { "$config": "sourceId", "suffix": ":records" },
+                  "limit": { "$config": "maxStories" }
+                },
+                "children": [
+                  {
+                    "type": "row",
+                    "props": { "gap": 14, "padding": 10 },
+                    "children": [
+                      {
+                        "type": "text",
+                        "props": {
+                          "role": "title",
+                          "fontSize": 25,
+                          "maxLines": 2,
+                          "color": "#ffffff"
+                        },
+                        "binding": { "source": "repeat", "path": "title" }
+                      },
+                      {
+                        "$ifConfig": "showPublicationTime",
+                        "type": "text",
+                        "props": {
+                          "role": "body",
+                          "fontSize": 16,
+                          "maxLines": 1,
+                          "color": "#9eabb5"
+                        },
+                        "binding": {
+                          "source": "repeat",
+                          "path": "date",
+                          "format": "datetime"
+                        }
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "$ifConfigEquals": {
+                  "key": "displayStyle",
+                  "value": "compact"
+                },
+                "type": "repeat",
+                "props": { "emptyState": { "$config": "emptyState" } },
+                "repeat": {
+                  "dataset": { "$config": "sourceId", "suffix": ":records" },
+                  "limit": { "$config": "maxStories" }
+                },
+                "children": [
+                  {
+                    "type": "row",
+                    "props": { "gap": 10 },
+                    "children": [
+                      {
+                        "type": "text",
+                        "props": {
+                          "role": "label",
+                          "fontSize": 18,
+                          "color": "#62d6c8"
+                        },
+                        "binding": {
+                          "source": "repeat_index",
+                          "format": "integer",
+                          "suffix": "."
+                        }
+                      },
+                      {
+                        "type": "text",
+                        "props": {
+                          "role": "body",
+                          "fontSize": 21,
+                          "maxLines": 1,
+                          "color": "#ffffff"
+                        },
+                        "binding": { "source": "repeat", "path": "title" }
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "requiredCapabilities": {
+        "layout.surface": 1,
+        "layout.column": 1,
+        "layout.row": 1,
+        "content.text": 1,
+        "collection.repeat": 2,
+        "binding.core": 2,
+        "format.typed": 1,
+        "playback.auto_skip": 1
+      },
+      "emptyStateBehavior": "configured_text",
+      "requiresManifestV13": true,
+      "setup": {
+        "eyebrow": "Advanced",
+        "tip": "Connect any records Data Source that exposes a title field."
+      },
+      "deprecation": {}
+    },
+    {
+      "id": "espn",
+      "version": 1,
+      "name": "ESPN",
+      "description": "Sports headlines and stories from ESPN.",
+      "category": "News",
+      "icon": "espn",
+      "thumbnail": "espn",
+      "kind": "app",
+      "featured": true,
+      "keywords": ["sports", "football", "basketball", "baseball", "hockey"],
+      "runtime": "native",
+      "configurationSchema": {
+        "fields": [
+          {
+            "key": "feedUrl",
+            "label": "Category",
+            "control": "select",
+            "required": true,
+            "default": "https://www.espn.com/espn/rss/news",
+            "options": [
+              {
+                "value": "https://www.espn.com/espn/rss/news",
+                "label": "Top Headlines"
+              },
+              {
+                "value": "https://www.espn.com/espn/rss/nfl/news",
+                "label": "NFL"
+              },
+              {
+                "value": "https://www.espn.com/espn/rss/nba/news",
+                "label": "NBA"
+              },
+              {
+                "value": "https://www.espn.com/espn/rss/mlb/news",
+                "label": "MLB"
+              },
+              {
+                "value": "https://www.espn.com/espn/rss/nhl/news",
+                "label": "NHL"
+              },
+              {
+                "value": "https://www.espn.com/espn/rss/soccer/news",
+                "label": "Soccer"
+              }
+            ]
+          },
+          {
+            "key": "heading",
+            "label": "Heading",
+            "control": "text",
+            "required": true,
+            "maxLength": 80,
+            "default": "ESPN"
+          },
+          {
+            "key": "maxStories",
+            "label": "Stories",
+            "control": "integer",
+            "required": true,
+            "minimum": 1,
+            "maximum": 20,
+            "default": 8
+          },
+          {
+            "key": "displayStyle",
+            "label": "Display style",
+            "control": "select",
+            "required": true,
+            "default": "headlines",
+            "options": [
+              { "value": "featured", "label": "Featured" },
+              { "value": "headlines", "label": "Headlines" },
+              { "value": "compact", "label": "Compact" }
+            ]
+          },
+          {
+            "key": "showDescription",
+            "label": "Show descriptions",
+            "control": "boolean",
+            "default": true
+          },
+          {
+            "key": "showPublicationTime",
+            "label": "Show publication time",
+            "control": "boolean",
+            "default": true
+          },
+          {
+            "key": "showSource",
+            "label": "Show source",
+            "control": "boolean",
+            "default": false
+          },
+          {
+            "key": "skipWhenEmpty",
+            "label": "Skip when empty",
+            "control": "boolean",
+            "default": false
+          },
+          {
+            "key": "refreshIntervalSeconds",
+            "label": "Refresh interval",
+            "control": "integer",
+            "required": true,
+            "minimum": 300,
+            "maximum": 86400,
+            "default": 900
+          },
+          {
+            "key": "emptyState",
+            "label": "Empty-state text",
+            "control": "text",
+            "required": true,
+            "maxLength": 160,
+            "default": "ESPN headlines are temporarily unavailable"
+          }
+        ]
+      },
+      "defaultConfiguration": {
+        "feedUrl": "https://www.espn.com/espn/rss/news",
+        "heading": "ESPN",
+        "maxStories": 8,
+        "displayStyle": "headlines",
+        "showDescription": true,
+        "showPublicationTime": true,
+        "showSource": false,
+        "skipWhenEmpty": false,
+        "refreshIntervalSeconds": 900,
+        "emptyState": "ESPN headlines are temporarily unavailable"
+      },
+      "presentationBase": "news-feed",
+      "presentationSchemaVersion": 1,
+      "requiredCapabilities": {},
+      "emptyStateBehavior": "configured_text",
+      "requiresManifestV13": true,
+      "recipe": {
+        "dataSource": {
+          "provider": "rss",
+          "name": "ESPN headlines",
+          "description": "Managed by this ESPN App.",
+          "configurationTemplate": {
+            "url": { "$config": "feedUrl" },
+            "presentation": "list",
+            "maxItems": { "$config": "maxStories" },
+            "fields": {
+              "title": true,
+              "subtitle": false,
+              "date": true,
+              "author": true,
+              "description": true,
+              "image": false,
+              "link": true
+            },
+            "sort": "newest",
+            "refreshIntervalSeconds": { "$config": "refreshIntervalSeconds" },
+            "stalenessLimitHours": 168,
+            "emptyState": { "$config": "emptyState" }
+          }
+        }
+      },
+      "setup": {
+        "eyebrow": "Sports news",
+        "tip": "Choose an ESPN feed. Tilecast refreshes and caches it on the Server for offline playback."
+      },
+      "deprecation": {}
+    },
+    {
+      "id": "custom-rss",
+      "version": 1,
+      "name": "Custom RSS",
+      "description": "Display headlines from any public RSS feed.",
+      "category": "News",
+      "icon": "rss",
+      "thumbnail": "rss",
+      "kind": "app",
+      "featured": true,
+      "keywords": ["feed", "xml", "headlines"],
+      "runtime": "native",
+      "configurationSchema": {
+        "fields": [
+          {
+            "key": "feedUrl",
+            "label": "RSS URL",
+            "description": "A public HTTP or HTTPS RSS endpoint. Private network addresses are blocked.",
+            "control": "url",
+            "required": true
+          },
+          {
+            "key": "heading",
+            "label": "Heading",
+            "control": "text",
+            "required": true,
+            "maxLength": 80,
+            "default": "Latest news"
+          },
+          {
+            "key": "maxStories",
+            "label": "Stories",
+            "control": "integer",
+            "required": true,
+            "minimum": 1,
+            "maximum": 20,
+            "default": 8
+          },
+          {
+            "key": "displayStyle",
+            "label": "Display style",
+            "control": "select",
+            "required": true,
+            "default": "headlines",
+            "options": [
+              { "value": "featured", "label": "Featured" },
+              { "value": "headlines", "label": "Headlines" },
+              { "value": "compact", "label": "Compact" }
+            ]
+          },
+          {
+            "key": "showDescription",
+            "label": "Show descriptions",
+            "control": "boolean",
+            "default": true
+          },
+          {
+            "key": "showPublicationTime",
+            "label": "Show publication time",
+            "control": "boolean",
+            "default": true
+          },
+          {
+            "key": "showSource",
+            "label": "Show source",
+            "control": "boolean",
+            "default": true
+          },
+          {
+            "key": "skipWhenEmpty",
+            "label": "Skip when empty",
+            "control": "boolean",
+            "default": false
+          },
+          {
+            "key": "refreshIntervalSeconds",
+            "label": "Refresh interval",
+            "control": "integer",
+            "required": true,
+            "minimum": 300,
+            "maximum": 86400,
+            "default": 900
+          },
+          {
+            "key": "emptyState",
+            "label": "Empty-state text",
+            "control": "text",
+            "required": true,
+            "maxLength": 160,
+            "default": "No stories available"
+          }
+        ]
+      },
+      "defaultConfiguration": {
+        "feedUrl": "",
+        "heading": "Latest news",
+        "maxStories": 8,
+        "displayStyle": "headlines",
+        "showDescription": true,
+        "showPublicationTime": true,
+        "showSource": true,
+        "skipWhenEmpty": false,
+        "refreshIntervalSeconds": 900,
+        "emptyState": "No stories available"
+      },
+      "presentationBase": "news-feed",
+      "presentationSchemaVersion": 1,
+      "requiredCapabilities": {},
+      "emptyStateBehavior": "configured_text",
+      "requiresManifestV13": true,
+      "recipe": {
+        "dataSource": {
+          "provider": "rss",
+          "name": "RSS feed",
+          "description": "Managed by this Custom RSS App.",
+          "configurationTemplate": {
+            "url": { "$config": "feedUrl" },
+            "presentation": "list",
+            "maxItems": { "$config": "maxStories" },
+            "fields": {
+              "title": true,
+              "subtitle": false,
+              "date": true,
+              "author": true,
+              "description": true,
+              "image": false,
+              "link": true
+            },
+            "sort": "newest",
+            "refreshIntervalSeconds": { "$config": "refreshIntervalSeconds" },
+            "stalenessLimitHours": 168,
+            "emptyState": { "$config": "emptyState" }
+          }
+        }
+      },
+      "setup": {
+        "eyebrow": "Public feed",
+        "steps": [
+          "Copy the provider's public RSS URL.",
+          "Paste it here; Tilecast validates and fetches it on the Server."
+        ],
+        "tip": "Feed images are not displayed until Tilecast can cache them through its managed asset pipeline."
+      },
+      "deprecation": {}
+    },
+    {
+      "id": "atom-feed",
+      "version": 1,
+      "name": "Atom Feed",
+      "description": "Display entries from a public Atom feed.",
+      "category": "Feeds",
+      "icon": "rss",
+      "thumbnail": "rss",
+      "kind": "app",
+      "keywords": ["feed", "xml", "atom"],
+      "runtime": "native",
+      "configurationSchema": {
+        "fields": [
+          {
+            "key": "feedUrl",
+            "label": "Atom URL",
+            "control": "url",
+            "required": true
+          },
+          {
+            "key": "heading",
+            "label": "Heading",
+            "control": "text",
+            "required": true,
+            "maxLength": 80,
+            "default": "Latest updates"
+          },
+          {
+            "key": "maxStories",
+            "label": "Entries",
+            "control": "integer",
+            "required": true,
+            "minimum": 1,
+            "maximum": 20,
+            "default": 8
+          },
+          {
+            "key": "displayStyle",
+            "label": "Display style",
+            "control": "select",
+            "required": true,
+            "default": "headlines",
+            "options": [
+              { "value": "featured", "label": "Featured" },
+              { "value": "headlines", "label": "Headlines" },
+              { "value": "compact", "label": "Compact" }
+            ]
+          },
+          {
+            "key": "showDescription",
+            "label": "Show summaries",
+            "control": "boolean",
+            "default": true
+          },
+          {
+            "key": "showPublicationTime",
+            "label": "Show publication time",
+            "control": "boolean",
+            "default": true
+          },
+          {
+            "key": "showSource",
+            "label": "Show source",
+            "control": "boolean",
+            "default": true
+          },
+          {
+            "key": "skipWhenEmpty",
+            "label": "Skip when empty",
+            "control": "boolean",
+            "default": false
+          },
+          {
+            "key": "refreshIntervalSeconds",
+            "label": "Refresh interval",
+            "control": "integer",
+            "required": true,
+            "minimum": 300,
+            "maximum": 86400,
+            "default": 900
+          },
+          {
+            "key": "emptyState",
+            "label": "Empty-state text",
+            "control": "text",
+            "required": true,
+            "maxLength": 160,
+            "default": "No entries available"
+          }
+        ]
+      },
+      "defaultConfiguration": {
+        "feedUrl": "",
+        "heading": "Latest updates",
+        "maxStories": 8,
+        "displayStyle": "headlines",
+        "showDescription": true,
+        "showPublicationTime": true,
+        "showSource": true,
+        "skipWhenEmpty": false,
+        "refreshIntervalSeconds": 900,
+        "emptyState": "No entries available"
+      },
+      "presentationBase": "news-feed",
+      "presentationSchemaVersion": 1,
+      "requiredCapabilities": {},
+      "emptyStateBehavior": "configured_text",
+      "requiresManifestV13": true,
+      "recipe": {
+        "dataSource": {
+          "provider": "atom",
+          "name": "Atom feed",
+          "description": "Managed by this Atom Feed App.",
+          "configurationTemplate": {
+            "url": { "$config": "feedUrl" },
+            "presentation": "list",
+            "maxItems": { "$config": "maxStories" },
+            "fields": {
+              "title": true,
+              "subtitle": false,
+              "date": true,
+              "author": true,
+              "description": true,
+              "image": false,
+              "link": true
+            },
+            "sort": "newest",
+            "refreshIntervalSeconds": { "$config": "refreshIntervalSeconds" },
+            "stalenessLimitHours": 168,
+            "emptyState": { "$config": "emptyState" }
+          }
+        }
+      },
+      "setup": {
+        "eyebrow": "Public feed",
+        "tip": "Tilecast fetches, normalizes, and caches the feed on the Server."
+      },
+      "deprecation": {}
+    },
+    {
+      "id": "rss-ticker",
+      "version": 1,
+      "name": "RSS Ticker",
+      "description": "Scroll headlines from any RSS or Atom feed.",
+      "category": "Feeds",
+      "icon": "rss",
+      "thumbnail": "ticker",
+      "kind": "app",
+      "featured": true,
+      "keywords": ["marquee", "headlines", "crawl", "feed"],
+      "runtime": "native",
+      "configurationSchema": {
+        "fields": [
+          {
+            "key": "feedUrl",
+            "label": "RSS or Atom URL",
+            "control": "url",
+            "required": true
+          },
+          {
+            "key": "leadingLabel",
+            "label": "Leading label",
+            "control": "text",
+            "maxLength": 24,
+            "default": "NEWS"
+          },
+          {
+            "key": "contentMode",
+            "label": "Content",
+            "control": "select",
+            "required": true,
+            "default": "title_source",
+            "options": [
+              { "value": "title", "label": "Title" },
+              { "value": "title_source", "label": "Title and source" },
+              { "value": "title_time", "label": "Title and publication time" }
+            ]
+          },
+          {
+            "key": "separator",
+            "label": "Separator",
+            "control": "text",
+            "required": true,
+            "minLength": 1,
+            "maxLength": 12,
+            "default": " • "
+          },
+          {
+            "key": "speed",
+            "label": "Speed",
+            "control": "select",
+            "required": true,
+            "default": "normal",
+            "options": [
+              { "value": "slow", "label": "Slow" },
+              { "value": "normal", "label": "Normal" },
+              { "value": "fast", "label": "Fast" }
+            ]
+          },
+          {
+            "key": "direction",
+            "label": "Direction",
+            "control": "select",
+            "required": true,
+            "default": "left",
+            "options": [
+              { "value": "left", "label": "Left" },
+              { "value": "right", "label": "Right" }
+            ]
+          },
+          {
+            "key": "maxStories",
+            "label": "Entries",
+            "control": "integer",
+            "required": true,
+            "minimum": 1,
+            "maximum": 50,
+            "default": 15
+          },
+          {
+            "key": "refreshIntervalSeconds",
+            "label": "Refresh interval",
+            "control": "integer",
+            "required": true,
+            "minimum": 300,
+            "maximum": 86400,
+            "default": 900
+          },
+          {
+            "key": "emptyState",
+            "label": "Empty-state text",
+            "control": "text",
+            "required": true,
+            "maxLength": 160,
+            "default": "No headlines available"
+          }
+        ]
+      },
+      "defaultConfiguration": {
+        "feedUrl": "",
+        "leadingLabel": "NEWS",
+        "contentMode": "title_source",
+        "separator": " • ",
+        "speed": "normal",
+        "direction": "left",
+        "maxStories": 15,
+        "refreshIntervalSeconds": 900,
+        "emptyState": "No headlines available"
+      },
+      "presentationSchemaVersion": 1,
+      "presentationTemplate": {
+        "type": "surface",
+        "props": { "backgroundColor": "#101820", "padding": 10 },
+        "children": [
+          {
+            "type": "row",
+            "props": { "gap": 16 },
+            "children": [
+              {
+                "type": "badge",
+                "props": {
+                  "role": "label",
+                  "color": "#ffffff",
+                  "background": "#cf2e2e"
+                },
+                "binding": {
+                  "source": "literal",
+                  "value": { "$config": "leadingLabel" }
+                }
+              },
+              {
+                "$ifConfigEquals": { "key": "contentMode", "value": "title" },
+                "type": "marquee",
+                "props": {
+                  "speed": { "$config": "speed" },
+                  "direction": { "$config": "direction" },
+                  "color": "#ffffff"
+                },
+                "binding": {
+                  "source": "dataset",
+                  "dataset": { "$config": "sourceId", "suffix": ":records" },
+                  "fields": ["title"],
+                  "separator": { "$config": "separator" },
+                  "fallback": { "$config": "emptyState" }
+                }
+              },
+              {
+                "$ifConfigEquals": {
+                  "key": "contentMode",
+                  "value": "title_source"
+                },
+                "type": "marquee",
+                "props": {
+                  "speed": { "$config": "speed" },
+                  "direction": { "$config": "direction" },
+                  "color": "#ffffff"
+                },
+                "binding": {
+                  "source": "dataset",
+                  "dataset": { "$config": "sourceId", "suffix": ":records" },
+                  "fields": ["title", "source"],
+                  "separator": { "$config": "separator" },
+                  "fallback": { "$config": "emptyState" }
+                }
+              },
+              {
+                "$ifConfigEquals": {
+                  "key": "contentMode",
+                  "value": "title_time"
+                },
+                "type": "marquee",
+                "props": {
+                  "speed": { "$config": "speed" },
+                  "direction": { "$config": "direction" },
+                  "color": "#ffffff"
+                },
+                "binding": {
+                  "source": "dataset",
+                  "dataset": { "$config": "sourceId", "suffix": ":records" },
+                  "fields": ["title", "date"],
+                  "separator": { "$config": "separator" },
+                  "fallback": { "$config": "emptyState" }
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "requiredCapabilities": {
+        "layout.surface": 1,
+        "layout.row": 1,
+        "content.badge": 1,
+        "content.marquee": 1,
+        "binding.core": 2
+      },
+      "emptyStateBehavior": "configured_text",
+      "requiresManifestV13": true,
+      "recipe": {
+        "dataSource": {
+          "provider": "rss",
+          "name": "Ticker feed",
+          "description": "Managed by this RSS Ticker App.",
+          "configurationTemplate": {
+            "url": { "$config": "feedUrl" },
+            "presentation": "ticker",
+            "maxItems": { "$config": "maxStories" },
+            "fields": {
+              "title": true,
+              "subtitle": false,
+              "date": true,
+              "author": true,
+              "description": false,
+              "image": false,
+              "link": true
+            },
+            "sort": "newest",
+            "refreshIntervalSeconds": { "$config": "refreshIntervalSeconds" },
+            "stalenessLimitHours": 168,
+            "emptyState": { "$config": "emptyState" }
+          }
+        }
+      },
+      "setup": {
+        "eyebrow": "Headline strip",
+        "tip": "Tilecast fetches the feed on the Server; Players only receive the normalized cached records."
+      },
+      "deprecation": {}
+    },
+    {
+      "id": "bbc-news",
+      "version": 1,
+      "name": "BBC News",
+      "description": "Headlines from BBC News.",
+      "category": "News",
+      "icon": "bbc-news",
+      "thumbnail": "bbc-news",
+      "kind": "app",
+      "featured": true,
+      "keywords": ["world", "headlines", "bbc"],
+      "runtime": "native",
+      "configurationSchema": {
+        "fields": [
+          {
+            "key": "feedUrl",
+            "label": "Feed",
+            "control": "select",
+            "required": true,
+            "default": "https://feeds.bbci.co.uk/news/rss.xml",
+            "options": [
+              {
+                "value": "https://feeds.bbci.co.uk/news/rss.xml",
+                "label": "Top Stories"
+              }
+            ]
+          },
+          {
+            "key": "heading",
+            "label": "Heading",
+            "control": "text",
+            "required": true,
+            "maxLength": 80,
+            "default": "BBC News"
+          },
+          {
+            "key": "maxStories",
+            "label": "Stories",
+            "control": "integer",
+            "required": true,
+            "minimum": 1,
+            "maximum": 20,
+            "default": 8
+          },
+          {
+            "key": "displayStyle",
+            "label": "Display style",
+            "control": "select",
+            "required": true,
+            "default": "headlines",
+            "options": [
+              { "value": "featured", "label": "Featured" },
+              { "value": "headlines", "label": "Headlines" },
+              { "value": "compact", "label": "Compact" }
+            ]
+          },
+          {
+            "key": "showDescription",
+            "label": "Show descriptions",
+            "control": "boolean",
+            "default": true
+          },
+          {
+            "key": "showPublicationTime",
+            "label": "Show publication time",
+            "control": "boolean",
+            "default": true
+          },
+          {
+            "key": "showSource",
+            "label": "Show source",
+            "control": "boolean",
+            "default": false
+          },
+          {
+            "key": "skipWhenEmpty",
+            "label": "Skip when empty",
+            "control": "boolean",
+            "default": false
+          },
+          {
+            "key": "refreshIntervalSeconds",
+            "label": "Refresh interval",
+            "control": "integer",
+            "required": true,
+            "minimum": 300,
+            "maximum": 86400,
+            "default": 900
+          },
+          {
+            "key": "emptyState",
+            "label": "Empty-state text",
+            "control": "text",
+            "required": true,
+            "maxLength": 160,
+            "default": "BBC News is temporarily unavailable"
+          }
+        ]
+      },
+      "defaultConfiguration": {
+        "feedUrl": "https://feeds.bbci.co.uk/news/rss.xml",
+        "heading": "BBC News",
+        "maxStories": 8,
+        "displayStyle": "headlines",
+        "showDescription": true,
+        "showPublicationTime": true,
+        "showSource": false,
+        "skipWhenEmpty": false,
+        "refreshIntervalSeconds": 900,
+        "emptyState": "BBC News is temporarily unavailable"
+      },
+      "presentationBase": "news-feed",
+      "presentationSchemaVersion": 1,
+      "requiredCapabilities": {},
+      "emptyStateBehavior": "configured_text",
+      "requiresManifestV13": true,
+      "recipe": {
+        "dataSource": {
+          "provider": "rss",
+          "name": "BBC News headlines",
+          "description": "Managed by this BBC News App.",
+          "configurationTemplate": {
+            "url": { "$config": "feedUrl" },
+            "presentation": "list",
+            "maxItems": { "$config": "maxStories" },
+            "fields": {
+              "title": true,
+              "subtitle": false,
+              "date": true,
+              "author": true,
+              "description": true,
+              "image": false,
+              "link": true
+            },
+            "sort": "newest",
+            "refreshIntervalSeconds": { "$config": "refreshIntervalSeconds" },
+            "stalenessLimitHours": 168,
+            "emptyState": { "$config": "emptyState" }
+          }
+        }
+      },
+      "setup": {
+        "eyebrow": "BBC News",
+        "tip": "Uses BBC's public Top Stories RSS feed and keeps the latest successful refresh cached."
+      },
+      "deprecation": {}
+    },
+    {
+      "id": "sky-news",
+      "version": 1,
+      "name": "Sky News",
+      "description": "Headlines from Sky News.",
+      "category": "News",
+      "icon": "sky-news",
+      "thumbnail": "sky-news",
+      "kind": "app",
+      "keywords": ["world", "uk", "headlines"],
+      "runtime": "native",
+      "configurationSchema": {
+        "fields": [
+          {
+            "key": "feedUrl",
+            "label": "Feed",
+            "control": "select",
+            "required": true,
+            "default": "https://feeds.skynews.com/feeds/rss/home.xml",
+            "options": [
+              {
+                "value": "https://feeds.skynews.com/feeds/rss/home.xml",
+                "label": "Top Stories"
+              }
+            ]
+          },
+          {
+            "key": "heading",
+            "label": "Heading",
+            "control": "text",
+            "required": true,
+            "maxLength": 80,
+            "default": "Sky News"
+          },
+          {
+            "key": "maxStories",
+            "label": "Stories",
+            "control": "integer",
+            "required": true,
+            "minimum": 1,
+            "maximum": 20,
+            "default": 8
+          },
+          {
+            "key": "displayStyle",
+            "label": "Display style",
+            "control": "select",
+            "required": true,
+            "default": "headlines",
+            "options": [
+              { "value": "featured", "label": "Featured" },
+              { "value": "headlines", "label": "Headlines" },
+              { "value": "compact", "label": "Compact" }
+            ]
+          },
+          {
+            "key": "showDescription",
+            "label": "Show descriptions",
+            "control": "boolean",
+            "default": true
+          },
+          {
+            "key": "showPublicationTime",
+            "label": "Show publication time",
+            "control": "boolean",
+            "default": true
+          },
+          {
+            "key": "showSource",
+            "label": "Show source",
+            "control": "boolean",
+            "default": false
+          },
+          {
+            "key": "skipWhenEmpty",
+            "label": "Skip when empty",
+            "control": "boolean",
+            "default": false
+          },
+          {
+            "key": "refreshIntervalSeconds",
+            "label": "Refresh interval",
+            "control": "integer",
+            "required": true,
+            "minimum": 300,
+            "maximum": 86400,
+            "default": 900
+          },
+          {
+            "key": "emptyState",
+            "label": "Empty-state text",
+            "control": "text",
+            "required": true,
+            "maxLength": 160,
+            "default": "Sky News is temporarily unavailable"
+          }
+        ]
+      },
+      "defaultConfiguration": {
+        "feedUrl": "https://feeds.skynews.com/feeds/rss/home.xml",
+        "heading": "Sky News",
+        "maxStories": 8,
+        "displayStyle": "headlines",
+        "showDescription": true,
+        "showPublicationTime": true,
+        "showSource": false,
+        "skipWhenEmpty": false,
+        "refreshIntervalSeconds": 900,
+        "emptyState": "Sky News is temporarily unavailable"
+      },
+      "presentationBase": "news-feed",
+      "presentationSchemaVersion": 1,
+      "requiredCapabilities": {},
+      "emptyStateBehavior": "configured_text",
+      "requiresManifestV13": true,
+      "recipe": {
+        "dataSource": {
+          "provider": "rss",
+          "name": "Sky News headlines",
+          "description": "Managed by this Sky News App.",
+          "configurationTemplate": {
+            "url": { "$config": "feedUrl" },
+            "presentation": "list",
+            "maxItems": { "$config": "maxStories" },
+            "fields": {
+              "title": true,
+              "subtitle": false,
+              "date": true,
+              "author": true,
+              "description": true,
+              "image": false,
+              "link": true
+            },
+            "sort": "newest",
+            "refreshIntervalSeconds": { "$config": "refreshIntervalSeconds" },
+            "stalenessLimitHours": 168,
+            "emptyState": { "$config": "emptyState" }
+          }
+        }
+      },
+      "setup": {
+        "eyebrow": "Sky News",
+        "tip": "Uses Sky News's public RSS feed and keeps the latest successful refresh cached."
+      },
+      "deprecation": {}
+    },
+    {
+      "id": "the-guardian",
+      "version": 1,
+      "name": "The Guardian",
+      "description": "Headlines from The Guardian's public feeds.",
+      "category": "News",
+      "icon": "the-guardian",
+      "thumbnail": "the-guardian",
+      "kind": "app",
+      "keywords": ["world", "technology", "business", "sport"],
+      "runtime": "native",
+      "configurationSchema": {
+        "fields": [
+          {
+            "key": "feedUrl",
+            "label": "Section",
+            "control": "select",
+            "required": true,
+            "default": "https://www.theguardian.com/international/rss",
+            "options": [
+              {
+                "value": "https://www.theguardian.com/international/rss",
+                "label": "International"
+              },
+              {
+                "value": "https://www.theguardian.com/world/rss",
+                "label": "World"
+              },
+              {
+                "value": "https://www.theguardian.com/us-news/rss",
+                "label": "US News"
+              },
+              {
+                "value": "https://www.theguardian.com/business/rss",
+                "label": "Business"
+              },
+              {
+                "value": "https://www.theguardian.com/technology/rss",
+                "label": "Technology"
+              },
+              {
+                "value": "https://www.theguardian.com/sport/rss",
+                "label": "Sport"
+              }
+            ]
+          },
+          {
+            "key": "heading",
+            "label": "Heading",
+            "control": "text",
+            "required": true,
+            "maxLength": 80,
+            "default": "The Guardian"
+          },
+          {
+            "key": "maxStories",
+            "label": "Stories",
+            "control": "integer",
+            "required": true,
+            "minimum": 1,
+            "maximum": 20,
+            "default": 8
+          },
+          {
+            "key": "displayStyle",
+            "label": "Display style",
+            "control": "select",
+            "required": true,
+            "default": "headlines",
+            "options": [
+              { "value": "featured", "label": "Featured" },
+              { "value": "headlines", "label": "Headlines" },
+              { "value": "compact", "label": "Compact" }
+            ]
+          },
+          {
+            "key": "showDescription",
+            "label": "Show descriptions",
+            "control": "boolean",
+            "default": true
+          },
+          {
+            "key": "showPublicationTime",
+            "label": "Show publication time",
+            "control": "boolean",
+            "default": true
+          },
+          {
+            "key": "showSource",
+            "label": "Show source",
+            "control": "boolean",
+            "default": false
+          },
+          {
+            "key": "skipWhenEmpty",
+            "label": "Skip when empty",
+            "control": "boolean",
+            "default": false
+          },
+          {
+            "key": "refreshIntervalSeconds",
+            "label": "Refresh interval",
+            "control": "integer",
+            "required": true,
+            "minimum": 300,
+            "maximum": 86400,
+            "default": 900
+          },
+          {
+            "key": "emptyState",
+            "label": "Empty-state text",
+            "control": "text",
+            "required": true,
+            "maxLength": 160,
+            "default": "Guardian headlines are temporarily unavailable"
+          }
+        ]
+      },
+      "defaultConfiguration": {
+        "feedUrl": "https://www.theguardian.com/international/rss",
+        "heading": "The Guardian",
+        "maxStories": 8,
+        "displayStyle": "headlines",
+        "showDescription": true,
+        "showPublicationTime": true,
+        "showSource": false,
+        "skipWhenEmpty": false,
+        "refreshIntervalSeconds": 900,
+        "emptyState": "Guardian headlines are temporarily unavailable"
+      },
+      "presentationBase": "news-feed",
+      "presentationSchemaVersion": 1,
+      "requiredCapabilities": {},
+      "emptyStateBehavior": "configured_text",
+      "requiresManifestV13": true,
+      "recipe": {
+        "dataSource": {
+          "provider": "rss",
+          "name": "Guardian headlines",
+          "description": "Managed by this Guardian App.",
+          "configurationTemplate": {
+            "url": { "$config": "feedUrl" },
+            "presentation": "list",
+            "maxItems": { "$config": "maxStories" },
+            "fields": {
+              "title": true,
+              "subtitle": false,
+              "date": true,
+              "author": true,
+              "description": true,
+              "image": false,
+              "link": true
+            },
+            "sort": "newest",
+            "refreshIntervalSeconds": { "$config": "refreshIntervalSeconds" },
+            "stalenessLimitHours": 168,
+            "emptyState": { "$config": "emptyState" }
+          }
+        }
+      },
+      "setup": {
+        "eyebrow": "The Guardian",
+        "tip": "Choose one of The Guardian's public section RSS feeds. Review the publisher's feed-use terms for your deployment."
+      },
+      "deprecation": {}
+    }
+  ],
+  "dataSources": []
+}

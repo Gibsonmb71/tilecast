@@ -617,7 +617,7 @@ func (s *Service) PlayerTypedDataSourceConfiguration(ctx context.Context, id uui
 	for _, record := range prepared.Records {
 		values := map[string]string{
 			"title": record.Title, "subtitle": record.Subtitle, "date": record.Date,
-			"author": record.Author, "description": record.Description,
+			"author": record.Author, "description": record.Description, "source": record.Source,
 			"imageUrl": record.ImageURL, "link": record.Link,
 		}
 		for key, value := range record.Values {

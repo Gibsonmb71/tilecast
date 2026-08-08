@@ -96,6 +96,28 @@ An `http_records` Data Source fetches an endpoint that the **release** pins and 
 
 Attribution declared by the definition is carried through to the Player alongside the records.
 
+## Apps and managed Data Sources
+
+An **App** is a catalog entry that presents one provider-specific setup flow while preserving the Widget/Data Source boundary internally. A feed App such as ESPN creates a normal Widget plus a hidden, explicitly owned Data Source in one transaction. The Widget stores the author's App settings separately from its compiled configuration; that compiled configuration carries the managed Data Source ID used by dependency discovery, usage tracking, invalidation, manifests, and backup/restore.
+
+Editing an App updates its managed source in the same transaction. Duplicating it creates a new source rather than sharing mutable provider state. Deleting an unused App cleans up its source. If another Widget or Layout has started using that source, Tilecast promotes it to a visible shared Data Source instead of silently deleting it. Managed sources use the same refresh diagnostics and stale cache as sources created from the Data tab; Studio shows the App source's last successful refresh, item count, and cached-data state in the App editor.
+
+The initial native feed Apps are **ESPN, BBC News, Sky News, The Guardian, Custom RSS, Atom Feed, and RSS Ticker**. Provider Apps use release-controlled feed choices; Custom RSS and Atom accept a public URL. All feeds are fetched only by the Server through the existing timeout, response-size, content-type, redirect, and private-network checks. RSS and Atom share one bounded parser and normalize IDs, title, description/summary, publication time, author, canonical link, source name, and common enclosure/Media RSS image metadata. Native Players receive only the bounded cached Data Document.
+
+`news-feed` is the reusable native renderer behind the news Apps and remains available in **Building Blocks / Advanced** for authors who want to connect an existing records Data Source. It offers Featured, Headlines, and Compact styles, a bounded story count, concise visibility choices, an automatic empty state, and optional skip-when-empty. `rss-ticker` uses the existing native marquee capability; it is not a WebView.
+
+Feed images are deliberately not enabled yet. The Server recognizes common image metadata, but no image reference enters the Data Document or Player until the planned Remote Asset Cache can fetch, verify, rasterize, deduplicate, retain, and garbage-collect it through Tilecast's existing asset pipeline. Players never fetch arbitrary feed image URLs.
+
+## Web Integration Apps
+
+Release-owned Web Integration definitions provide provider-specific names, setup guidance, URL fields, fixed host allowlists (or an explicit per-installation HTTPS host for self-hosted Grafana), a closed built-in URL transform, timeout, fallback, lifecycle, warm window, and optional bounded reload interval. Definitions cannot contain JavaScript, regex replacements, HTML, or executable expressions. The Server validates and canonicalizes the URL and emits the same provider-neutral web presentation descriptor to Android and Linux.
+
+The initial integrations are **Google Sheets, Google Slides, Canva, Grafana, Power BI, Tableau, Looker Studio, Airtable, and Smartsheet**. They require the provider's public/published/embed mechanism and cannot bypass authentication, `X-Frame-Options`, or CSP. Private documents and dashboards need a future server-side Connection. **Google Sheets Data** and **Notion** remain visible but disabled with a specific explanation rather than pretending an unsupported mechanism works.
+
+Google Sheets is a visual web App; the existing Google Sheet Data Source is the structured-record path for a published CSV. Google Slides and Sheets normal links are converted on the Server to their provider embed/preview forms. Canva accepts only public `www.canva.com/design/...` links. Dashboard Apps accept only the provider's documented public/embed path, except Grafana, whose self-hosted hostname is selected by the submitted HTTPS URL and then pinned in the manifest.
+
+Web Integration Apps that opt into periodic reload require manifest v15 and `web.remote@2`. The closed reload mode is `periodic`, with an interval from 30 seconds through 24 hours. Android and Linux reuse their existing website reload timer, do not reload a hidden destroyed view, and preserve the descriptor's warm lifecycle and offline placeholder behavior. Assignment compatibility rejects Players that only report web runtime 1. Manifest v14 semantics and cached v1-v14 manifests remain unchanged; v15 also formalizes the optional canvas/viewport fields used by video-wall playback.
+
 ## Layouts
 
 A Layout arranges Media, Widgets, static text, shapes, playlist zones, and groups. Data Sources are never listed as normal draggable content.

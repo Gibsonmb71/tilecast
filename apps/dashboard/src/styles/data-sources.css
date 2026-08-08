@@ -600,6 +600,47 @@
   color: var(--tc-text-secondary);
 }
 
+.widget-catalog-toolbar {
+  display: grid;
+  gap: var(--tc-space-3);
+  margin-bottom: var(--tc-space-7);
+}
+
+.widget-catalog-search input {
+  width: min(520px, 100%);
+  min-height: 42px;
+}
+
+.widget-catalog-categories {
+  display: flex;
+  gap: var(--tc-space-1);
+  overflow-x: auto;
+  padding-bottom: var(--tc-space-1);
+}
+
+.widget-catalog-categories button {
+  flex: 0 0 auto;
+  min-height: 34px;
+  padding: 0 var(--tc-space-3);
+  color: var(--tc-text-secondary);
+  background: transparent;
+  border: 1px solid var(--tc-border-default);
+  border-radius: var(--tc-radius-control);
+  cursor: pointer;
+}
+
+.widget-catalog-categories button.is-active {
+  color: var(--tc-text-primary);
+  background: var(--tc-bg-subtle);
+  border-color: var(--tc-action-primary);
+}
+
+.source-gallery__no-results {
+  margin: 0;
+  padding: var(--tc-space-5) 0;
+  color: var(--tc-text-secondary);
+}
+
 /* Browsing Widget types is a visual choice, so the catalog reads like a video gallery:
    a wide preview first, its name and description stacked underneath, and no card chrome
    competing with the previews. Columns fill to the available width rather than locking to
@@ -682,6 +723,22 @@
 
 .app-editor-route .source-provider-grid button:hover strong {
   color: var(--tc-action-primary);
+}
+
+.app-editor-route .source-provider-grid button:disabled {
+  cursor: not-allowed;
+  opacity: 0.64;
+}
+
+.app-editor-route .source-provider-grid button:disabled:hover strong {
+  color: var(--tc-text-primary);
+}
+
+.app-editor-route .source-provider-grid button small {
+  margin-top: var(--tc-space-1);
+  color: var(--tc-text-secondary);
+  font-size: 11px;
+  line-height: 1.4;
 }
 
 /* The shared button focus ring is drawn inset against a border this tile does not have, so

@@ -212,6 +212,10 @@ export interface WebSandboxPresentation {
   onlineOnly?: boolean;
   fallbackBehavior?: string;
   loadTimeoutSeconds?: number;
+  readonly reload?: {
+    mode: "periodic";
+    intervalSeconds: number;
+  } | null;
 }
 
 export interface WidgetPresentation {

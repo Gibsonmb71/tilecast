@@ -343,7 +343,8 @@ internal fun RenderedItem(
             failed("Web presentation is unavailable")
             return
         }
-        WebsiteItem(item, ManifestWebsite(widget.assetId, widget.name, descriptor.url, descriptor.allowedHosts, true, false, "none", "on_each_activation", null, descriptor.loadTimeoutSeconds, 100, 0, 0, "", "#0E141B", descriptor.fallbackBehavior, null, null), session, done, startOffsetMs, onFirstFrame) { status ->
+        val reloadInterval = descriptor.reload?.takeIf { it.mode == "periodic" }?.intervalSeconds
+        WebsiteItem(item, ManifestWebsite(widget.assetId, widget.name, descriptor.url, descriptor.allowedHosts, true, false, "none", if (reloadInterval != null) "interval" else "on_each_activation", reloadInterval, descriptor.loadTimeoutSeconds, 100, 0, 0, "", "#0E141B", descriptor.fallbackBehavior, null, null), session, done, startOffsetMs, onFirstFrame) { status ->
             onWebsiteStatus(status)
             onWidgetStatus(WidgetPlaybackStatus(widget.assetId, "web", status.state, status.failureCategory))
         }

@@ -2080,7 +2080,9 @@ func (s *Service) BuildManifest(ctx context.Context, screenID uuid.UUID) (Manife
 			manifest.Widgets[index].Configuration = nil
 		}
 	}
-	if manifestHasCrossfade(manifest) {
+	if spanEnabled || manifestHasWebReload(manifest) {
+		manifest.SchemaVersion = 15
+	} else if manifestHasCrossfade(manifest) {
 		if useV13 && playerCapabilities.PlayerVersion >= crossfadePlayerVersionCode {
 			manifest.SchemaVersion = 14
 		} else {
@@ -2110,6 +2112,15 @@ func (s *Service) BuildManifest(ctx context.Context, screenID uuid.UUID) (Manife
 	}
 	value := sha256.Sum256(append([]byte(baseETag+":"), stableEncoded...))
 	return manifest, `"sha256-` + hex.EncodeToString(value[:]) + `"`, nil
+}
+
+func manifestHasWebReload(manifest Manifest) bool {
+	for _, widget := range manifest.Widgets {
+		if widget.Presentation != nil && widget.Presentation.Web != nil && widget.Presentation.Web.Reload != nil {
+			return true
+		}
+	}
+	return false
 }
 
 // projectPresentationAsset adapts one library asset into the same one-item
@@ -2279,12 +2290,21 @@ func (s *Service) widgetDataSourceIDs(provider string, configuration json.RawMes
 		var values map[string]json.RawMessage
 		ids := []uuid.UUID{}
 		if json.Unmarshal(configuration, &values) == nil {
+			// An App recipe's author schema intentionally hides its managed source. The
+			// compiled configuration still carries the explicit relationship so normal
+			// manifest dependency resolution, invalidation, and usage tracking see it.
+			if definition.Recipe != nil {
+				var id uuid.UUID
+				if json.Unmarshal(values["managedDataSourceId"], &id) == nil && id != uuid.Nil {
+					ids = append(ids, id)
+				}
+			}
 			for _, field := range definition.ConfigurationSchema.Fields {
 				if field.Control != "data_source" {
 					continue
 				}
 				var id uuid.UUID
-				if json.Unmarshal(values[field.Key], &id) == nil && id != uuid.Nil {
+				if json.Unmarshal(values[field.Key], &id) == nil && id != uuid.Nil && !containsUUID(ids, id) {
 					ids = append(ids, id)
 				}
 			}
@@ -2302,6 +2322,15 @@ func (s *Service) widgetDataSourceIDs(provider string, configuration json.RawMes
 		}
 	}
 	return nil
+}
+
+func containsUUID(ids []uuid.UUID, wanted uuid.UUID) bool {
+	for _, id := range ids {
+		if id == wanted {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *Service) projectWidgetAssets(ctx context.Context, manifest *Manifest, widget *ManifestWidget, seen map[uuid.UUID]bool) error {

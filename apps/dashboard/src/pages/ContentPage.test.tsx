@@ -357,8 +357,60 @@ describe("content library", () => {
     expect(screen.queryByRole("menu")).not.toBeInTheDocument();
   });
 
-  it("offers web, universal-information, and preset Widget entries", () => {
+  it("offers catalog-driven Widget entries", async () => {
     const choose = vi.fn();
+    vi.spyOn(api, "contentDefinitions").mockResolvedValue({
+      revision: "1",
+      compilerVersion: "1",
+      fingerprint: "catalog",
+      widgets: [
+        {
+          id: "youtube",
+          version: 1,
+          name: "YouTube",
+          description: "Play a YouTube video or playlist.",
+          category: "Web and video",
+          icon: "youtube",
+          runtime: "web",
+          configurationSchema: { fields: [] },
+          defaultConfiguration: {},
+          presentationSchemaVersion: 1,
+          requiredCapabilities: {},
+          emptyStateBehavior: "placeholder",
+          legacyEditor: true,
+        },
+        {
+          id: "website",
+          version: 1,
+          name: "Website",
+          description: "Display an approved webpage.",
+          category: "Web and video",
+          icon: "globe",
+          runtime: "web",
+          configurationSchema: { fields: [] },
+          defaultConfiguration: {},
+          presentationSchemaVersion: 1,
+          requiredCapabilities: {},
+          emptyStateBehavior: "placeholder",
+          legacyEditor: true,
+        },
+        {
+          id: "espn",
+          version: 1,
+          name: "ESPN",
+          description: "Sports headlines and stories from ESPN.",
+          category: "News",
+          icon: "espn",
+          runtime: "native",
+          configurationSchema: { fields: [] },
+          defaultConfiguration: {},
+          presentationSchemaVersion: 1,
+          requiredCapabilities: {},
+          emptyStateBehavior: "placeholder",
+        },
+      ],
+      dataSources: [],
+    });
     render(
       <QueryClientProvider
         client={
@@ -368,16 +420,13 @@ describe("content library", () => {
         <WidgetProviderGallery onChoose={choose} onClose={vi.fn()} />
       </QueryClientProvider>,
     );
-    fireEvent.click(screen.getByRole("button", { name: /YouTube/ }));
+    fireEvent.click(await screen.findByRole("button", { name: /YouTube/ }));
     expect(choose).toHaveBeenCalledWith("youtube");
     expect(screen.getByText(/Display an approved webpage/)).toBeInTheDocument();
-    expect(screen.getByText(/without an API key/)).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /Website/ }));
     expect(choose).toHaveBeenCalledWith("website");
-    fireEvent.click(screen.getByRole("button", { name: /Spotlight/ }));
-    expect(choose).toHaveBeenCalledWith("spotlight");
-    fireEvent.click(screen.getByRole("button", { name: /Leaderboard/ }));
-    expect(choose).toHaveBeenCalledWith("list", "leaderboard");
+    fireEvent.click(screen.getByRole("button", { name: /ESPN/ }));
+    expect(choose).toHaveBeenCalledWith("espn");
   });
 });
 

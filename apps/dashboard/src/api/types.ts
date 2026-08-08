@@ -1996,6 +1996,10 @@ export type WidgetDefinition = {
    * to a generic preview, so a new definition never breaks the gallery.
    */
   thumbnail?: string;
+  kind?: "widget" | "app";
+  featured?: boolean;
+  keywords?: string[];
+  availability?: { enabled?: boolean; reason?: string };
   runtime: "native" | "web";
   configurationSchema: { fields: ContentDefinitionField[] };
   defaultConfiguration: Record<string, unknown>;
@@ -2117,6 +2121,8 @@ export type Widget = {
   provider: WidgetProvider;
   presetId?: WidgetPreset;
   configVersion: number;
+  authorConfiguration?: Record<string, unknown>;
+  managedDataSourceId?: string;
   configuration:
     | WebsiteConfig
     | YouTubeConfig

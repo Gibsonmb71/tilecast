@@ -1,0 +1,334 @@
+{
+  "widgets": [
+    {
+      "id": "grafana",
+      "version": 1,
+      "name": "Grafana",
+      "description": "Display a Grafana dashboard.",
+      "category": "Dashboards",
+      "icon": "grafana",
+      "thumbnail": "grafana",
+      "kind": "app",
+      "featured": true,
+      "keywords": ["metrics", "monitoring", "dashboard"],
+      "runtime": "web",
+      "configurationSchema": {
+        "fields": [
+          {
+            "key": "dashboardUrl",
+            "label": "Externally shared dashboard URL",
+            "description": "Use Grafana's externally shared/public dashboard URL, not an authenticated editor URL.",
+            "control": "url",
+            "required": true
+          },
+          {
+            "key": "refreshIntervalSeconds",
+            "label": "Reload interval",
+            "control": "integer",
+            "required": true,
+            "minimum": 60,
+            "maximum": 86400,
+            "default": 300
+          }
+        ]
+      },
+      "defaultConfiguration": {
+        "dashboardUrl": "",
+        "refreshIntervalSeconds": 300
+      },
+      "presentationSchemaVersion": 1,
+      "requiredCapabilities": { "web.remote": 2 },
+      "emptyStateBehavior": "placeholder",
+      "webIntegration": {
+        "urlField": "dashboardUrl",
+        "allowAnyHttpsHost": true,
+        "transform": "passthrough",
+        "reloadIntervalField": "refreshIntervalSeconds",
+        "loadTimeoutSeconds": 45,
+        "lifecycle": "keep_warm",
+        "warmSeconds": 90,
+        "fallbackBehavior": "placeholder"
+      },
+      "setup": {
+        "eyebrow": "Grafana",
+        "steps": [
+          "Create an externally shared dashboard in Grafana.",
+          "Paste its public HTTPS URL."
+        ],
+        "tip": "Tilecast cannot bypass Grafana authentication, CSP, or embedding policy. Public links may expose dashboard data."
+      },
+      "deprecation": {}
+    },
+    {
+      "id": "power-bi",
+      "version": 1,
+      "name": "Power BI",
+      "description": "Display a Power BI report published to the web.",
+      "category": "Dashboards",
+      "icon": "power-bi",
+      "thumbnail": "power-bi",
+      "kind": "app",
+      "keywords": ["microsoft", "analytics", "report"],
+      "runtime": "web",
+      "configurationSchema": {
+        "fields": [
+          {
+            "key": "reportUrl",
+            "label": "Publish to web URL",
+            "description": "Only use a Power BI Publish to web link for information safe to make public.",
+            "control": "url",
+            "required": true
+          },
+          {
+            "key": "refreshIntervalSeconds",
+            "label": "Reload interval",
+            "control": "integer",
+            "required": true,
+            "minimum": 60,
+            "maximum": 86400,
+            "default": 900
+          }
+        ]
+      },
+      "defaultConfiguration": {
+        "reportUrl": "",
+        "refreshIntervalSeconds": 900
+      },
+      "presentationSchemaVersion": 1,
+      "requiredCapabilities": { "web.remote": 2 },
+      "emptyStateBehavior": "placeholder",
+      "webIntegration": {
+        "urlField": "reportUrl",
+        "allowedHosts": ["app.powerbi.com"],
+        "requiredPathPrefix": "/view",
+        "transform": "passthrough",
+        "reloadIntervalField": "refreshIntervalSeconds",
+        "loadTimeoutSeconds": 45,
+        "lifecycle": "keep_warm",
+        "warmSeconds": 90,
+        "fallbackBehavior": "placeholder"
+      },
+      "setup": {
+        "eyebrow": "Microsoft Power BI",
+        "steps": [
+          "Use File > Embed report > Publish to web.",
+          "Paste the public app.powerbi.com/view link."
+        ],
+        "tip": "Publish to web makes the report public. Do not use it for confidential or personal data."
+      },
+      "deprecation": {}
+    },
+    {
+      "id": "tableau-public",
+      "version": 1,
+      "name": "Tableau",
+      "description": "Display a public Tableau visualization.",
+      "category": "Dashboards",
+      "icon": "tableau",
+      "thumbnail": "tableau",
+      "kind": "app",
+      "keywords": ["analytics", "visualization", "dashboard"],
+      "runtime": "web",
+      "configurationSchema": {
+        "fields": [
+          {
+            "key": "viewUrl",
+            "label": "Tableau Public view URL",
+            "control": "url",
+            "required": true
+          },
+          {
+            "key": "refreshIntervalSeconds",
+            "label": "Reload interval",
+            "control": "integer",
+            "required": true,
+            "minimum": 60,
+            "maximum": 86400,
+            "default": 900
+          }
+        ]
+      },
+      "defaultConfiguration": { "viewUrl": "", "refreshIntervalSeconds": 900 },
+      "presentationSchemaVersion": 1,
+      "requiredCapabilities": { "web.remote": 2 },
+      "emptyStateBehavior": "placeholder",
+      "webIntegration": {
+        "urlField": "viewUrl",
+        "allowedHosts": ["public.tableau.com"],
+        "requiredPathPrefix": "/views/",
+        "transform": "passthrough",
+        "reloadIntervalField": "refreshIntervalSeconds",
+        "loadTimeoutSeconds": 45,
+        "lifecycle": "keep_warm",
+        "warmSeconds": 90,
+        "fallbackBehavior": "placeholder"
+      },
+      "setup": {
+        "eyebrow": "Tableau Public",
+        "tip": "Use a public view URL. Private Tableau embeds need a future server-side Connection."
+      },
+      "deprecation": {}
+    },
+    {
+      "id": "looker-studio",
+      "version": 1,
+      "name": "Looker Studio",
+      "description": "Display a public Looker Studio report.",
+      "category": "Dashboards",
+      "icon": "looker-studio",
+      "thumbnail": "looker-studio",
+      "kind": "app",
+      "keywords": ["google", "analytics", "report"],
+      "runtime": "web",
+      "configurationSchema": {
+        "fields": [
+          {
+            "key": "reportUrl",
+            "label": "Embed URL",
+            "description": "Use the URL from Looker Studio's Embed report dialog.",
+            "control": "url",
+            "required": true
+          },
+          {
+            "key": "refreshIntervalSeconds",
+            "label": "Reload interval",
+            "control": "integer",
+            "required": true,
+            "minimum": 60,
+            "maximum": 86400,
+            "default": 900
+          }
+        ]
+      },
+      "defaultConfiguration": {
+        "reportUrl": "",
+        "refreshIntervalSeconds": 900
+      },
+      "presentationSchemaVersion": 1,
+      "requiredCapabilities": { "web.remote": 2 },
+      "emptyStateBehavior": "placeholder",
+      "webIntegration": {
+        "urlField": "reportUrl",
+        "allowedHosts": ["lookerstudio.google.com"],
+        "requiredPathPrefix": "/embed/",
+        "transform": "passthrough",
+        "reloadIntervalField": "refreshIntervalSeconds",
+        "loadTimeoutSeconds": 45,
+        "lifecycle": "keep_warm",
+        "warmSeconds": 90,
+        "fallbackBehavior": "placeholder"
+      },
+      "setup": {
+        "eyebrow": "Google",
+        "tip": "Enable embedding and paste the generated public /embed/ URL."
+      },
+      "deprecation": {}
+    },
+    {
+      "id": "airtable",
+      "version": 1,
+      "name": "Airtable",
+      "description": "Display a public Airtable shared view.",
+      "category": "Dashboards",
+      "icon": "airtable",
+      "thumbnail": "airtable",
+      "kind": "app",
+      "keywords": ["database", "grid", "shared view"],
+      "runtime": "web",
+      "configurationSchema": {
+        "fields": [
+          {
+            "key": "viewUrl",
+            "label": "Airtable embed URL",
+            "control": "url",
+            "required": true
+          },
+          {
+            "key": "refreshIntervalSeconds",
+            "label": "Reload interval",
+            "control": "integer",
+            "required": true,
+            "minimum": 60,
+            "maximum": 86400,
+            "default": 900
+          }
+        ]
+      },
+      "defaultConfiguration": { "viewUrl": "", "refreshIntervalSeconds": 900 },
+      "presentationSchemaVersion": 1,
+      "requiredCapabilities": { "web.remote": 2 },
+      "emptyStateBehavior": "placeholder",
+      "webIntegration": {
+        "urlField": "viewUrl",
+        "allowedHosts": ["airtable.com"],
+        "requiredPathPrefix": "/embed/",
+        "transform": "passthrough",
+        "reloadIntervalField": "refreshIntervalSeconds",
+        "loadTimeoutSeconds": 30,
+        "lifecycle": "keep_warm",
+        "warmSeconds": 60,
+        "fallbackBehavior": "placeholder"
+      },
+      "setup": {
+        "eyebrow": "Airtable",
+        "tip": "Use the embed link from a public shared view. Tilecast cannot open private bases."
+      },
+      "deprecation": {}
+    },
+    {
+      "id": "smartsheet",
+      "version": 1,
+      "name": "Smartsheet",
+      "description": "Display a published Smartsheet sheet or dashboard.",
+      "category": "Dashboards",
+      "icon": "smartsheet",
+      "thumbnail": "smartsheet",
+      "kind": "app",
+      "keywords": ["sheet", "dashboard", "published"],
+      "runtime": "web",
+      "configurationSchema": {
+        "fields": [
+          {
+            "key": "publishUrl",
+            "label": "Published Smartsheet URL",
+            "control": "url",
+            "required": true
+          },
+          {
+            "key": "refreshIntervalSeconds",
+            "label": "Reload interval",
+            "control": "integer",
+            "required": true,
+            "minimum": 60,
+            "maximum": 86400,
+            "default": 900
+          }
+        ]
+      },
+      "defaultConfiguration": {
+        "publishUrl": "",
+        "refreshIntervalSeconds": 900
+      },
+      "presentationSchemaVersion": 1,
+      "requiredCapabilities": { "web.remote": 2 },
+      "emptyStateBehavior": "placeholder",
+      "webIntegration": {
+        "urlField": "publishUrl",
+        "allowedHosts": ["app.smartsheet.com"],
+        "requiredPathPrefix": "/b/publish",
+        "transform": "passthrough",
+        "reloadIntervalField": "refreshIntervalSeconds",
+        "loadTimeoutSeconds": 30,
+        "lifecycle": "keep_warm",
+        "warmSeconds": 60,
+        "fallbackBehavior": "placeholder"
+      },
+      "setup": {
+        "eyebrow": "Smartsheet",
+        "tip": "Publish the sheet or dashboard and paste its public /b/publish URL."
+      },
+      "deprecation": {}
+    }
+  ],
+  "dataSources": []
+}

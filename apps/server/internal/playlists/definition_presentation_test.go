@@ -21,13 +21,39 @@ func TestEveryReleaseWidgetCompilesFromItsDefaults(t *testing.T) {
 		}
 		declarative++
 		t.Run(definition.ID, func(t *testing.T) {
-			raw, err := json.Marshal(definition.DefaultConfiguration)
+			configuration := make(map[string]any, len(definition.DefaultConfiguration))
+			for key, value := range definition.DefaultConfiguration {
+				configuration[key] = value
+			}
+			if definition.Runtime == "web" && definition.WebIntegration != nil {
+				host := "example.com"
+				if len(definition.WebIntegration.AllowedHosts) > 0 {
+					host = definition.WebIntegration.AllowedHosts[0]
+				}
+				path := definition.WebIntegration.RequiredPathPrefix
+				switch definition.WebIntegration.Transform {
+				case "google_sheets":
+					path = "/spreadsheets/d/1234567890abcdef/edit"
+				case "google_slides":
+					path = "/presentation/d/1234567890abcdef/edit"
+				case "canva_embed":
+					path = "/design/1234567890abcdef/view"
+				}
+				configuration[definition.WebIntegration.URLField] = "https://" + host + path
+			}
+			raw, err := json.Marshal(configuration)
 			if err != nil {
 				t.Fatal(err)
 			}
 			presentation, err := compileDefinitionPresentation(definition, raw)
 			if err != nil {
 				t.Fatalf("compile from defaults: %v", err)
+			}
+			if definition.Runtime == "web" {
+				if presentation.Kind != "web" || presentation.Web == nil {
+					t.Fatalf("expected a web presentation, got %#v", presentation)
+				}
+				return
 			}
 			if presentation.Kind != "native" || presentation.Native == nil {
 				t.Fatalf("expected a native presentation, got %#v", presentation)

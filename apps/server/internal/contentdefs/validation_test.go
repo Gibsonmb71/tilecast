@@ -182,3 +182,58 @@ func TestInvalidDeprecationReplacement(t *testing.T) {
 		w.Deprecation = Deprecation{Deprecated: true, Replacement: w.ID}
 	}, "deprecation replacement referencing itself")
 }
+
+func TestWebIntegrationValidationAndURLNormalization(t *testing.T) {
+	minimum, maximum := 60.0, 3600.0
+	widget := validReleaseWidget()
+	widget.ID = "google-sheet-test"
+	widget.Runtime = "web"
+	widget.PresentationTemplate = nil
+	widget.ConfigurationSchema = ConfigurationSchema{Fields: []FieldDefinition{
+		{Key: "url", Label: "URL", Control: "url", Required: true},
+		{Key: "sheetGid", Label: "Tab", Control: "text", MaxLength: 20, Default: ""},
+		{Key: "sheetRange", Label: "Range", Control: "text", MaxLength: 120, Default: ""},
+		{Key: "showTabs", Label: "Tabs", Control: "boolean", Default: true},
+		{Key: "showHeaders", Label: "Headers", Control: "boolean", Default: false},
+		{Key: "reload", Label: "Reload", Control: "integer", Minimum: &minimum, Maximum: &maximum, Default: float64(900)},
+	}}
+	widget.DefaultConfiguration = map[string]any{"url": "", "sheetGid": "", "sheetRange": "", "showTabs": true, "showHeaders": false, "reload": float64(900)}
+	widget.RequiredCapabilities = map[string]int{"web.remote": 2}
+	widget.WebIntegration = &WebIntegration{URLField: "url", AllowedHosts: []string{"docs.google.com"}, Transform: "google_sheets", ReloadIntervalField: "reload"}
+	catalog, err := New([]WidgetDefinition{widget}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	definition, _ := catalog.Widget(widget.ID)
+	got, hosts, err := WebPresentationURL(definition, map[string]any{"url": "https://docs.google.com/spreadsheets/d/1234567890abcdef/edit?usp=sharing#gid=42", "sheetGid": "", "sheetRange": "Lobby!A1:F30", "showTabs": true, "showHeaders": false})
+	if err != nil || got != "https://docs.google.com/spreadsheets/d/1234567890abcdef/preview?gid=42&headers=false&range=Lobby%21A1%3AF30&widget=true" || len(hosts) != 1 || hosts[0] != "docs.google.com" {
+		t.Fatalf("url=%q hosts=%v err=%v", got, hosts, err)
+	}
+	if _, _, err = WebPresentationURL(definition, map[string]any{"url": "https://evil.example/spreadsheets/d/1234567890abcdef/edit"}); err == nil {
+		t.Fatal("wrong provider host was accepted")
+	}
+
+	widget.WebIntegration.AllowedHosts = []string{"Docs.Google.com"}
+	if _, err = New([]WidgetDefinition{widget}, nil); err == nil {
+		t.Fatal("non-canonical host rule was accepted")
+	}
+}
+
+func TestAppRecipeValidationRejectsUnknownDependenciesAndConfiguration(t *testing.T) {
+	widget := validReleaseWidget()
+	widget.Kind = "app"
+	widget.Recipe = &AppRecipe{DataSource: ManagedDataSourceRecipe{
+		Provider: "missing-source", Name: "Managed source",
+		ConfigurationTemplate: json.RawMessage(`{"url":{"$config":"heading"}}`),
+	}}
+	if _, err := New([]WidgetDefinition{widget}, nil); err == nil {
+		t.Fatal("recipe with unknown managed dependency was accepted")
+	}
+
+	source := validManualObjectSource()
+	widget.Recipe.DataSource.Provider = source.ID
+	widget.Recipe.DataSource.ConfigurationTemplate = json.RawMessage(`{"value":{"$config":"unknown"}}`)
+	if _, err := New([]WidgetDefinition{widget}, []DataSourceDefinition{source}); err == nil {
+		t.Fatal("recipe with unknown author configuration was accepted")
+	}
+}

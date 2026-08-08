@@ -166,10 +166,12 @@ type BulkOrganizeInput struct {
 
 // Widget is the visual configuration attached to a widget asset (assets.type='widget').
 type Widget struct {
-	Provider      string          `json:"provider"`
-	PresetID      *string         `json:"presetId,omitempty"`
-	ConfigVersion int             `json:"configVersion"`
-	Configuration json.RawMessage `json:"configuration"`
+	Provider            string          `json:"provider"`
+	PresetID            *string         `json:"presetId,omitempty"`
+	ConfigVersion       int             `json:"configVersion"`
+	Configuration       json.RawMessage `json:"configuration"`
+	AuthorConfiguration json.RawMessage `json:"authorConfiguration,omitempty"`
+	ManagedDataSourceID *uuid.UUID      `json:"managedDataSourceId,omitempty"`
 }
 
 type WidgetInput struct {
@@ -743,6 +745,7 @@ type StructuredRecord struct {
 	Date        string            `json:"date,omitempty"`
 	Author      string            `json:"author,omitempty"`
 	Description string            `json:"description,omitempty"`
+	Source      string            `json:"source,omitempty"`
 	ImageURL    string            `json:"imageUrl,omitempty"`
 	Link        string            `json:"link,omitempty"`
 	Values      map[string]string `json:"values,omitempty"`

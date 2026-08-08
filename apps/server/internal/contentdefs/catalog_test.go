@@ -20,6 +20,15 @@ func TestReleaseDefinitionsValidateAndFingerprintDeterministically(t *testing.T)
 	if _, ok := first.DataSource("school-status"); !ok {
 		t.Fatal("School Status Data Source definition is missing")
 	}
+	for _, id := range []string{"news-feed", "espn", "bbc-news", "sky-news", "the-guardian", "custom-rss", "rss-ticker", "atom-feed", "google-sheets-display", "google-slides", "canva", "grafana", "power-bi", "tableau-public", "looker-studio", "airtable", "smartsheet"} {
+		definition, ok := first.Widget(id)
+		if !ok || !definition.Availability.IsEnabled() {
+			t.Fatalf("enabled App definition %q is missing", id)
+		}
+	}
+	if definition, ok := first.Widget("notion"); !ok || definition.Availability.IsEnabled() || definition.Availability.Reason == "" {
+		t.Fatal("Notion must remain discoverable with an explicit disabled reason")
+	}
 }
 
 func TestCatalogRejectsDuplicateIDsAndUnsupportedControls(t *testing.T) {

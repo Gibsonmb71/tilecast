@@ -247,8 +247,10 @@ func (s *Service) fetchStructured(ctx context.Context, provider string, c Struct
 
 type feedDocument struct {
 	Channel struct {
+		Title string     `xml:"title"`
 		Items []feedItem `xml:"item"`
 	} `xml:"channel"`
+	Title   string     `xml:"title"`
 	Entries []feedItem `xml:"entry"`
 }
 type feedItem struct {
@@ -274,6 +276,14 @@ type feedItem struct {
 		URL  string `xml:"url,attr"`
 		Type string `xml:"type,attr"`
 	} `xml:"enclosure"`
+	MediaThumbnail struct {
+		URL string `xml:"url,attr"`
+	} `xml:"http://search.yahoo.com/mrss/ thumbnail"`
+	MediaContent struct {
+		URL    string `xml:"url,attr"`
+		Type   string `xml:"type,attr"`
+		Medium string `xml:"medium,attr"`
+	} `xml:"http://search.yahoo.com/mrss/ content"`
 }
 
 func parseFeed(body []byte, c StructuredSourceConfig) ([]StructuredRecord, error) {
@@ -282,11 +292,17 @@ func parseFeed(body []byte, c StructuredSourceConfig) ([]StructuredRecord, error
 		return nil, err
 	}
 	items := d.Channel.Items
+	source := d.Channel.Title
 	if len(items) == 0 {
 		items = d.Entries
+		source = d.Title
 	}
-	records := make([]StructuredRecord, 0, len(items))
+	records := make([]StructuredRecord, 0, min(len(items), structuredMaxItems))
+	seen := map[string]bool{}
 	for _, item := range items {
+		if len(records) >= structuredMaxItems {
+			break
+		}
 		description := item.Description
 		if description == "" {
 			description = item.Summary
@@ -307,9 +323,20 @@ func parseFeed(body []byte, c StructuredSourceConfig) ([]StructuredRecord, error
 		if strings.HasPrefix(strings.ToLower(item.Enclosure.Type), "image/") {
 			image = item.Enclosure.URL
 		}
+		if image == "" {
+			image = item.MediaThumbnail.URL
+		}
+		if image == "" && (strings.HasPrefix(strings.ToLower(item.MediaContent.Type), "image/") || strings.EqualFold(item.MediaContent.Medium, "image")) {
+			image = item.MediaContent.URL
+		}
 		date := firstNonempty(item.PubDate, item.Published, item.Updated)
 		id := firstNonempty(item.GUID, item.ID, link, item.Title+date)
-		records = append(records, StructuredRecord{ID: stableRecordID(id), Title: sanitizeCalendarText(item.Title, 240), Date: normalizeRecordDate(date), Author: sanitizeCalendarText(firstNonempty(item.Author.Name, item.Author.Text), 160), Description: sanitizeCalendarText(description, 500), ImageURL: safeRemoteRecordURL(image), Link: safeRemoteRecordURL(link)})
+		stableID := stableRecordID(id)
+		if seen[stableID] {
+			continue
+		}
+		seen[stableID] = true
+		records = append(records, StructuredRecord{ID: stableID, Title: sanitizeCalendarText(item.Title, 240), Date: normalizeRecordDate(date), Author: sanitizeCalendarText(firstNonempty(item.Author.Name, item.Author.Text), 160), Description: sanitizeCalendarText(description, 500), Source: sanitizeCalendarText(source, 160), ImageURL: safeRemoteRecordURL(image), Link: safeRemoteRecordURL(link)})
 	}
 	return applyStructuredOptions(records, c), nil
 }
@@ -524,6 +551,8 @@ func recordValue(r StructuredRecord, field string) string {
 		return r.Author
 	case "description":
 		return r.Description
+	case "source":
+		return r.Source
 	case "link":
 		return r.Link
 	default:

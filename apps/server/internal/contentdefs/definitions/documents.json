@@ -1,0 +1,85 @@
+{
+  "widgets": [
+    {
+      "id": "canva",
+      "version": 1,
+      "name": "Canva",
+      "description": "Display a published Canva design or presentation.",
+      "category": "Design & Documents",
+      "icon": "canva",
+      "thumbnail": "canva",
+      "kind": "app",
+      "featured": true,
+      "keywords": ["design", "presentation", "document"],
+      "runtime": "web",
+      "configurationSchema": {
+        "fields": [
+          {
+            "key": "canvaUrl",
+            "label": "Canva design link",
+            "description": "Use Canva's public design or Smart Embed link.",
+            "control": "url",
+            "required": true
+          },
+          {
+            "key": "refreshIntervalSeconds",
+            "label": "Reload interval",
+            "control": "integer",
+            "required": true,
+            "minimum": 60,
+            "maximum": 86400,
+            "default": 1800
+          }
+        ]
+      },
+      "defaultConfiguration": {
+        "canvaUrl": "",
+        "refreshIntervalSeconds": 1800
+      },
+      "presentationSchemaVersion": 1,
+      "requiredCapabilities": { "web.remote": 2 },
+      "emptyStateBehavior": "placeholder",
+      "webIntegration": {
+        "urlField": "canvaUrl",
+        "allowedHosts": ["www.canva.com"],
+        "transform": "canva_embed",
+        "reloadIntervalField": "refreshIntervalSeconds",
+        "loadTimeoutSeconds": 30,
+        "lifecycle": "keep_warm",
+        "warmSeconds": 60,
+        "fallbackBehavior": "placeholder"
+      },
+      "setup": {
+        "eyebrow": "Canva",
+        "steps": [
+          "Publish the Canva design for public viewing.",
+          "Copy its public design link and paste it here."
+        ],
+        "tip": "Canva controls presentation timing inside its embed. Tilecast does not bypass private-design access."
+      },
+      "deprecation": {}
+    },
+    {
+      "id": "notion",
+      "version": 1,
+      "name": "Notion",
+      "description": "Display a published Notion page.",
+      "category": "Design & Documents",
+      "icon": "notion",
+      "kind": "app",
+      "availability": {
+        "enabled": false,
+        "reason": "Notion's public pages do not provide a dependable first-party signage embed contract."
+      },
+      "runtime": "web",
+      "configurationSchema": { "fields": [] },
+      "defaultConfiguration": {},
+      "presentationSchemaVersion": 1,
+      "requiredCapabilities": { "web.remote": 1 },
+      "emptyStateBehavior": "placeholder",
+      "legacyEditor": true,
+      "deprecation": {}
+    }
+  ],
+  "dataSources": []
+}
