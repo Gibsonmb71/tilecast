@@ -71,11 +71,7 @@ export function GenericWidgetEditor({
     refetchInterval: 10_000,
   });
   const compiledPreview = useQuery({
-    queryKey: [
-      "compiled-widget-preview",
-      definition.id,
-      previewConfiguration,
-    ],
+    queryKey: ["compiled-widget-preview", definition.id, previewConfiguration],
     queryFn: () =>
       api.compileWidgetPreview(definition.id, previewConfiguration, csrf),
     retry: false,
