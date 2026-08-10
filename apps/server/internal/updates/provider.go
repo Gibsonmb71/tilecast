@@ -16,7 +16,7 @@ import (
 )
 
 const (
-	GitHubOwner = "Gibsonmb71"
+	GitHubOwner = "gbyo"
 	GitHubRepo  = "tilecast"
 )
 
@@ -162,7 +162,7 @@ func (p *GitHubProvider) Open(ctx context.Context, rawURL string) (*http.Respons
 func (p *GitHubProvider) headers(req *http.Request) {
 	req.Header.Set("Accept", "application/vnd.github+json")
 	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
-	req.Header.Set("User-Agent", "Tilecast-Server/0.9 (+https://github.com/Gibsonmb71/tilecast)")
+	req.Header.Set("User-Agent", "Tilecast-Server/0.9 (+https://github.com/gbyo/tilecast)")
 	if token := p.currentToken(); token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
@@ -185,7 +185,7 @@ func (p *GitHubProvider) BeginDeviceAuthorization(ctx context.Context, clientID 
 	req, _ := http.NewRequestWithContext(ctx, http.MethodPost, p.oauthBase+"/login/device/code", bytes.NewBufferString(form.Encode()))
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	req.Header.Set("User-Agent", "Tilecast-Server/0.9 (+https://github.com/Gibsonmb71/tilecast)")
+	req.Header.Set("User-Agent", "Tilecast-Server/0.9 (+https://github.com/gbyo/tilecast)")
 	response, err := p.client.Do(req)
 	if err != nil {
 		return DeviceAuthorization{}, fmt.Errorf("GitHub authorization request failed: %w", err)
@@ -220,7 +220,7 @@ func (p *GitHubProvider) PollDeviceAuthorization(ctx context.Context, clientID, 
 	req, _ := http.NewRequestWithContext(ctx, http.MethodPost, p.oauthBase+"/login/oauth/access_token", bytes.NewBufferString(form.Encode()))
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	req.Header.Set("User-Agent", "Tilecast-Server/0.9 (+https://github.com/Gibsonmb71/tilecast)")
+	req.Header.Set("User-Agent", "Tilecast-Server/0.9 (+https://github.com/gbyo/tilecast)")
 	response, err := p.client.Do(req)
 	if err != nil {
 		return DeviceTokenResult{}, fmt.Errorf("GitHub authorization poll failed: %w", err)
