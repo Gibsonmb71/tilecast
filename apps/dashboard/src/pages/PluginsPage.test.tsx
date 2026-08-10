@@ -145,6 +145,11 @@ const storedNoiseMeter = {
   historyEnabled: true,
   historyRetentionDays: 14,
   historyActiveHoursOnly: false,
+  scheduleEnabled: true,
+  scheduleDaysOfWeek: [1, 3, 5],
+  scheduleStartTime: "08:30",
+  scheduleEndTime: "14:45",
+  scheduleTimezone: "America/Chicago",
   enabled: true,
   targetScope: "all",
   targetIds: [],
@@ -678,6 +683,12 @@ describe("Noise Meter", () => {
       historyEnabled: true,
       historyRetentionDays: 14,
       historyActiveHoursOnly: false,
+      // The display window round-trips, including its days and timezone.
+      scheduleEnabled: true,
+      scheduleDaysOfWeek: [1, 3, 5],
+      scheduleStartTime: "08:30",
+      scheduleEndTime: "14:45",
+      scheduleTimezone: "America/Chicago",
       targetScope: "all",
     });
   }, 10_000);
@@ -693,6 +704,55 @@ describe("Noise Meter", () => {
     expect(
       screen.getByLabelText("Collect only during active hours"),
     ).toBeChecked();
+  }, 10_000);
+
+  it("hides the window controls until a window is asked for", async () => {
+    renderRoute(<NoiseMeterEditorPage />, "/plugins/noise-meter/new");
+    await waitFor(() => expect(screen.getByLabelText("Name")).toBeEnabled());
+    expect(screen.queryByLabelText("From")).not.toBeInTheDocument();
+    fireEvent.click(
+      screen.getByLabelText("Only show during a set time window"),
+    );
+    expect(await screen.findByLabelText("From")).toBeVisible();
+    expect(screen.getByLabelText(/^Until/)).toHaveValue("15:30");
+  }, 10_000);
+
+  it("submits the configured display window", async () => {
+    renderRoute(<NoiseMeterEditorPage />, "/plugins/noise-meter/new");
+    await waitFor(() => expect(screen.getByLabelText("Name")).toBeEnabled());
+    fireEvent.click(
+      screen.getByLabelText("Only show during a set time window"),
+    );
+    fireEvent.change(await screen.findByLabelText("From"), {
+      target: { value: "09:15" },
+    });
+    fireEvent.change(screen.getByLabelText(/^Until/), {
+      target: { value: "12:45" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Wed" }));
+    fireEvent.click(screen.getByRole("button", { name: "Create instance" }));
+    await waitFor(() => expect(submitted).toHaveLength(1));
+    expect(submitted[0]).toMatchObject({
+      scheduleEnabled: true,
+      scheduleStartTime: "09:15",
+      scheduleEndTime: "12:45",
+      scheduleDaysOfWeek: [1, 2, 4, 5],
+    });
+  }, 10_000);
+
+  it("refuses a window that could never open", async () => {
+    renderRoute(<NoiseMeterEditorPage />, "/plugins/noise-meter/new");
+    await waitFor(() => expect(screen.getByLabelText("Name")).toBeEnabled());
+    fireEvent.click(
+      screen.getByLabelText("Only show during a set time window"),
+    );
+    // Every day switched off: the bar would never appear again.
+    for (const day of ["Mon", "Tue", "Wed", "Thu", "Fri"]) {
+      fireEvent.click(await screen.findByRole("button", { name: day }));
+    }
+    fireEvent.click(screen.getByRole("button", { name: "Create instance" }));
+    expect(await screen.findByText("Choose at least one day.")).toBeVisible();
+    expect(submitted).toHaveLength(0);
   }, 10_000);
 
   it("refuses a warning level at or above the too loud level", async () => {
@@ -730,6 +790,12 @@ describe("Noise Meter", () => {
       historyEnabled: true,
       historyRetentionDays: 7,
       historyActiveHoursOnly: true,
+      // No window by default: a too-loud room may raise the bar at any time,
+      // and no half-configured bounds are sent.
+      scheduleEnabled: false,
+      scheduleDaysOfWeek: [],
+      scheduleStartTime: null,
+      scheduleEndTime: null,
       enabled: true,
       targetScope: "all",
       targetIds: [],

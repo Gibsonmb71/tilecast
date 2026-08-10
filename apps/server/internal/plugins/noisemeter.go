@@ -22,6 +22,7 @@ import (
 
 const noiseMeterColumns = `id,name,message,warning_level,loud_level,sensitivity,trigger_hold_ms,clear_hold_ms,
 	display_mode,height_px,history_enabled,history_retention_days,history_active_hours_only,
+	schedule_enabled,schedule_days_of_week,schedule_start_time::text,schedule_end_time::text,schedule_timezone,
 	enabled,target_scope,created_at,updated_at`
 
 // The retention windows an operator may choose. A closed set rather than a free
@@ -47,12 +48,21 @@ type NoiseMeterInput struct {
 	HeightPX      int    `json:"heightPx"`
 	// History stores derived ten-second aggregates only. There is no audio in
 	// it, and no setting here can put any there.
-	HistoryEnabled         bool        `json:"historyEnabled"`
-	HistoryRetentionDays   int         `json:"historyRetentionDays"`
-	HistoryActiveHoursOnly bool        `json:"historyActiveHoursOnly"`
-	Enabled                bool        `json:"enabled"`
-	TargetScope            string      `json:"targetScope"`
-	TargetIDs              []uuid.UUID `json:"targetIds"`
+	HistoryEnabled         bool `json:"historyEnabled"`
+	HistoryRetentionDays   int  `json:"historyRetentionDays"`
+	HistoryActiveHoursOnly bool `json:"historyActiveHoursOnly"`
+	// When the bar may appear. Measurement and display are separate questions:
+	// a room can be worth measuring all day while the bar is only wanted during
+	// class. An instance with no window may show whenever the room is too loud.
+	ScheduleEnabled bool `json:"scheduleEnabled"`
+	// Sunday is 0 and Saturday is 6, as everywhere else in Tilecast.
+	ScheduleDaysOfWeek []int       `json:"scheduleDaysOfWeek"`
+	ScheduleStartTime  *string     `json:"scheduleStartTime,omitempty"`
+	ScheduleEndTime    *string     `json:"scheduleEndTime,omitempty"`
+	ScheduleTimezone   string      `json:"scheduleTimezone"`
+	Enabled            bool        `json:"enabled"`
+	TargetScope        string      `json:"targetScope"`
+	TargetIDs          []uuid.UUID `json:"targetIds"`
 }
 
 type NoiseMeter struct {
@@ -80,6 +90,13 @@ type ManifestNoiseMeterConfig struct {
 	HistoryEnabled         bool `json:"historyEnabled"`
 	HistoryRetentionDays   int  `json:"historyRetentionDays"`
 	HistoryActiveHoursOnly bool `json:"historyActiveHoursOnly"`
+	// The display window, evaluated locally against the Player's corrected
+	// clock so a temporary server outage cannot make the bar appear outside it.
+	ScheduleEnabled    bool    `json:"scheduleEnabled"`
+	ScheduleDaysOfWeek []int   `json:"scheduleDaysOfWeek,omitempty"`
+	ScheduleStartTime  *string `json:"scheduleStartTime,omitempty"`
+	ScheduleEndTime    *string `json:"scheduleEndTime,omitempty"`
+	ScheduleTimezone   string  `json:"scheduleTimezone,omitempty"`
 }
 
 func (s *Service) ListNoiseMeters(ctx context.Context) ([]NoiseMeter, error) {
@@ -128,7 +145,11 @@ func scanNoiseMeter(row scanner) (NoiseMeter, error) {
 	err := row.Scan(&item.ID, &item.Name, &item.Message, &item.WarningLevel, &item.LoudLevel,
 		&item.Sensitivity, &item.TriggerHoldMS, &item.ClearHoldMS, &item.DisplayMode, &item.HeightPX,
 		&item.HistoryEnabled, &item.HistoryRetentionDays, &item.HistoryActiveHoursOnly,
+		&item.ScheduleEnabled, &item.ScheduleDaysOfWeek, &item.ScheduleStartTime, &item.ScheduleEndTime,
+		&item.ScheduleTimezone,
 		&item.Enabled, &item.TargetScope, &item.CreatedAt, &item.UpdatedAt)
+	item.ScheduleStartTime = trimTargetTime(item.ScheduleStartTime)
+	item.ScheduleEndTime = trimTargetTime(item.ScheduleEndTime)
 	return item, err
 }
 
@@ -158,6 +179,12 @@ func normalizeNoiseMeter(input NoiseMeterInput) NoiseMeterInput {
 	}
 	if input.HistoryRetentionDays == 0 {
 		input.HistoryRetentionDays = 7
+	}
+	if strings.TrimSpace(input.ScheduleTimezone) == "" {
+		input.ScheduleTimezone = "UTC"
+	}
+	if input.ScheduleDaysOfWeek == nil {
+		input.ScheduleDaysOfWeek = []int{}
 	}
 	return input
 }
@@ -203,20 +230,27 @@ func (s *Service) writeNoiseMeter(ctx context.Context, id, organizationID, userI
 		_, err = tx.Exec(ctx, `INSERT INTO noise_meter_instances
 			(id,organization_id,name,message,warning_level,loud_level,sensitivity,trigger_hold_ms,clear_hold_ms,
 			 display_mode,height_px,history_enabled,history_retention_days,history_active_hours_only,
+			 schedule_enabled,schedule_days_of_week,schedule_start_time,schedule_end_time,schedule_timezone,
 			 enabled,target_scope,created_by)
-			VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)`,
+			VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17::time,$18::time,$19,$20,$21,$22)`,
 			id, organizationID, name, message, input.WarningLevel, input.LoudLevel, input.Sensitivity,
 			input.TriggerHoldMS, input.ClearHoldMS, input.DisplayMode, input.HeightPX,
 			input.HistoryEnabled, input.HistoryRetentionDays, input.HistoryActiveHoursOnly,
+			input.ScheduleEnabled, input.ScheduleDaysOfWeek, scheduleTime(input.ScheduleStartTime),
+			scheduleTime(input.ScheduleEndTime), input.ScheduleTimezone,
 			input.Enabled, input.TargetScope, userID)
 	} else {
 		tag, updateErr := tx.Exec(ctx, `UPDATE noise_meter_instances SET name=$2,message=$3,warning_level=$4,
 			loud_level=$5,sensitivity=$6,trigger_hold_ms=$7,clear_hold_ms=$8,display_mode=$9,height_px=$10,
 			history_enabled=$11,history_retention_days=$12,history_active_hours_only=$13,
-			enabled=$14,target_scope=$15,updated_at=now() WHERE id=$1`,
+			schedule_enabled=$14,schedule_days_of_week=$15,schedule_start_time=$16::time,
+			schedule_end_time=$17::time,schedule_timezone=$18,
+			enabled=$19,target_scope=$20,updated_at=now() WHERE id=$1`,
 			id, name, message, input.WarningLevel, input.LoudLevel, input.Sensitivity,
 			input.TriggerHoldMS, input.ClearHoldMS, input.DisplayMode, input.HeightPX,
 			input.HistoryEnabled, input.HistoryRetentionDays, input.HistoryActiveHoursOnly,
+			input.ScheduleEnabled, input.ScheduleDaysOfWeek, scheduleTime(input.ScheduleStartTime),
+			scheduleTime(input.ScheduleEndTime), input.ScheduleTimezone,
 			input.Enabled, input.TargetScope)
 		err = updateErr
 		if err == nil && tag.RowsAffected() == 0 {
@@ -312,7 +346,55 @@ func validateNoiseMeter(input NoiseMeterInput) error {
 	if !noiseMeterRetentionDays[input.HistoryRetentionDays] {
 		return fmt.Errorf("%w: historyRetentionDays must be 1, 3, 7, 14, or 30", ErrInvalid)
 	}
+	if err := validateNoiseMeterSchedule(input); err != nil {
+		return err
+	}
 	return validateTargeting(input.TargetScope, input.TargetIDs)
+}
+
+// scheduleTime keeps an unset bound NULL rather than an empty string, which
+// Postgres would refuse to cast to `time`.
+func scheduleTime(value *string) any {
+	if value == nil || strings.TrimSpace(*value) == "" {
+		return nil
+	}
+	return strings.TrimSpace(*value)
+}
+
+// validateNoiseMeterSchedule checks the optional display window. A window that
+// is switched on has to name days and both bounds: one that cannot open would
+// hide the bar permanently, which is never what an operator meant.
+func validateNoiseMeterSchedule(input NoiseMeterInput) error {
+	if _, err := time.LoadLocation(input.ScheduleTimezone); err != nil {
+		return fmt.Errorf("%w: scheduleTimezone is not a valid IANA timezone", ErrInvalid)
+	}
+	if !input.ScheduleEnabled {
+		return nil
+	}
+	if input.ScheduleStartTime == nil || input.ScheduleEndTime == nil {
+		return fmt.Errorf("%w: a display window requires a start and an end time", ErrInvalid)
+	}
+	for _, value := range []*string{input.ScheduleStartTime, input.ScheduleEndTime} {
+		if _, err := time.Parse("15:04", strings.TrimSpace(*value)); err != nil {
+			return fmt.Errorf("%w: display window times must use HH:MM", ErrInvalid)
+		}
+	}
+	// An end at or before the start is an overnight window, not an error; a
+	// window with the same start and end would never be open at all.
+	if strings.TrimSpace(*input.ScheduleStartTime) == strings.TrimSpace(*input.ScheduleEndTime) {
+		return fmt.Errorf("%w: a display window must start and end at different times", ErrInvalid)
+	}
+	if len(input.ScheduleDaysOfWeek) == 0 {
+		return fmt.Errorf("%w: a display window requires at least one day", ErrInvalid)
+	}
+	seen := map[int]bool{}
+	for _, day := range input.ScheduleDaysOfWeek {
+		if day < 0 || day > 6 || seen[day] {
+			return fmt.Errorf("%w: scheduleDaysOfWeek must contain unique values from 0 through 6", ErrInvalid)
+		}
+		seen[day] = true
+	}
+	return nil
 }
 
 // noiseMetersForScreen projects at most one meter. A screen has one microphone,
@@ -321,19 +403,25 @@ func validateNoiseMeter(input NoiseMeterInput) error {
 func (s *Service) noiseMetersForScreen(ctx context.Context, screenID uuid.UUID) ([]ManifestPlugin, error) {
 	row := s.db.QueryRow(ctx, `SELECT DISTINCT i.id,i.name,i.message,i.warning_level,i.loud_level,i.sensitivity,
 		i.trigger_hold_ms,i.clear_hold_ms,i.display_mode,i.height_px,
-		i.history_enabled,i.history_retention_days,i.history_active_hours_only
+		i.history_enabled,i.history_retention_days,i.history_active_hours_only,
+		i.schedule_enabled,i.schedule_days_of_week,i.schedule_start_time::text,i.schedule_end_time::text,
+		i.schedule_timezone
 		`+targetScopeFilter("noise_meter_instances", "noise_meter_targets")+`
 		ORDER BY i.id LIMIT 1`, screenID)
 	var id uuid.UUID
 	var config ManifestNoiseMeterConfig
 	err := row.Scan(&id, &config.Name, &config.Message, &config.WarningLevel, &config.LoudLevel,
 		&config.Sensitivity, &config.TriggerHoldMS, &config.ClearHoldMS, &config.DisplayMode, &config.HeightPX,
-		&config.HistoryEnabled, &config.HistoryRetentionDays, &config.HistoryActiveHoursOnly)
+		&config.HistoryEnabled, &config.HistoryRetentionDays, &config.HistoryActiveHoursOnly,
+		&config.ScheduleEnabled, &config.ScheduleDaysOfWeek, &config.ScheduleStartTime,
+		&config.ScheduleEndTime, &config.ScheduleTimezone)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return []ManifestPlugin{}, nil
 	}
 	if err != nil {
 		return nil, err
 	}
+	config.ScheduleStartTime = trimTargetTime(config.ScheduleStartTime)
+	config.ScheduleEndTime = trimTargetTime(config.ScheduleEndTime)
 	return []ManifestPlugin{{ID: id, Type: "noise_meter", Version: 1, Config: config}}, nil
 }

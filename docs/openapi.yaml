@@ -4193,6 +4193,28 @@ components:
           description: How long it must stay below warningLevel before the bar hides.
         displayMode: { enum: [overlay, push] }
         heightPx: { type: integer, minimum: 40, maximum: 320, default: 96 }
+        scheduleEnabled:
+          type: boolean
+          default: false
+          description: >-
+            When false the bar may show whenever the room is too loud. A window
+            governs the bar alone; the room is measured either way.
+        scheduleDaysOfWeek:
+          type: array
+          uniqueItems: true
+          maxItems: 7
+          items: { type: integer, minimum: 0, maximum: 6 }
+          description: Days the window may start on, Sunday 0 through Saturday 6.
+        scheduleStartTime:
+          type: [string, "null"]
+          pattern: "^[0-9]{2}:[0-9]{2}$"
+        scheduleEndTime:
+          type: [string, "null"]
+          pattern: "^[0-9]{2}:[0-9]{2}$"
+          description: >-
+            At or before the start is an overnight window belonging to the start
+            day. The window is half-open, so the end minute is outside it.
+        scheduleTimezone: { type: string, maxLength: 100, default: UTC }
         enabled: { type: boolean }
         targetScope: { enum: [all, screens, sync_groups, locations] }
         targetIds:

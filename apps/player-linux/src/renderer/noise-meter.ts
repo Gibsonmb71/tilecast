@@ -42,6 +42,11 @@ interface TilecastNoiseMeterPlugin {
     historyEnabled?: boolean;
     historyRetentionDays?: number;
     historyActiveHoursOnly?: boolean;
+    scheduleEnabled?: boolean;
+    scheduleDaysOfWeek?: number[];
+    scheduleStartTime?: string | null;
+    scheduleEndTime?: string | null;
+    scheduleTimezone?: string;
   };
 }
 
@@ -64,6 +69,19 @@ interface TilecastNoiseMeterSettings {
   historyRetentionDays: number;
   /** Stop listening outside active hours rather than discarding what is heard. */
   historyActiveHoursOnly: boolean;
+  /**
+   * The optional window during which the bar may appear. It governs the bar
+   * alone: measurement and history keep their own rules, so a room can be
+   * monitored all day while the bar is only wanted during class.
+   */
+  scheduleEnabled: boolean;
+  /** Days the window may start on, Sunday 0 through Saturday 6. */
+  scheduleDaysOfWeek: number[];
+  /** "HH:MM" local start, or null when there is no window. */
+  scheduleStartTime: string | null;
+  /** "HH:MM" local end; at or before the start means the window runs overnight. */
+  scheduleEndTime: string | null;
+  scheduleTimezone: string;
 }
 
 type TilecastNoiseMeterState =
@@ -169,6 +187,17 @@ interface TilecastNoiseMeterModule {
     warningLevel: number;
     loudLevel: number;
   }): TilecastNoiseHistoryAggregator;
+  scheduleOpen(
+    settings: Pick<
+      TilecastNoiseMeterSettings,
+      | "scheduleEnabled"
+      | "scheduleDaysOfWeek"
+      | "scheduleStartTime"
+      | "scheduleEndTime"
+      | "scheduleTimezone"
+    >,
+    at: Date,
+  ): boolean;
   /** The meter's own update rate, well above the one-second plugin tick. */
   readonly sampleIntervalMs: number;
   /** The fixed history resolution. Not configurable, on purpose. */
@@ -201,6 +230,53 @@ const tilecastNoiseMeter: TilecastNoiseMeterModule = (() => {
   function clampLevel(value: number): number {
     if (!Number.isFinite(value)) return 0;
     return Math.min(100, Math.max(0, value));
+  }
+
+  /** "HH:MM" to minutes since local midnight, or null when unreadable. */
+  function parseClockMinutes(value: string | null | undefined): number | null {
+    const match = /^(\d{2}):(\d{2})/.exec(value ?? "");
+    if (!match) return null;
+    const hours = Number(match[1]);
+    const minutes = Number(match[2]);
+    if (hours > 23 || minutes > 59) return null;
+    return hours * 60 + minutes;
+  }
+
+  // One formatter per zone: the window is evaluated on every plugin tick, and
+  // rebuilding Intl formatters is the expensive part of that tick on the
+  // hardware these players run on.
+  const zoneFormatters = new Map<string, Intl.DateTimeFormat>();
+  const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+  function zonedWeekdayMinutes(
+    timezone: string,
+    at: Date,
+  ): { weekday: number; minutes: number } | null {
+    let formatter = zoneFormatters.get(timezone);
+    if (!formatter) {
+      try {
+        formatter = new Intl.DateTimeFormat("en-US", {
+          timeZone: timezone,
+          weekday: "short",
+          hour: "2-digit",
+          minute: "2-digit",
+          hourCycle: "h23",
+        });
+      } catch {
+        return null;
+      }
+      zoneFormatters.set(timezone, formatter);
+    }
+    const parts = formatter.formatToParts(at);
+    const value = (type: Intl.DateTimeFormatPartTypes) =>
+      parts.find((part) => part.type === type)?.value ?? "";
+    const weekday = WEEKDAYS.indexOf(value("weekday"));
+    const hours = Number(value("hour"));
+    const minutes = Number(value("minute"));
+    if (weekday < 0 || !Number.isFinite(hours) || !Number.isFinite(minutes)) {
+      return null;
+    }
+    return { weekday, minutes: hours * 60 + minutes };
   }
 
   function defaultRequestStream(): Promise<MediaStream> {
@@ -425,6 +501,21 @@ const tilecastNoiseMeter: TilecastNoiseMeterModule = (() => {
             30,
           ),
           historyActiveHoursOnly: config.historyActiveHoursOnly !== false,
+          // A window is only a window when it can actually open. Anything
+          // half-configured is treated as no window at all, which shows the bar
+          // whenever the room is too loud rather than hiding it forever.
+          scheduleEnabled:
+            config.scheduleEnabled === true &&
+            typeof config.scheduleStartTime === "string" &&
+            typeof config.scheduleEndTime === "string" &&
+            Array.isArray(config.scheduleDaysOfWeek) &&
+            config.scheduleDaysOfWeek.length > 0,
+          scheduleDaysOfWeek: (config.scheduleDaysOfWeek ?? []).filter(
+            (day) => Number.isInteger(day) && day >= 0 && day <= 6,
+          ),
+          scheduleStartTime: config.scheduleStartTime ?? null,
+          scheduleEndTime: config.scheduleEndTime ?? null,
+          scheduleTimezone: config.scheduleTimezone?.trim() || "UTC",
         });
       }
       // A screen has one microphone, so two applicable instances cannot both
@@ -733,6 +824,54 @@ const tilecastNoiseMeter: TilecastNoiseMeterModule = (() => {
           reset();
         },
       };
+    },
+
+    /**
+     * Whether the bar is allowed on screen right now.
+     *
+     * Half-open [start, end) in the configured zone, and an end at or before
+     * the start is an overnight window belonging to the start day — the same
+     * daily-window semantics active hours and content schedules use, so an
+     * operator who has configured one of those already knows this one.
+     *
+     * Evaluated locally against the Player's own clock, so a server outage
+     * cannot leave the bar showing outside its window or suppressed inside it.
+     */
+    scheduleOpen(
+      settings: Pick<
+        TilecastNoiseMeterSettings,
+        | "scheduleEnabled"
+        | "scheduleDaysOfWeek"
+        | "scheduleStartTime"
+        | "scheduleEndTime"
+        | "scheduleTimezone"
+      >,
+      at: Date,
+    ): boolean {
+      // No window means no restriction: the bar shows whenever it is too loud.
+      if (!settings.scheduleEnabled) return true;
+      const start = parseClockMinutes(settings.scheduleStartTime);
+      const end = parseClockMinutes(settings.scheduleEndTime);
+      const days = settings.scheduleDaysOfWeek ?? [];
+      // An unreadable window fails toward the bar working. A room that is too
+      // loud is the condition this plugin exists to show.
+      if (start === null || end === null || days.length === 0) return true;
+      const local = zonedWeekdayMinutes(settings.scheduleTimezone, at);
+      if (!local) return true;
+      if (end > start) {
+        return (
+          days.includes(local.weekday) &&
+          local.minutes >= start &&
+          local.minutes < end
+        );
+      }
+      // Overnight: the evening part belongs to its own day, and the morning
+      // part belongs to the day before it.
+      const previousDay = (local.weekday + 6) % 7;
+      return (
+        (days.includes(local.weekday) && local.minutes >= start) ||
+        (days.includes(previousDay) && local.minutes < end)
+      );
     },
 
     createCapture,

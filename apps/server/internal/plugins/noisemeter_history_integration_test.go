@@ -309,6 +309,68 @@ func TestNoiseHistoryQueriesAndRetention(t *testing.T) {
 	}
 }
 
+// The display window is stored and projected as configured, and it governs the
+// bar alone: a meter that is only allowed to show during class still measures
+// and still delivers history the rest of the day.
+func TestNoiseMeterScheduleRoundTripsIntoTheManifest(t *testing.T) {
+	ctx, env := setupNoiseHistory(t)
+	stored, err := env.service.GetNoiseMeter(ctx, env.instance)
+	if err != nil {
+		t.Fatal(err)
+	}
+	update := stored.NoiseMeterInput
+	start, end := "08:00", "15:30"
+	update.ScheduleEnabled = true
+	update.ScheduleStartTime, update.ScheduleEndTime = &start, &end
+	update.ScheduleDaysOfWeek = []int{1, 2, 3, 4, 5}
+	update.ScheduleTimezone = "America/Chicago"
+	saved, err := env.service.UpdateNoiseMeter(ctx, env.instance, env.userID, update)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !saved.ScheduleEnabled || saved.ScheduleStartTime == nil || *saved.ScheduleStartTime != "08:00" ||
+		saved.ScheduleEndTime == nil || *saved.ScheduleEndTime != "15:30" ||
+		saved.ScheduleTimezone != "America/Chicago" || len(saved.ScheduleDaysOfWeek) != 5 {
+		t.Fatalf("display window was not stored as configured: %#v", saved)
+	}
+
+	projected, err := env.service.ManifestForScreen(ctx, env.screenA)
+	if err != nil || len(projected) != 1 {
+		t.Fatalf("manifest: %#v %v", projected, err)
+	}
+	config, ok := projected[0].Config.(ManifestNoiseMeterConfig)
+	if !ok || !config.ScheduleEnabled || config.ScheduleStartTime == nil ||
+		*config.ScheduleStartTime != "08:00" || config.ScheduleTimezone != "America/Chicago" {
+		t.Fatalf("display window did not reach the Player: %#v", projected[0].Config)
+	}
+
+	// History is unaffected by the window: the room is still measured outside it.
+	base := time.Now().UTC().Add(-time.Hour).Truncate(10 * time.Second)
+	if _, err = env.service.RecordNoiseHistory(ctx, env.screenA,
+		[]NoiseHistoryRecord{historyRecord(base, 45, 60, 0, 0, 0)}); err != nil {
+		t.Fatal(err)
+	}
+	var rows int
+	if err = env.pool.QueryRow(ctx, `SELECT count(*) FROM noise_meter_history WHERE screen_id=$1`, env.screenA).Scan(&rows); err != nil {
+		t.Fatal(err)
+	}
+	if rows != 1 {
+		t.Fatalf("a display window must not stop measurement: %d rows", rows)
+	}
+
+	// Switching the window back off clears its bounds rather than leaving a
+	// half-configured window behind.
+	update.ScheduleEnabled = false
+	update.ScheduleStartTime, update.ScheduleEndTime = nil, nil
+	update.ScheduleDaysOfWeek = []int{}
+	if saved, err = env.service.UpdateNoiseMeter(ctx, env.instance, env.userID, update); err != nil {
+		t.Fatal(err)
+	}
+	if saved.ScheduleEnabled || saved.ScheduleStartTime != nil || saved.ScheduleEndTime != nil {
+		t.Fatalf("window was not cleared: %#v", saved)
+	}
+}
+
 func TestNoiseHistoryConsumedWhenTheMeterNoLongerApplies(t *testing.T) {
 	ctx, env := setupNoiseHistory(t)
 	stored, err := env.service.GetNoiseMeter(ctx, env.instance)

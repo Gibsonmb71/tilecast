@@ -15,11 +15,21 @@ interface NoiseMeterPlugin {
     clearHoldMs: number;
     displayMode: string;
     heightPx: number;
+    scheduleEnabled?: boolean;
+    scheduleDaysOfWeek?: number[];
+    scheduleStartTime?: string | null;
+    scheduleEndTime?: string | null;
+    scheduleTimezone?: string;
   };
 }
 
 interface Settings {
   id: string;
+  scheduleEnabled: boolean;
+  scheduleDaysOfWeek: number[];
+  scheduleStartTime: string | null;
+  scheduleEndTime: string | null;
+  scheduleTimezone: string;
   name: string;
   message: string;
   warningLevel: number;
@@ -78,6 +88,16 @@ interface NoiseMeterModule {
     reset(): void;
   };
   readonly historyBucketMs: number;
+  scheduleOpen(
+    settings: {
+      scheduleEnabled: boolean;
+      scheduleDaysOfWeek: number[];
+      scheduleStartTime: string | null;
+      scheduleEndTime: string | null;
+      scheduleTimezone: string;
+    },
+    at: Date,
+  ): boolean;
   createCapture(options: {
     onLevel(rms: number | null): void;
     onDiagnostic?(message: string, detail?: Record<string, unknown>): void;
@@ -796,5 +816,115 @@ describe("ten-second history aggregation", () => {
     expect(bucket.monitoredMs).toBeGreaterThan(2_000);
     // Flushing closes it; there is nothing left behind to emit twice.
     expect(history.flush()).toBeNull();
+  });
+});
+
+describe("display window", () => {
+  function window(overrides: Partial<Settings> = {}) {
+    return {
+      scheduleEnabled: true,
+      scheduleDaysOfWeek: [1, 2, 3, 4, 5],
+      scheduleStartTime: "08:00",
+      scheduleEndTime: "15:30",
+      scheduleTimezone: "America/Chicago",
+      ...overrides,
+    } as Settings;
+  }
+
+  /** A local instant in the window's own zone, stated as UTC. */
+  function chicago(day: number, hour: number, minute = 0) {
+    // August, so Chicago is UTC-5.
+    return new Date(Date.UTC(2026, 7, day, hour + 5, minute));
+  }
+
+  it("lets the bar show at any time when no window is configured", () => {
+    const settings = window({ scheduleEnabled: false });
+    expect(meter.scheduleOpen(settings, chicago(10, 3))).toBe(true);
+    expect(meter.scheduleOpen(settings, chicago(9, 23))).toBe(true);
+  });
+
+  it("opens inside the window on a selected day", () => {
+    // Monday 10 August 2026, mid-morning.
+    expect(meter.scheduleOpen(window(), chicago(10, 10))).toBe(true);
+  });
+
+  it("is half-open at both bounds", () => {
+    // The start is inside the window and the end is not, so two adjacent
+    // windows cannot both claim the same minute.
+    expect(meter.scheduleOpen(window(), chicago(10, 8, 0))).toBe(true);
+    expect(meter.scheduleOpen(window(), chicago(10, 15, 29))).toBe(true);
+    expect(meter.scheduleOpen(window(), chicago(10, 15, 30))).toBe(false);
+    expect(meter.scheduleOpen(window(), chicago(10, 7, 59))).toBe(false);
+  });
+
+  it("stays closed on a day that was not selected", () => {
+    // Saturday 15 August, inside the hours but not on a chosen day.
+    expect(meter.scheduleOpen(window(), chicago(15, 10))).toBe(false);
+  });
+
+  it("treats an end at or before the start as an overnight window", () => {
+    const overnight = window({
+      scheduleStartTime: "21:00",
+      scheduleEndTime: "02:00",
+      scheduleDaysOfWeek: [1],
+    });
+    // Monday evening, and the small hours of Tuesday that belong to it.
+    expect(meter.scheduleOpen(overnight, chicago(10, 22))).toBe(true);
+    expect(meter.scheduleOpen(overnight, chicago(11, 1))).toBe(true);
+    expect(meter.scheduleOpen(overnight, chicago(11, 2))).toBe(false);
+    // Tuesday evening is not Monday's window.
+    expect(meter.scheduleOpen(overnight, chicago(11, 22))).toBe(false);
+  });
+
+  it("evaluates the window in its own timezone", () => {
+    const settings = window();
+    // 13:00 UTC is 08:00 in Chicago: inside. The same instant read as UTC
+    // would be outside, which is the bug a stated timezone prevents.
+    expect(
+      meter.scheduleOpen(settings, new Date(Date.UTC(2026, 7, 10, 13, 0))),
+    ).toBe(true);
+    expect(
+      meter.scheduleOpen(settings, new Date(Date.UTC(2026, 7, 10, 21, 0))),
+    ).toBe(false);
+  });
+
+  it("fails toward showing the bar when the window cannot be read", () => {
+    // A room that is too loud is what this plugin exists to show, so an
+    // unreadable window must not be what silences it.
+    expect(
+      meter.scheduleOpen(
+        window({ scheduleTimezone: "Mars/Olympus" }),
+        chicago(10, 3),
+      ),
+    ).toBe(true);
+    expect(
+      meter.scheduleOpen(
+        window({ scheduleStartTime: "half eight" }),
+        chicago(10, 3),
+      ),
+    ).toBe(true);
+    expect(
+      meter.scheduleOpen(window({ scheduleDaysOfWeek: [] }), chicago(10, 3)),
+    ).toBe(true);
+  });
+
+  it("ignores a half-configured window when resolving an instance", () => {
+    // Switched on with no times is not a window; it must not hide the bar
+    // forever.
+    const resolved = meter.resolve([
+      instance({ scheduleEnabled: true, scheduleDaysOfWeek: [1] }),
+    ]);
+    expect(resolved?.scheduleEnabled).toBe(false);
+    const configured = meter.resolve([
+      instance({
+        scheduleEnabled: true,
+        scheduleDaysOfWeek: [1, 2],
+        scheduleStartTime: "08:00",
+        scheduleEndTime: "15:30",
+        scheduleTimezone: "America/Chicago",
+      }),
+    ]);
+    expect(configured?.scheduleEnabled).toBe(true);
+    expect(configured?.scheduleDaysOfWeek).toEqual([1, 2]);
   });
 });

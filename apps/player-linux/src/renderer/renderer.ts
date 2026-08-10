@@ -268,6 +268,11 @@ interface RendererNoiseMeterPlugin {
     historyEnabled?: boolean;
     historyRetentionDays?: number;
     historyActiveHoursOnly?: boolean;
+    scheduleEnabled?: boolean;
+    scheduleDaysOfWeek?: number[];
+    scheduleStartTime?: string | null;
+    scheduleEndTime?: string | null;
+    scheduleTimezone?: string;
   };
 }
 
@@ -559,6 +564,12 @@ let noiseHistory: TilecastNoiseHistoryAggregator | null = null;
  * evaluating a second copy of the schedule.
  */
 let playerAwake = true;
+/**
+ * Whether the display window was open at the last tick. A window opens and
+ * closes on the clock with nothing else to announce it, so the one-second
+ * plugin tick is what notices and reconciles the microphone.
+ */
+let noiseWindowWasOpen = true;
 /** Reported state, so a change is sent immediately rather than at the next bucket. */
 let lastReportedNoiseStatus = "";
 
@@ -633,8 +644,20 @@ function updatePluginSurface(): void {
     pluginClockOffsetMs,
   );
   // The noise meter runs on its own faster loop; what is read here is only
-  // whether it currently wants the strip.
-  const meter = noiseMeterReading.visible ? noiseMeterSettings : null;
+  // whether it currently wants the strip. A configured display window is the
+  // other half of that question: outside it the room is still measured, and
+  // the bar simply does not appear.
+  const windowOpen = noiseMeterWindowOpen(now);
+  if (noiseMeterSettings !== null && windowOpen !== noiseWindowWasOpen) {
+    // Set first: applying the lifecycle re-enters this function, and a second
+    // pass must see the state it is reconciling to rather than loop.
+    noiseWindowWasOpen = windowOpen;
+    applyNoiseMeterLifecycle();
+    return;
+  }
+  noiseWindowWasOpen = windowOpen;
+  const meter =
+    noiseMeterReading.visible && windowOpen ? noiseMeterSettings : null;
   const owner = tilecastNoiseMeter.stripOwner({
     alertTicker: ticker !== null,
     noiseMeter: meter !== null,
@@ -910,6 +933,20 @@ function syncNoiseMeter(): void {
   applyNoiseMeterLifecycle();
 }
 
+/**
+ * Whether the bar's configured display window is open. Re-evaluated rather
+ * than cached: the window closes while the player is running, and the corrected
+ * clock is what decides.
+ */
+function noiseMeterWindowOpen(now = new Date()): boolean {
+  const settings = noiseMeterSettings;
+  if (!settings) return false;
+  return tilecastNoiseMeter.scheduleOpen(
+    settings,
+    new Date(now.getTime() + pluginClockOffsetMs),
+  );
+}
+
 /** History is kept only while it is wanted and the screen is awake enough. */
 function noiseHistoryWanted(): boolean {
   const settings = noiseMeterSettings;
@@ -929,8 +966,11 @@ function noiseHistoryWanted(): boolean {
 function applyNoiseMeterLifecycle(): void {
   const settings = noiseMeterSettings;
   const wantsHistory = noiseHistoryWanted();
-  // The bar is a surface over content. A sleeping screen has no content for it.
-  const wantsLive = settings !== null && playerAwake;
+  // The bar is a surface over content. A sleeping screen has no content for it,
+  // and neither does a closed display window. When history does not want the
+  // microphone either, the player stops listening rather than measuring for a
+  // bar that cannot appear.
+  const wantsLive = settings !== null && playerAwake && noiseMeterWindowOpen();
   if (!settings || (!wantsHistory && !wantsLive)) {
     flushNoiseHistory();
     noiseHistory = null;

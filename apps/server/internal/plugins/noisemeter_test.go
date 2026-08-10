@@ -14,6 +14,7 @@ func validNoiseMeter() NoiseMeterInput {
 		TriggerHoldMS: 1000, ClearHoldMS: 3000,
 		DisplayMode: "overlay", HeightPX: 96, Enabled: true,
 		HistoryEnabled: true, HistoryRetentionDays: 7, HistoryActiveHoursOnly: true,
+		ScheduleTimezone: "UTC", ScheduleDaysOfWeek: []int{},
 		TargetScope: "all", TargetIDs: []uuid.UUID{},
 	}
 }
@@ -89,6 +90,61 @@ func TestValidateNoiseMeterRequiresSeparateThresholds(t *testing.T) {
 	inverted.WarningLevel, inverted.LoudLevel = 85, 80
 	if err := validateNoiseMeter(inverted); !errors.Is(err, ErrInvalid) {
 		t.Fatalf("expected a warning level above the loud level to be invalid, got %v", err)
+	}
+}
+
+func scheduledNoiseMeter() NoiseMeterInput {
+	input := validNoiseMeter()
+	start, end := "08:00", "15:30"
+	input.ScheduleEnabled = true
+	input.ScheduleStartTime, input.ScheduleEndTime = &start, &end
+	input.ScheduleDaysOfWeek = []int{1, 2, 3, 4, 5}
+	input.ScheduleTimezone = "America/Chicago"
+	return input
+}
+
+func TestValidateNoiseMeterSchedule(t *testing.T) {
+	if err := validateNoiseMeter(scheduledNoiseMeter()); err != nil {
+		t.Fatalf("valid display window rejected: %v", err)
+	}
+	// An end before the start is an overnight window, not a mistake.
+	overnight := scheduledNoiseMeter()
+	start, end := "21:00", "02:00"
+	overnight.ScheduleStartTime, overnight.ScheduleEndTime = &start, &end
+	if err := validateNoiseMeter(overnight); err != nil {
+		t.Fatalf("overnight display window rejected: %v", err)
+	}
+	// No window at all is the default: the bar may show whenever it is loud.
+	if err := validateNoiseMeter(validNoiseMeter()); err != nil {
+		t.Fatalf("instance without a window rejected: %v", err)
+	}
+}
+
+func TestValidateNoiseMeterRejectsUnusableSchedule(t *testing.T) {
+	same := "09:00"
+	cases := map[string]func(*NoiseMeterInput){
+		// A window that can never open would hide the bar permanently, which is
+		// never what an operator meant by setting one.
+		"no days":       func(i *NoiseMeterInput) { i.ScheduleDaysOfWeek = []int{} },
+		"repeated day":  func(i *NoiseMeterInput) { i.ScheduleDaysOfWeek = []int{1, 1} },
+		"day range":     func(i *NoiseMeterInput) { i.ScheduleDaysOfWeek = []int{7} },
+		"missing start": func(i *NoiseMeterInput) { i.ScheduleStartTime = nil },
+		"missing end":   func(i *NoiseMeterInput) { i.ScheduleEndTime = nil },
+		"zero length":   func(i *NoiseMeterInput) { i.ScheduleStartTime, i.ScheduleEndTime = &same, &same },
+		"timezone":      func(i *NoiseMeterInput) { i.ScheduleTimezone = "Mars/Olympus" },
+	}
+	for name, mutate := range cases {
+		input := scheduledNoiseMeter()
+		mutate(&input)
+		if err := validateNoiseMeter(input); !errors.Is(err, ErrInvalid) {
+			t.Errorf("expected %s to be invalid, got %v", name, err)
+		}
+	}
+	badTime := scheduledNoiseMeter()
+	noon := "noon"
+	badTime.ScheduleStartTime = &noon
+	if err := validateNoiseMeter(badTime); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("expected a non-HH:MM time to be invalid, got %v", err)
 	}
 }
 

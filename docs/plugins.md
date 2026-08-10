@@ -86,7 +86,7 @@ At most one mark occupies a corner: the highest priority wins, then the stable i
 
 ## Noise Meter
 
-Noise Meter watches how loud the room in front of a screen is and shows a bottom bar only while it stays too loud. It is measured on the player itself: an ordinary USB microphone plugged into the mini PC, read through the player's own audio stack. An installation can create multiple instances, each with its own name, message, warning level, too loud level, sensitivity, show delay, hide delay, display mode, height, enabled state, and targets. Targets use the same four scopes as Countdown Bar.
+Noise Meter watches how loud the room in front of a screen is and shows a bottom bar only while it stays too loud. It is measured on the player itself: an ordinary USB microphone plugged into the mini PC, read through the player's own audio stack. An installation can create multiple instances, each with its own name, message, warning level, too loud level, sensitivity, show delay, hide delay, display mode, height, optional display window, enabled state, and targets. Targets use the same four scopes as Countdown Bar.
 
 Noise Meter currently runs on **Linux Player only**. Android Player ignores the plugin type, so a configured meter is inert there rather than an error.
 
@@ -116,6 +116,16 @@ Studio requires the warning level to be below the too loud level, and both the s
 If there is no microphone, permission is refused, the input disappears, or the audio context fails, the meter fails open — the bar hides, signage continues untouched, the failure is logged, and the player retries about every ten seconds while an applicable instance remains enabled. It also listens for device changes, so a microphone plugged back in recovers in seconds. Unplugging one takes the bar down rather than freezing it at the last level.
 
 Because a screen has one microphone, only one meter can run on it. When more than one enabled instance applies, the server projects the lowest stable instance ID and the player picks the same one, rather than exposing another priority for operators to tune.
+
+### When the bar can show
+
+By default a too-loud room may raise the bar at any time. An instance can instead name a window: days of the week, a start, an end, and an IANA timezone. Outside the window the room is still measured and history still accumulates — the bar stays down and nothing else changes.
+
+The window is half-open, so a start of `08:00` is inside it and an end of `15:30` is not, and two adjacent windows cannot both claim the same minute. An end at or before the start is an overnight window belonging to the start day, the same daily-window semantics active hours and content schedules use. Studio requires a window that is switched on to name at least one day and two different times; one that could never open would hide the bar permanently.
+
+The Player evaluates the window locally against its own corrected clock, so a temporary server outage cannot leave the bar showing outside its window. A window that cannot be read — an unknown timezone, an unparseable time — is treated as no window at all: a room that is too loud is the condition this plugin exists to report, and a bad setting must not be what silences it. When nothing else wants the microphone, a closed window also stops capture rather than measuring for a bar that cannot appear.
+
+Emergency alerts are unaffected: an alert ticker outranks the Noise Meter whether or not its window is open.
 
 ### Noise history
 

@@ -1617,11 +1617,55 @@ const noiseMeterSchema = z
         "Choose 1, 3, 7, 14, or 30 days.",
       ),
     historyActiveHoursOnly: z.boolean(),
+    scheduleEnabled: z.boolean(),
+    scheduleDaysOfWeek: z.array(z.coerce.number().int().min(0).max(6)),
+    scheduleStartTime: z.string(),
+    scheduleEndTime: z.string(),
+    scheduleTimezone: z
+      .string({ error: "Enter an IANA timezone such as America/Chicago." })
+      .trim()
+      .min(1, "Enter an IANA timezone such as America/Chicago.")
+      .max(100, "Enter an IANA timezone such as America/Chicago."),
     enabled: z.boolean(),
     targetScope: z.enum(["all", "screens", "sync_groups", "locations"]),
     targetIds: z.array(z.string()),
   })
   .superRefine((value, context) => {
+    if (value.scheduleEnabled) {
+      // A window that can never open would hide the bar permanently, which is
+      // never what setting one meant.
+      if (!/^\d{2}:\d{2}$/.test(value.scheduleStartTime)) {
+        context.addIssue({
+          code: "custom",
+          path: ["scheduleStartTime"],
+          message: "Choose a start time.",
+        });
+      }
+      if (!/^\d{2}:\d{2}$/.test(value.scheduleEndTime)) {
+        context.addIssue({
+          code: "custom",
+          path: ["scheduleEndTime"],
+          message: "Choose an end time.",
+        });
+      }
+      if (
+        value.scheduleStartTime &&
+        value.scheduleStartTime === value.scheduleEndTime
+      ) {
+        context.addIssue({
+          code: "custom",
+          path: ["scheduleEndTime"],
+          message: "The window must start and end at different times.",
+        });
+      }
+      if (value.scheduleDaysOfWeek.length === 0) {
+        context.addIssue({
+          code: "custom",
+          path: ["scheduleDaysOfWeek"],
+          message: "Choose at least one day.",
+        });
+      }
+    }
     if (value.warningLevel >= value.loudLevel) {
       context.addIssue({
         code: "custom",
@@ -1654,6 +1698,12 @@ const noiseMeterDefaults: NoiseMeterFormValues = {
   historyEnabled: true,
   historyRetentionDays: 7,
   historyActiveHoursOnly: true,
+  // No window by default: the bar shows whenever the room is too loud.
+  scheduleEnabled: false,
+  scheduleDaysOfWeek: [1, 2, 3, 4, 5],
+  scheduleStartTime: "08:00",
+  scheduleEndTime: "15:30",
+  scheduleTimezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
   enabled: true,
   targetScope: "all",
   targetIds: [],
@@ -1669,6 +1719,9 @@ function noiseMeterSummary(instance: NoiseMeter) {
     `hides below ${instance.warningLevel}`,
     `after ${instance.clearHoldMs / 1000}s`,
     instance.displayMode === "push" ? "push" : "overlay",
+    ...(instance.scheduleEnabled && instance.scheduleStartTime
+      ? [`${instance.scheduleStartTime}–${instance.scheduleEndTime}`]
+      : []),
   ].join(" · ");
 }
 
@@ -1845,6 +1898,11 @@ export function NoiseMeterEditorPage() {
       historyEnabled: value.historyEnabled,
       historyRetentionDays: value.historyRetentionDays,
       historyActiveHoursOnly: value.historyActiveHoursOnly,
+      scheduleEnabled: value.scheduleEnabled,
+      scheduleDaysOfWeek: value.scheduleDaysOfWeek ?? [],
+      scheduleStartTime: value.scheduleStartTime ?? "08:00",
+      scheduleEndTime: value.scheduleEndTime ?? "15:30",
+      scheduleTimezone: value.scheduleTimezone,
       enabled: value.enabled,
       targetScope: value.targetScope,
       targetIds: value.targetIds,
@@ -1866,6 +1924,17 @@ export function NoiseMeterEditorPage() {
   // select here is held with watch/setValue instead.
   const displayMode = watch("displayMode");
   const historyRetentionDays = watch("historyRetentionDays");
+  const scheduleEnabled = watch("scheduleEnabled");
+  const windowDays = (watch("scheduleDaysOfWeek") ?? []).map(Number);
+  const toggleWindowDay = (day: number) => {
+    const next = windowDays.includes(day)
+      ? windowDays.filter((value) => value !== day)
+      : [...windowDays, day];
+    setValue("scheduleDaysOfWeek", next, {
+      shouldDirty: true,
+      shouldValidate: Boolean(errors.scheduleDaysOfWeek),
+    });
+  };
   const targetScope = watch("targetScope");
   const targetSource = useTargetSource(targetScope);
   const chosenTargets = watch("targetIds") ?? [];
@@ -1883,6 +1952,17 @@ export function NoiseMeterEditorPage() {
       historyEnabled: values.historyEnabled,
       historyRetentionDays: values.historyRetentionDays,
       historyActiveHoursOnly: values.historyActiveHoursOnly,
+      scheduleEnabled: values.scheduleEnabled,
+      // Bounds travel only with a window that is switched on, so switching it
+      // off leaves nothing half-configured behind.
+      scheduleDaysOfWeek: values.scheduleEnabled
+        ? values.scheduleDaysOfWeek
+        : [],
+      scheduleStartTime: values.scheduleEnabled
+        ? values.scheduleStartTime
+        : null,
+      scheduleEndTime: values.scheduleEnabled ? values.scheduleEndTime : null,
+      scheduleTimezone: values.scheduleTimezone,
       enabled: values.enabled,
       targetScope: values.targetScope,
       targetIds: values.targetScope === "all" ? [] : values.targetIds,
@@ -2034,6 +2114,75 @@ export function NoiseMeterEditorPage() {
             />
           </div>
           <Checkbox label="Enabled" {...register("enabled")} />
+        </Panel>
+
+        <Panel className="plugin-form__section">
+          <SectionHeader
+            title="When the bar can show"
+            description="The room is measured either way. This decides only when a too-loud room may put the bar on screen."
+          />
+          <Checkbox
+            label="Only show during a set time window"
+            {...register("scheduleEnabled")}
+          />
+          {scheduleEnabled && (
+            <>
+              <div className="plugin-form__row">
+                <FormField
+                  id="noise-meter-window-start"
+                  label="From"
+                  type="time"
+                  error={errors.scheduleStartTime?.message}
+                  {...register("scheduleStartTime")}
+                />
+                <FormField
+                  id="noise-meter-window-end"
+                  label="Until"
+                  type="time"
+                  hint="An end before the start runs the window overnight."
+                  error={errors.scheduleEndTime?.message}
+                  {...register("scheduleEndTime")}
+                />
+                <FormField
+                  id="noise-meter-window-timezone"
+                  label="Timezone"
+                  placeholder="America/Chicago"
+                  error={errors.scheduleTimezone?.message}
+                  {...register("scheduleTimezone")}
+                />
+              </div>
+              <div className="plugin-field-group">
+                <span className="field__label" id="noise-meter-days-label">
+                  Days of the week
+                </span>
+                <div
+                  className="countdown-weekdays"
+                  role="group"
+                  aria-labelledby="noise-meter-days-label"
+                >
+                  {scheduleWeekdays.map((day) => (
+                    <button
+                      type="button"
+                      key={day.value}
+                      aria-pressed={windowDays.includes(day.value)}
+                      onClick={() => toggleWindowDay(day.value)}
+                    >
+                      {day.short}
+                    </button>
+                  ))}
+                </div>
+                {errors.scheduleDaysOfWeek && (
+                  <span className="field__error">
+                    {errors.scheduleDaysOfWeek.message}
+                  </span>
+                )}
+              </div>
+              <p className="plugin-form__note">
+                Outside the window the player keeps measuring and the bar stays
+                down. An emergency alert is never affected by this window.
+              </p>
+            </>
+          )}
         </Panel>
 
         <Panel className="plugin-form__section">

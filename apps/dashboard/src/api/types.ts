@@ -1228,6 +1228,17 @@ export type NoiseMeterInput = {
   historyEnabled: boolean;
   historyRetentionDays: number;
   historyActiveHoursOnly: boolean;
+  /**
+   * The optional window during which the bar may appear. It governs the bar
+   * alone — measurement and history keep their own rules — and an end at or
+   * before the start is an overnight window.
+   */
+  scheduleEnabled: boolean;
+  /** Sunday 0 through Saturday 6. */
+  scheduleDaysOfWeek: number[];
+  scheduleStartTime?: string | null;
+  scheduleEndTime?: string | null;
+  scheduleTimezone: string;
   enabled: boolean;
 } & PluginTargeting;
 
