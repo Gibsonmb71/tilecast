@@ -20,7 +20,7 @@ import {
   session,
   type Session,
 } from "electron";
-import type { NativeImage } from "electron";
+import type { NativeImage, WebContents } from "electron";
 import { promises as fs } from "fs";
 import * as path from "path";
 import { pathToFileURL } from "url";
@@ -128,6 +128,14 @@ function configureWebsiteSession(
 ): void {
   if (configuredWebsiteSessions.has(websiteSession)) return;
   configuredWebsiteSessions.add(websiteSession);
+  // Website content never captures. Everything else keeps the behavior it had
+  // before a handler existed here.
+  websiteSession.setPermissionRequestHandler(
+    (_contents, permission, callback) => callback(permission !== "media"),
+  );
+  websiteSession.setPermissionCheckHandler(
+    (_contents, permission) => permission !== "media",
+  );
   const stripsThirdParty = policy === "first_party";
   websiteSession.webRequest.onBeforeSendHeaders(
     { urls: ["*://*/*"] },
@@ -432,6 +440,61 @@ function setupMediaProtocol(): void {
     }
     return net.fetch(resolved.url, { headers });
   });
+}
+
+/**
+ * Media capture policy.
+ *
+ * Exactly one surface may open a microphone: the trusted player renderer, which
+ * loads static/index.html from disk and is the only place the Noise Meter runs.
+ * Everything else is refused — including camera capture for that same renderer,
+ * which nothing in Tilecast asks for and which a permission granted by media
+ * type rather than by name would otherwise hand over with the microphone.
+ *
+ * Website items render in <webview> under their own partitioned sessions and
+ * are denied capture outright. A site can ask; it never gets a room's audio.
+ * Non-capture permissions keep the behavior they had before this handler
+ * existed, because setting a handler replaces the default for every permission
+ * rather than only for the one being tightened.
+ */
+function isPlayerRenderer(contents: WebContents | null | undefined): boolean {
+  return Boolean(
+    contents &&
+    window &&
+    !window.isDestroyed() &&
+    contents.id === window.webContents.id,
+  );
+}
+
+function microphoneOnly(mediaTypes: string[] | undefined): boolean {
+  return (
+    Array.isArray(mediaTypes) &&
+    mediaTypes.length > 0 &&
+    mediaTypes.every((type) => type === "audio")
+  );
+}
+
+function applyMediaPermissionPolicy(): void {
+  session.defaultSession.setPermissionRequestHandler(
+    (contents, permission, callback, details) => {
+      const audioOnly = microphoneOnly(
+        (details as { mediaTypes?: string[] }).mediaTypes,
+      );
+      callback(
+        permission === "media" && isPlayerRenderer(contents) && audioOnly,
+      );
+    },
+  );
+  session.defaultSession.setPermissionCheckHandler(
+    (contents, permission, _origin, details) => {
+      const mediaType = (details as { mediaType?: string }).mediaType;
+      return (
+        permission === "media" &&
+        isPlayerRenderer(contents) &&
+        mediaType === "audio"
+      );
+    },
+  );
 }
 
 function guardWebContents(): void {
@@ -808,6 +871,7 @@ app.whenReady().then(async () => {
   applyLinuxKioskPolicy(activeLinuxKioskPolicy);
 
   setupMediaProtocol();
+  applyMediaPermissionPolicy();
   guardWebContents();
 
   ipcMain.on(
@@ -826,6 +890,30 @@ app.whenReady().then(async () => {
     },
   );
   ipcMain.on("website-recovered", () => runtime?.onWebsiteRecovered());
+  // Noise Meter state and completed history buckets. The renderer measures;
+  // the runtime owns the durable queue and the heartbeat that drains it.
+  ipcMain.on(
+    "noise-meter-report",
+    (_event, data: { status?: string; level?: number; bucket?: unknown }) => {
+      void runtime?.onNoiseMeterReport({
+        status: typeof data?.status === "string" ? data.status : undefined,
+        level: typeof data?.level === "number" ? data.level : null,
+        bucket: (data?.bucket ?? null) as never,
+      });
+    },
+  );
+  // A Noise Meter that cannot open a microphone keeps signage running and says
+  // so here. The payload is bounded because it crosses the renderer boundary,
+  // and it carries a reason rather than anything measured.
+  ipcMain.on(
+    "noise-meter-diagnostic",
+    (_event, data: { message?: unknown; detail?: unknown }) => {
+      log.warn("noise meter", {
+        message: String(data?.message ?? "").slice(0, 200),
+        detail: JSON.stringify(data?.detail ?? {}).slice(0, 500),
+      });
+    },
+  );
   ipcMain.handle("setup-server-url", async (_event, url: string) => {
     const result = normalizeServerUrl(String(url));
     if (!result.ok || !result.url) {

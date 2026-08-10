@@ -31,10 +31,13 @@ import { ActivityPage } from "./pages/ActivityPage";
 import {
   BrandBugEditorPage,
   BrandBugsPage,
+  NoiseMeterEditorPage,
+  NoiseMetersPage,
   CountdownBarEditorPage,
   CountdownBarsPage,
   PluginsPage,
 } from "./pages/PluginsPage";
+import { NoiseMeterHistoryPage } from "./pages/NoiseMeterHistoryPage";
 import { EmergencyAlertsPage } from "./pages/EmergencyAlertsPage";
 import { ApprovalsPage } from "./pages/ApprovalsPage";
 import {
@@ -436,6 +439,26 @@ export const studioRoutes: RouteObject[] = [
             path: "brand-bug/:id",
             element: <BrandBugEditorPage />,
             handle: { breadcrumb: "Brand Bug instance" },
+          },
+          {
+            path: "noise-meter",
+            element: <NoiseMetersPage />,
+            handle: { breadcrumb: "Noise Meter" },
+          },
+          {
+            path: "noise-meter/new",
+            element: <NoiseMeterEditorPage />,
+            handle: { breadcrumb: "New instance" },
+          },
+          {
+            path: "noise-meter/:id",
+            element: <NoiseMeterEditorPage />,
+            handle: { breadcrumb: "Noise Meter instance" },
+          },
+          {
+            path: "noise-meter/:id/history",
+            element: <NoiseMeterHistoryPage />,
+            handle: { breadcrumb: "History" },
           },
         ],
       },

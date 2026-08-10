@@ -268,6 +268,117 @@
           max-width: 100%;
         }
       }
+      /* The Noise Meter shares the bar slot and the push geometry with the
+         other bottom bars. It sits between them in z-order the way it sits
+         between them in priority: above a countdown, below an alert. The three
+         zones are solid and fixed — normal, getting loud, too loud — rather
+         than one blended gradient, so the reading is a position on a scale
+         instead of a colour to interpret. */
+      #noise-meter {
+        position: absolute;
+        display: flex;
+        visibility: hidden;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        height: var(--plugin-height, 96px);
+        z-index: 25;
+        box-sizing: border-box;
+        align-items: center;
+        gap: 1.5vw;
+        padding: 0 2.5vw;
+        background: rgba(13, 20, 27, 0.96);
+        color: #fff;
+        border-top: 1px solid rgba(255, 255, 255, 0.24);
+        font-size: clamp(16px, calc(var(--plugin-height, 96px) * 0.24), 40px);
+        font-weight: 650;
+        letter-spacing: 0.08em;
+        line-height: 1;
+        text-transform: uppercase;
+        transform: translateY(100%);
+        transition: transform 240ms ease;
+        --noise-warning: 60%;
+        --noise-loud: 80%;
+      }
+      #noise-meter.visible {
+        visibility: visible;
+        transform: translateY(0);
+      }
+      #noise-meter .noise-meter__label,
+      #noise-meter .noise-meter__warning {
+        flex: none;
+        white-space: nowrap;
+      }
+      #noise-meter .noise-meter__warning {
+        padding: 0.3em 0.6em;
+        background: #b91c1c;
+        color: #fff;
+        font-weight: 800;
+      }
+      #noise-meter .noise-meter__scale {
+        position: relative;
+        flex: 1;
+        height: 42%;
+        min-height: 14px;
+        border: 1px solid rgba(255, 255, 255, 0.28);
+      }
+      .noise-meter__zone {
+        position: absolute;
+        top: 0;
+        bottom: 0;
+      }
+      .noise-meter__zone--normal {
+        left: 0;
+        width: var(--noise-warning);
+        background: #15803d;
+      }
+      .noise-meter__zone--warning {
+        left: var(--noise-warning);
+        width: calc(var(--noise-loud) - var(--noise-warning));
+        background: #b45309;
+      }
+      .noise-meter__zone--loud {
+        left: var(--noise-loud);
+        right: 0;
+        background: #b91c1c;
+      }
+      /* The current level. A crisp column rather than a needle or a dial: this
+         is a position on a fixed scale, not an instrument reading. */
+      .noise-meter__marker {
+        position: absolute;
+        top: -22%;
+        bottom: -22%;
+        left: 0;
+        width: 6px;
+        margin-left: -3px;
+        background: #fff;
+        box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.45);
+        transition: left 90ms linear;
+      }
+      /* The warning label is emphasised only as the bar arrives. A bar that
+         keeps flashing stops being read. */
+      #noise-meter.noise-meter--entering .noise-meter__warning {
+        animation: noise-meter-attention 400ms ease-in-out 3 alternate;
+      }
+      @keyframes noise-meter-attention {
+        from {
+          background: #b91c1c;
+        }
+        to {
+          background: #ef4444;
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        #noise-meter {
+          transition: none;
+        }
+        .noise-meter__marker {
+          transition: none;
+        }
+        #noise-meter.noise-meter--entering .noise-meter__warning {
+          animation: none;
+        }
+      }
       /* Brand Bug marks sit above the countdown bar's z-index because a
          bottom-corner mark is lifted clear of the bar rather than hidden by
          it. The layer never takes input: the player has no pointer. */
@@ -442,6 +553,16 @@
         <span class="ticker-track"><span class="ticker-message"></span></span>
       </span>
     </div>
+    <div id="noise-meter" role="status">
+      <span class="noise-meter__label">Noise level</span>
+      <span class="noise-meter__scale" aria-hidden="true">
+        <span class="noise-meter__zone noise-meter__zone--normal"></span>
+        <span class="noise-meter__zone noise-meter__zone--warning"></span>
+        <span class="noise-meter__zone noise-meter__zone--loud"></span>
+        <span class="noise-meter__marker"></span>
+      </span>
+      <span class="noise-meter__warning">Too loud</span>
+    </div>
     <div id="brand-bugs" aria-hidden="true"></div>
     <div id="identify"></div>
     <script src="../dist/renderer/playback-policy.js"></script>
@@ -449,6 +570,7 @@
     <script src="../dist/renderer/countdown-bar-resolver.js"></script>
     <script src="../dist/renderer/alert-ticker-resolver.js"></script>
     <script src="../dist/renderer/brand-bug-resolver.js"></script>
+    <script src="../dist/renderer/noise-meter.js"></script>
     <script src="../dist/renderer/renderer.js"></script>
     <script src="../dist/renderer/synchronized-video.js"></script>
     <script src="../dist/renderer/outside-hours.js"></script>

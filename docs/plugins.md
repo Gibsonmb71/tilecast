@@ -84,15 +84,88 @@ Sizes are expressed against the screen rather than in pixels, so one instance re
 
 At most one mark occupies a corner: the highest priority wins, then the stable instance ID. Marks in different corners appear together, so a logo can hold the top right while a legal notice holds the bottom left. Targets use the same four scopes as Countdown Bar.
 
+## Noise Meter
+
+Noise Meter watches how loud the room in front of a screen is and shows a bottom bar only while it stays too loud. It is measured on the player itself: an ordinary USB microphone plugged into the mini PC, read through the player's own audio stack. An installation can create multiple instances, each with its own name, message, warning level, too loud level, sensitivity, show delay, hide delay, display mode, height, enabled state, and targets. Targets use the same four scopes as Countdown Bar.
+
+Noise Meter currently runs on **Linux Player only**. Android Player ignores the plugin type, so a configured meter is inert there rather than an error.
+
+### What stays on the player
+
+Nothing about the audio leaves the device. The player opens its default microphone, reads a running window of the waveform, reduces it to one number, and overwrites the window. It creates no recording, keeps no audio, sends no samples to the Tilecast server, and never plays the microphone back through the display's speakers. The only thing that travels out of the renderer is a diagnostic line when the microphone cannot be opened.
+
+Microphone access is granted by the Linux player's main process to exactly one surface — the trusted player renderer — and only for audio. Website items, which render in `<webview>` under their own partitioned sessions, are refused capture outright.
+
+### The scale is relative
+
+The displayed value is a **Noise Level** from 0 to 100, relative to whatever microphone happens to be plugged into that player. It is not dB, dBA, SPL, or any other calibrated physical measurement, and Studio, the manifest, and the bar all avoid presenting it as one: a generic USB microphone has no known gain or sensitivity to calibrate against. Internally the player computes an RMS level, expresses it in dBFS against a fixed floor, and maps that onto 0-100. Sensitivity is a percentage applied before normalization, for a microphone that reads quiet or hot; it is not a calibration step.
+
+### Showing and hiding
+
+Two thresholds and two delays, so the bar cannot flap:
+
+1. Below the too loud level, the bar is hidden.
+2. A brief spike does nothing. The level has to stay at or above the too loud level for the configured show delay.
+3. Once it does, the bar slides up from the bottom and the meter keeps moving in real time.
+4. When the level falls below the warning level, the hide timer starts.
+5. The bar hides only after the level has stayed below that level for the configured hide delay.
+6. A room that gets loud again during that wait cancels the timer and the bar stays up.
+
+Studio requires the warning level to be below the too loud level, and both the server and the player enforce it: one threshold used for both directions is exactly what makes a bar blink on and off while a room hovers around it.
+
+If there is no microphone, permission is refused, the input disappears, or the audio context fails, the meter fails open — the bar hides, signage continues untouched, the failure is logged, and the player retries about every ten seconds while an applicable instance remains enabled. It also listens for device changes, so a microphone plugged back in recovers in seconds. Unplugging one takes the bar down rather than freezing it at the last level.
+
+Because a screen has one microphone, only one meter can run on it. When more than one enabled instance applies, the server projects the lowest stable instance ID and the player picks the same one, rather than exposing another priority for operators to tune.
+
+### Noise history
+
+History is on by default and stores derived measurements so the plugin can draw graphs, report statistics, and export CSV. It changes nothing about what is measured: the live analysis stays on the player, and no audio, waveform, or sample is recorded, kept, or uploaded.
+
+The player aggregates its live readings into fixed ten-second buckets while history is enabled. Each completed bucket carries the average and peak relative level, how much of the bucket the microphone actually covered, how long it spent in the warning and too-loud bands, and how many times the meter tripped. Durations are accumulated as they happen rather than inferred afterwards from an average — an average of 70 cannot say whether a room spent ten seconds there or five seconds at 40 and five at 100. Bucket boundaries are a fixed grid rather than "ten seconds after the last one", so a restart, a reconnect, or a retry produces the same slots instead of overlapping windows. Ten seconds is the internal resolution and is not configurable.
+
+Completed buckets are handed to the player's trusted core, which owns a durable local queue. The queue survives renderer reloads, player restarts, network outages, and server downtime, and it is bounded: records past the configured retention window are dropped, and a hard ceiling of about a week of continuous monitoring keeps a permanently offline player from filling a disk.
+
+### Delivery on the ordinary heartbeat
+
+History travels on the standard authenticated Player heartbeat. There is no upload interval, no second heartbeat, no websocket stream, and no request per bucket — microphone processing runs fifteen to twenty times a second and none of that rate reaches the network.
+
+Each heartbeat carries at most 120 buckets, twenty minutes of history. A longer backlog stays queued and drains over subsequent ordinary heartbeats; the cadence is never shortened to catch up. A batch leaves the local queue only after the server's heartbeat response says how many records it has taken responsibility for, so a timeout, a 5xx, or a lost response retains the exact batch for the next attempt. Storage is keyed on screen plus bucket start, so a retry after the server had already stored the records is harmless.
+
+The screen a record belongs to comes from the authenticated device credential. A player cannot submit history for another screen, and records stay attributed to the right screen when one Noise Meter instance targets many. A malformed history section is dropped and named in `data.ignoredFields` rather than costing the heartbeat's liveness and playback state; the player simply retries that batch.
+
+Records that cannot be believed — a NaN level, a timestamp from next year, durations longer than the bucket that holds them — are refused by the player before they are stored and again by the server on arrival. The server counts them as consumed so a player cannot loop forever on a bucket it can never get accepted.
+
+### Active hours and retention
+
+`Collect only during active hours` is on by default. Outside the player's configured active hours the screen is resting, so nothing wants the microphone: the player stops capture entirely, stops the MediaStream tracks, closes the AudioContext, and creates no buckets. It stops listening rather than measuring and discarding.
+
+Retention is 1, 3, 7, 14, or 30 days, defaulting to 7. It governs the server's stored records and the player's own unsent queue, so both ends expire the same window. Expired records are removed automatically by the same bounded maintenance pass that expires Activity data; no administrator has to delete anything, and shortening the window expires the now-old records without touching anything newer.
+
+### History in Studio
+
+**Plugins → Noise Meter → History** shows Today, Yesterday, 7 days, or 30 days. Above the graph: average noise level, peak noise level, time too loud, and warning events, with time in the normal and warning bands, their share of monitored time, the longest continuous too-loud event, the loudest fifteen minutes, and total monitored time beside them. Warning events are the count the player recorded when its state machine entered the loud state, not an estimate from how many buckets look red.
+
+The timeline graph draws average and peak against the instance's own two thresholds. The server aggregates to the resolution the range needs — one minute for a day, fifteen minutes for a week, an hour for a month — so a browser never downloads a month of ten-second records; the stored records themselves are untouched until they expire. Periods with no monitoring are left blank rather than drawn as silence. Multi-day ranges add a daily comparison by average level, time too loud, or warning events, and a day with no data is omitted rather than shown as zero.
+
+Because one instance can target several screens, History names the screen it is showing, and offers a selector plus a combined view when more than one screen has measurements. A combined view says so: levels are relative to each player's own microphone, so comparing rooms is a comparison of different instruments as much as of different rooms.
+
+CSV export covers the selected range and screen at ten-second, one-minute, or daily granularity. It is generated server-side and streamed, honours the same retention and authorization, and never materializes an unbounded dataset in the browser.
+
+### Bar height and geometry
+
+Noise Meter supports `overlay` and `push` exactly like Countdown Bar, and its default height is 96 pixels. The bar shows a fixed three-zone scale — green normal, yellow getting loud, red too loud — with a marker at the current level, `NOISE LEVEL` on the left, and the configured message (or `TOO LOUD`) on the right. The warning label is emphasised briefly as the bar arrives and then stays still; reduced-motion settings suppress the entrance emphasis and the marker's transition where the platform exposes that preference.
+
 ## Player behavior
 
-The manifest carries a discriminated `plugins` array. Countdown Bar uses `type: "countdown_bar"`, an Emergency Alerts ticker uses `type: "alert_ticker"`, and Brand Bug uses `type: "brand_bug"`, all at `version: 1`; a Player ignores a type it does not implement. The complete timing rule is cached in `manifest-active.json`; recurrence and date windows are evaluated locally with the configured timezone, so a temporary server outage does not stop future show or hide transitions.
+The manifest carries a discriminated `plugins` array. Countdown Bar uses `type: "countdown_bar"`, an Emergency Alerts ticker uses `type: "alert_ticker"`, Brand Bug uses `type: "brand_bug"`, and Noise Meter uses `type: "noise_meter"`, all at `version: 1`; a Player ignores a type it does not implement. The complete timing rule is cached in `manifest-active.json`; recurrence and date windows are evaluated locally with the configured timezone, so a temporary server outage does not stop future show or hide transitions.
 
 Both the Linux and Android players render the bar, and both resolve the schedule from the cached manifest with the same weekly, one-time, daylight-saving, completion, priority, and fill rules. The two implementations are covered by matching test cases so a divergence surfaces as a failure rather than as a difference between screens.
 
 ### One bar slot
 
-The two plugins share one bar slot, and an active alert ticker takes it: a bar counting down to lunch must never be what a screen is showing instead of a tornado warning. The countdown is not lost — it returns as soon as the alert clears, without touching playback either way.
+Three plugins share one bar slot, in a fixed order: an emergency alert ticker, then Noise Meter, then Countdown Bar. An active alert ticker takes the strip from either of the others — a bar counting down to lunch, or one reporting a loud cafeteria, must never be what a screen is showing instead of a tornado warning. A room that is too loud takes it from a countdown, which is the one of the three that can wait.
+
+Nothing is destroyed by losing the strip. Each surface keeps resolving itself while another owns it, so an emergency that clears over a still-loud room shows the Noise Meter again immediately, and a room that settles returns an active Countdown Bar — without touching playback in any direction. A visible Brand Bug in a bottom corner is lifted by whichever bar currently holds the strip.
 
 An alert ticker carries the alert text and an `expiresAt` rather than a schedule. The server publishes the ticker only while it is answering an alert and withdraws it by revising the manifest, but a Player on a cached manifest has no poller to hear from: it takes the bar down itself at the expiry, using its own corrected clock. An unreadable or passed expiry hides the bar, so the surface fails toward showing nothing rather than toward presenting a stale alert as current. Because the message is longer than a bar is wide, it scrolls at the configured speed while the severity stays fixed at the leading edge; where the platform exposes a reduced-motion preference, the message is clipped instead of scrolled.
 
@@ -104,7 +177,7 @@ Brand Bug always overlays and never reflows the content stage. Its corner elemen
 
 A logo that becomes unavailable between saving an instance and building a manifest degrades to that instance's text; if the instance had no text, the mark is omitted from the manifest instead of publishing an empty corner. Neither case fails the manifest.
 
-Brand Bug is drawn by Linux Player only. Android Player ignores plugin types it does not implement, so a configured mark is inert there rather than an error; drawing it on Android is outstanding work.
+Brand Bug is drawn by Linux Player only. Android Player ignores plugin types it does not implement, so a configured mark is inert there rather than an error; drawing it on Android is outstanding work. Noise Meter is Linux Player only for the same reason and additionally by design: Android microphone capture is out of scope.
 
 The Player estimates server clock offset when a manifest is received. The cached offset is reconstructed from the manifest's `serverTime` and local `storedAt`, so offline restarts retain the last known correction instead of treating the old server timestamp as the current time.
 
@@ -124,5 +197,15 @@ Dashboard reads require a valid Tilecast session. Mutations additionally require
 - `POST /api/v1/plugins/brand-bug/instances`
 - `PUT /api/v1/plugins/brand-bug/instances/{id}`
 - `DELETE /api/v1/plugins/brand-bug/instances/{id}`
+- `GET /api/v1/plugins/noise-meter/instances`
+- `GET /api/v1/plugins/noise-meter/instances/{id}`
+- `POST /api/v1/plugins/noise-meter/instances`
+- `PUT /api/v1/plugins/noise-meter/instances/{id}`
+- `DELETE /api/v1/plugins/noise-meter/instances/{id}`
+- `GET /api/v1/plugins/noise-meter/instances/{id}/history/summary`
+- `GET /api/v1/plugins/noise-meter/instances/{id}/history/series`
+- `GET /api/v1/plugins/noise-meter/instances/{id}/history/daily`
+- `GET /api/v1/plugins/noise-meter/instances/{id}/history/screens`
+- `GET /api/v1/plugins/noise-meter/instances/{id}/history/export.csv`
 
 All successful JSON responses use the standard `{ "data": ... }` envelope.

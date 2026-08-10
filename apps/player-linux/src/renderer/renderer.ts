@@ -162,6 +162,24 @@ interface TilecastBridge {
   /** `zoneId` identifies which layout zone produced the evidence. */
   reportProgress(itemId: string | null, kind: string, zoneId?: string): void;
   reportPlaybackError(itemId: string | null, message: string): void;
+  /**
+   * The Noise Meter's only channel out of the renderer. It carries a diagnostic
+   * string, never a level, a sample, or anything derived from the audio itself.
+   */
+  reportNoiseMeterDiagnostic(
+    message: string,
+    detail?: Record<string, unknown>,
+  ): void;
+  /**
+   * The Noise Meter's state and, once every ten seconds, one completed
+   * aggregate. Derived numbers only: the stream, the analyser, and every sample
+   * stay in this renderer.
+   */
+  reportNoiseMeter(report: {
+    status: string;
+    level?: number | null;
+    bucket?: TilecastNoiseHistoryBucket | null;
+  }): void;
   reportWebsiteRecovered(): void;
   submitServerUrl(url: string): Promise<{ ok: boolean; error?: string }>;
   onDiscoveredServer(
@@ -233,10 +251,31 @@ interface RendererBrandBugPlugin {
   };
 }
 
+interface RendererNoiseMeterPlugin {
+  id: string;
+  type: "noise_meter";
+  version: 1;
+  config: {
+    name?: string;
+    message?: string;
+    warningLevel: number;
+    loudLevel: number;
+    sensitivity: number;
+    triggerHoldMs: number;
+    clearHoldMs: number;
+    displayMode: "overlay" | "push";
+    heightPx: number;
+    historyEnabled?: boolean;
+    historyRetentionDays?: number;
+    historyActiveHoursOnly?: boolean;
+  };
+}
+
 type RendererPlugin =
   | RendererCountdownBarPlugin
   | RendererAlertTickerPlugin
-  | RendererBrandBugPlugin;
+  | RendererBrandBugPlugin
+  | RendererNoiseMeterPlugin;
 
 declare const tilecast: TilecastBridge;
 
@@ -277,6 +316,13 @@ const alertTickerText = alertTickerBar.querySelector(
   ".ticker-message",
 ) as HTMLSpanElement;
 const brandBugLayer = document.getElementById("brand-bugs") as HTMLDivElement;
+const noiseMeterBar = document.getElementById("noise-meter") as HTMLDivElement;
+const noiseMeterMarker = noiseMeterBar.querySelector(
+  ".noise-meter__marker",
+) as HTMLSpanElement;
+const noiseMeterWarning = noiseMeterBar.querySelector(
+  ".noise-meter__warning",
+) as HTMLSpanElement;
 
 let frontLayer = layerA;
 let backLayer = layerB;
@@ -493,6 +539,29 @@ let activePlugins: RendererPlugin[] = [];
 let pluginClockOffsetMs = 0;
 let lastConfettiKey = "";
 
+// The Noise Meter is the one plugin surface that measures something, so it
+// carries state between ticks: the applicable instance, its microphone, the
+// smoothed level, and where the hysteresis has got to. All four are torn down
+// when no instance applies.
+let noiseMeterSettings: TilecastNoiseMeterSettings | null = null;
+let noiseMeterMachine: TilecastNoiseMeterMachine | null = null;
+let noiseMeterCapture: TilecastNoiseMeterCapture | null = null;
+const noiseMeterSmoother = tilecastNoiseMeter.createSmoother();
+let noiseMeterReading: TilecastNoiseMeterReading = {
+  state: "unavailable",
+  visible: false,
+  level: 0,
+};
+let noiseHistory: TilecastNoiseHistoryAggregator | null = null;
+/**
+ * Whether the screen is inside its configured active hours. `sleep` is the
+ * player's own canonical off-hours state, so the meter follows it rather than
+ * evaluating a second copy of the schedule.
+ */
+let playerAwake = true;
+/** Reported state, so a change is sent immediately rather than at the next bucket. */
+let lastReportedNoiseStatus = "";
+
 function triggerCountdownConfetti(
   selected: TilecastActiveCountdownBar | null,
 ): void {
@@ -538,10 +607,12 @@ function triggerCountdownConfetti(
 }
 
 /**
- * The bar slot holds one bar. An emergency ticker takes it whenever one is
- * active: a Countdown Bar counting down to lunch must never be what a screen is
- * showing instead of a tornado warning. The countdown is not lost — it returns
- * as soon as the alert clears, and playback is untouched throughout.
+ * The bar slot holds one bar, and three surfaces can want it. An emergency
+ * ticker takes it whenever one is active: a Countdown Bar counting down to
+ * lunch must never be what a screen is showing instead of a tornado warning. A
+ * room that is too loud comes next, and the countdown last. Nothing is lost by
+ * losing the strip — each surface keeps resolving itself and returns the moment
+ * the one above it stops — and playback is untouched throughout.
  */
 function updatePluginSurface(): void {
   const now = new Date();
@@ -561,6 +632,18 @@ function updatePluginSurface(): void {
     now,
     pluginClockOffsetMs,
   );
+  // The noise meter runs on its own faster loop; what is read here is only
+  // whether it currently wants the strip.
+  const meter = noiseMeterReading.visible ? noiseMeterSettings : null;
+  const owner = tilecastNoiseMeter.stripOwner({
+    alertTicker: ticker !== null,
+    noiseMeter: meter !== null,
+    countdownBar: true,
+  });
+  if (owner !== "noise_meter") {
+    noiseMeterBar.classList.remove("visible");
+    noiseMeterBar.classList.remove("noise-meter--entering");
+  }
   if (ticker) {
     countdownBar.classList.remove("visible");
     countdownBar.classList.remove("countdown-pulse");
@@ -572,6 +655,15 @@ function updatePluginSurface(): void {
   }
   alertTickerBar.classList.remove("visible");
   activeTickerKey = "";
+  if (owner === "noise_meter" && meter) {
+    // A countdown is not destroyed by losing the strip: it is resolved from the
+    // cached manifest every tick and returns as soon as the room is normal.
+    countdownBar.classList.remove("visible");
+    countdownBar.classList.remove("countdown-pulse");
+    showNoiseMeter(meter);
+    updateBrandBugs(marks, meter.heightPx);
+    return;
+  }
   // Schedule resolution lives in countdown-bar-resolver and brand-bug-resolver
   // so each surface and its unit tests share one implementation of the timezone,
   // window, and priority rules.
@@ -740,6 +832,222 @@ function showAlertTicker(ticker: TilecastActiveAlertTicker): void {
     return;
   }
   alertTickerBar.classList.add("visible");
+}
+
+/**
+ * Noise Meter surface.
+ *
+ * The bar is drawn from the resolved instance, and only the marker moves on the
+ * meter's own ~16Hz loop: rewriting the labels or the zone widths at that rate
+ * would be layout work sixteen times a second for a bar that has not changed.
+ * Nothing here reaches presentation state — the meter appears, moves, and
+ * disappears while the same media element stays mounted.
+ */
+let noiseMeterSignature = "";
+
+function showNoiseMeter(settings: TilecastNoiseMeterSettings): void {
+  document.documentElement.style.setProperty(
+    "--plugin-height",
+    `${settings.heightPx}px`,
+  );
+  contentStage.classList.toggle("plugin-push", settings.displayMode === "push");
+  const signature = `${settings.id}:${settings.message}:${settings.warningLevel}:${settings.loudLevel}:${settings.heightPx}`;
+  if (signature !== noiseMeterSignature) {
+    noiseMeterSignature = signature;
+    noiseMeterWarning.textContent = settings.message || "TOO LOUD";
+    // The three zones are fixed and read left to right: normal, getting loud,
+    // too loud. They are published as percentages so the scale is the same
+    // geometry the thresholds are expressed in.
+    noiseMeterBar.style.setProperty(
+      "--noise-warning",
+      `${settings.warningLevel}%`,
+    );
+    noiseMeterBar.style.setProperty("--noise-loud", `${settings.loudLevel}%`);
+  }
+  updateNoiseMeterMarker();
+  if (!noiseMeterBar.classList.contains("visible")) {
+    noiseMeterBar.classList.add("visible");
+    // A brief emphasis on the warning label when the bar arrives, and nothing
+    // after that: a bar that keeps flashing stops being read.
+    noiseMeterBar.classList.add("noise-meter--entering");
+    window.setTimeout(
+      () => noiseMeterBar.classList.remove("noise-meter--entering"),
+      1_400,
+    );
+  }
+}
+
+function updateNoiseMeterMarker(): void {
+  noiseMeterMarker.style.left = `${noiseMeterReading.level}%`;
+}
+
+/**
+ * Apply whatever the manifest now says about this screen's meter. Called on
+ * every plugin payload, so it has to be safe to call with the same instance
+ * repeatedly: an unchanged instance must not reopen the microphone, and a
+ * removed one must release it.
+ */
+function syncNoiseMeter(): void {
+  const settings = tilecastNoiseMeter.resolve(activePlugins);
+  if (settings === null && noiseMeterSettings === null && !noiseMeterCapture) {
+    // The overwhelmingly common case on a screen with no meter configured.
+    return;
+  }
+  const same =
+    settings !== null &&
+    noiseMeterSettings !== null &&
+    JSON.stringify(settings) === JSON.stringify(noiseMeterSettings);
+  if (same) return;
+  noiseMeterSettings = settings;
+  // Thresholds changed: the hysteresis and the open aggregate restart, because
+  // a bucket measured against two different thresholds is not one measurement.
+  noiseMeterMachine = settings
+    ? tilecastNoiseMeter.createStateMachine(settings)
+    : null;
+  if (settings === null) {
+    noiseMeterSignature = "";
+  }
+  applyNoiseMeterLifecycle();
+}
+
+/** History is kept only while it is wanted and the screen is awake enough. */
+function noiseHistoryWanted(): boolean {
+  const settings = noiseMeterSettings;
+  if (!settings || !settings.historyEnabled) return false;
+  return playerAwake || !settings.historyActiveHoursOnly;
+}
+
+/**
+ * Start or stop the microphone to match what is actually wanted right now.
+ *
+ * Outside active hours the screen is black, so the live bar has nothing to
+ * appear over. If history is also confined to active hours, nothing wants the
+ * microphone at all — and then the player genuinely stops listening: the tracks
+ * are stopped and the AudioContext is closed, rather than the readings being
+ * taken and quietly thrown away.
+ */
+function applyNoiseMeterLifecycle(): void {
+  const settings = noiseMeterSettings;
+  const wantsHistory = noiseHistoryWanted();
+  // The bar is a surface over content. A sleeping screen has no content for it.
+  const wantsLive = settings !== null && playerAwake;
+  if (!settings || (!wantsHistory && !wantsLive)) {
+    flushNoiseHistory();
+    noiseHistory = null;
+    noiseMeterCapture?.stop();
+    noiseMeterCapture = null;
+    noiseMeterSmoother.reset();
+    noiseMeterReading = { state: "unavailable", visible: false, level: 0 };
+    reportNoiseMeterState("inactive", null);
+    updatePluginSurface();
+    return;
+  }
+  if (wantsHistory) {
+    noiseHistory ??= tilecastNoiseMeter.createHistoryAggregator(settings);
+  } else if (noiseHistory) {
+    flushNoiseHistory();
+    noiseHistory = null;
+  }
+  if (!noiseMeterCapture) {
+    noiseMeterCapture = tilecastNoiseMeter.createCapture({
+      onLevel: onNoiseSample,
+      // A microphone problem is a player diagnostic, not a playback error: it
+      // must be findable in the logs without being reported as a failure of the
+      // content that is still playing perfectly well.
+      onDiagnostic: (message, detail) =>
+        tilecast.reportNoiseMeterDiagnostic(message, detail),
+    });
+    noiseMeterCapture.start();
+  }
+  updatePluginSurface();
+}
+
+/** Hand the part-finished bucket over rather than losing what it measured. */
+function flushNoiseHistory(): void {
+  const bucket = noiseHistory?.flush() ?? null;
+  if (bucket) {
+    tilecast.reportNoiseMeter({ status: currentNoiseStatus(), bucket });
+  }
+}
+
+function currentNoiseStatus(): string {
+  if (!noiseMeterCapture) return "inactive";
+  switch (noiseMeterReading.state) {
+    case "unavailable":
+      return "unavailable";
+    case "loud":
+    case "recovering":
+      return "loud";
+    default:
+      return "normal";
+  }
+}
+
+/**
+ * Report state to the trusted side. Called on a state change and once per
+ * completed bucket — never at the sampling rate. The microphone's rate has no
+ * relationship to how often anything leaves this renderer.
+ */
+function reportNoiseMeterState(
+  status: string,
+  level: number | null,
+  bucket: TilecastNoiseHistoryBucket | null = null,
+): void {
+  if (status === lastReportedNoiseStatus && bucket === null) return;
+  lastReportedNoiseStatus = status;
+  tilecast.reportNoiseMeter({ status, level, bucket });
+}
+
+function onNoiseSample(rms: number | null): void {
+  const settings = noiseMeterSettings;
+  const machine = noiseMeterMachine;
+  if (!settings || !machine) return;
+  const at = performance.now();
+  const level =
+    rms === null
+      ? null
+      : noiseMeterSmoother.push(
+          tilecastNoiseMeter.levelFromRms(rms, settings.sensitivity),
+          at,
+        );
+  if (rms === null) noiseMeterSmoother.reset();
+  const previous = noiseMeterReading;
+  noiseMeterReading = machine.update(level, at);
+  // A trigger is counted where it happens: the moment the state machine enters
+  // its loud state. Counting red buckets afterwards would report one long
+  // disturbance as dozens of events.
+  const enteredLoud =
+    noiseMeterReading.state === "loud" && previous.state !== "loud";
+  if (noiseHistory) {
+    // Buckets are on the fixed wall-clock grid, corrected by the same server
+    // offset the rest of the plugin surface uses, so two players and a restart
+    // all produce the same slots.
+    const bucket = noiseHistory.push(
+      level,
+      Date.now() + pluginClockOffsetMs,
+      enteredLoud,
+    );
+    if (bucket) {
+      reportNoiseMeterState(
+        currentNoiseStatus(),
+        noiseMeterReading.level,
+        bucket,
+      );
+    }
+  }
+  reportNoiseMeterState(currentNoiseStatus(), noiseMeterReading.level);
+  if (noiseMeterReading.visible !== previous.visible) {
+    // Handing the strip over is worth doing now rather than on the next
+    // one-second plugin tick; nothing else about the surface has changed.
+    updatePluginSurface();
+    return;
+  }
+  if (
+    noiseMeterReading.visible &&
+    noiseMeterBar.classList.contains("visible")
+  ) {
+    updateNoiseMeterMarker();
+  }
 }
 
 // ------------------------------------------------- render-tree interpreter
@@ -2089,6 +2397,14 @@ function showSetup(): void {
 }
 
 function present(presentation: RendererPresentation): void {
+  // `sleep` is the player's own off-hours state, and it is the only thing that
+  // produces it. The Noise Meter follows it rather than evaluating a second
+  // copy of the active-hours schedule that could disagree with playback.
+  const awake = presentation.state !== "sleep";
+  if (awake !== playerAwake) {
+    playerAwake = awake;
+    applyNoiseMeterLifecycle();
+  }
   switch (presentation.state) {
     case "setup":
       showSetup();
@@ -2200,10 +2516,18 @@ tilecast.onPlugins((payload) => {
   pluginClockOffsetMs = Number.isFinite(payload.clockOffsetMs)
     ? payload.clockOffsetMs
     : 0;
+  // The meter owns hardware, so it is reconciled against the new manifest
+  // before the surface is drawn: an instance that has gone away has to release
+  // the microphone, not merely stop being painted.
+  syncNoiseMeter();
   updatePluginSurface();
   if (pluginTimer !== null) window.clearInterval(pluginTimer);
   pluginTimer = window.setInterval(updatePluginSurface, 1_000);
 });
+
+// A reload replaces this renderer, and the microphone has to go with it rather
+// than being left for whatever the old page's teardown happens to collect.
+window.addEventListener("pagehide", () => noiseMeterCapture?.stop());
 
 tilecast.onIdentify(({ name, durationSeconds }) => {
   identifyEl.textContent = name;

@@ -164,6 +164,19 @@ func (s *server) routes() http.Handler {
 			dashboard.With(s.requireRoles("owner", "administrator"), s.requireCSRF).Post("/plugins/brand-bug/instances", s.createBrandBug)
 			dashboard.With(s.requireRoles("owner", "administrator"), s.requireCSRF).Put("/plugins/brand-bug/instances/{id}", s.updateBrandBug)
 			dashboard.With(s.requireRoles("owner", "administrator"), s.requireCSRF).Delete("/plugins/brand-bug/instances/{id}", s.deleteBrandBug)
+			dashboard.Get("/plugins/noise-meter/instances", s.listNoiseMeters)
+			dashboard.Get("/plugins/noise-meter/instances/{id}", s.getNoiseMeter)
+			dashboard.With(s.requireRoles("owner", "administrator"), s.requireCSRF).Post("/plugins/noise-meter/instances", s.createNoiseMeter)
+			dashboard.With(s.requireRoles("owner", "administrator"), s.requireCSRF).Put("/plugins/noise-meter/instances/{id}", s.updateNoiseMeter)
+			dashboard.With(s.requireRoles("owner", "administrator"), s.requireCSRF).Delete("/plugins/noise-meter/instances/{id}", s.deleteNoiseMeter)
+			// History reads. Screens are resolved from the caller's own scope,
+			// never from the request, and the ten-second table is never exposed
+			// directly: every route here answers with an aggregation.
+			dashboard.Get("/plugins/noise-meter/instances/{id}/history/screens", s.noiseHistoryScreens)
+			dashboard.Get("/plugins/noise-meter/instances/{id}/history/summary", s.noiseHistorySummary)
+			dashboard.Get("/plugins/noise-meter/instances/{id}/history/series", s.noiseHistorySeries)
+			dashboard.Get("/plugins/noise-meter/instances/{id}/history/daily", s.noiseHistoryDaily)
+			dashboard.Get("/plugins/noise-meter/instances/{id}/history/export.csv", s.exportNoiseHistory)
 			dashboard.With(s.requireRoles("owner", "administrator"), s.requireCSRF).Post("/locations", s.createLocation)
 			dashboard.With(s.requireRoles("owner", "administrator"), s.requireCSRF).Patch("/locations/{id}", s.updateLocation)
 			dashboard.With(s.requireRoles("owner", "administrator"), s.requireCSRF).Delete("/locations/{id}", s.deleteLocation)

@@ -179,8 +179,44 @@ export interface ManifestBrandBugPlugin {
   config: ManifestBrandBugConfig;
 }
 
+/**
+ * Thresholds for the Player-local room noise bar. Levels are the normalized
+ * 0-100 Tilecast scale, relative to this Player's own microphone rather than
+ * decibels of any kind, and no device or input identifier travels here: the
+ * Player uses its default system microphone and keeps every sample local.
+ */
+export interface ManifestNoiseMeterConfig {
+  name: string;
+  message?: string;
+  warningLevel: number;
+  loudLevel: number;
+  sensitivity: number;
+  triggerHoldMs: number;
+  clearHoldMs: number;
+  displayMode: "overlay" | "push";
+  heightPx: number;
+  /**
+   * History settings. `historyEnabled` decides whether the Player aggregates at
+   * all, the retention window is the same one the server prunes with, and
+   * `historyActiveHoursOnly` stops the microphone outside active hours instead
+   * of merely discarding what it hears.
+   */
+  historyEnabled?: boolean;
+  historyRetentionDays?: number;
+  historyActiveHoursOnly?: boolean;
+}
+
+export interface ManifestNoiseMeterPlugin {
+  id: string;
+  type: "noise_meter";
+  version: 1;
+  config: ManifestNoiseMeterConfig;
+}
+
 export type ManifestPlugin =
-  ManifestCountdownBarPlugin | ManifestBrandBugPlugin;
+  | ManifestCountdownBarPlugin
+  | ManifestBrandBugPlugin
+  | ManifestNoiseMeterPlugin;
 
 export interface ManifestWebsite {
   assetId: string;
@@ -351,10 +387,46 @@ export interface UpdateStatusReport {
 // Heartbeat (subset of the server's flat Heartbeat struct that this player
 // reports; screenWidth, screenHeight, and playerVersion are required)
 
+/**
+ * The Noise Meter's optional heartbeat section.
+ *
+ * It rides the ordinary heartbeat because a room's noise is measured fifteen to
+ * twenty times a second and none of that rate may reach the network. What
+ * travels is the current state and completed ten-second aggregates: numbers
+ * only, never audio, a waveform, or anything replayable.
+ */
+export interface HeartbeatNoiseMeter {
+  status: "active" | "normal" | "loud" | "unavailable" | "inactive";
+  currentLevel?: number;
+  pendingHistory?: {
+    startedAt: string;
+    averageLevel: number;
+    peakLevel: number;
+    monitoredMs: number;
+    warningMs: number;
+    loudMs: number;
+    triggerCount: number;
+  }[];
+}
+
+/** What the server acknowledged for one heartbeat. */
+export interface HeartbeatAck {
+  accepted: boolean;
+  ignoredFields?: string[];
+  /**
+   * How many of the submitted history records the server has taken
+   * responsibility for. Absent when none were sent, when the server predates
+   * the field, or when storing them failed — in every one of those cases the
+   * Player keeps its batch.
+   */
+  noiseHistory?: { accepted: number };
+}
+
 export interface Heartbeat {
   screenWidth: number;
   screenHeight: number;
   playerVersion: string;
+  noiseMeter?: HeartbeatNoiseMeter;
   presentationSchemaVersions?: number[];
   nativePresentationCapabilities?: Record<string, number>;
   webRuntimeVersion?: number;

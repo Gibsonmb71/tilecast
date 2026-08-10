@@ -2,6 +2,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowLeft,
+  AudioLines,
   ClipboardList,
   Clock3,
   Network,
@@ -17,7 +18,13 @@ import { useForm, type UseFormRegisterReturn } from "react-hook-form";
 import { Link, useNavigate, useParams } from "react-router";
 import { z } from "zod";
 import { api } from "../api/client";
-import type { BrandBug, BrandBugInput, CountdownBarInput } from "../api/types";
+import type {
+  BrandBug,
+  BrandBugInput,
+  CountdownBarInput,
+  NoiseMeter,
+  NoiseMeterInput,
+} from "../api/types";
 import { useAuth } from "../auth/AuthProvider";
 import { FormField } from "../components/FormField";
 import {
@@ -31,6 +38,7 @@ import {
   SectionHeader,
   Select,
   StatusBadge,
+  ViewTabs,
 } from "../components/ui";
 import { scheduleWeekdays } from "../schedules/scheduleBuilderModel";
 import "./PluginsPage.css";
@@ -366,6 +374,11 @@ const pluginPresentation: Record<
     icon: Stamp,
     path: "/plugins/brand-bug",
     instanceNoun: ["mark", "marks"],
+  },
+  noise_meter: {
+    icon: AudioLines,
+    path: "/plugins/noise-meter",
+    instanceNoun: ["meter", "meters"],
   },
   dependency_graph: {
     icon: Network,
@@ -1539,6 +1552,551 @@ export function BrandBugEditorPage() {
         {save.isError && <Notice variant="danger">{save.error.message}</Notice>}
         <div className="plugin-form__actions">
           <Link className="button button--secondary" to="/plugins/brand-bug">
+            Cancel
+          </Link>
+          <Button type="submit" variant="primary" loading={save.isPending}>
+            {editing ? "Save changes" : "Create instance"}
+          </Button>
+        </div>
+      </form>
+    </main>
+  );
+}
+
+// ---------------------------------------------------------------- Noise Meter
+
+/**
+ * Studio talks in seconds and in a 0-100 scale; the wire talks in milliseconds.
+ * Nothing here exposes dBFS, gain, or a microphone device: the level is
+ * relative to whatever microphone is plugged into the player, and presenting it
+ * as a calibrated measurement would be a claim Tilecast cannot make.
+ */
+const noiseMeterSchema = z
+  .object({
+    name: z.string().trim().min(1).max(180),
+    message: z
+      .string()
+      .trim()
+      .max(120, "Message is limited to 120 characters."),
+    warningLevel: z.coerce
+      .number({ error: "Enter a level between 1 and 99." })
+      .int("Enter a level between 1 and 99.")
+      .min(1, "Enter a level between 1 and 99.")
+      .max(99, "Enter a level between 1 and 99."),
+    loudLevel: z.coerce
+      .number({ error: "Enter a level between 2 and 100." })
+      .int("Enter a level between 2 and 100.")
+      .min(2, "Enter a level between 2 and 100.")
+      .max(100, "Enter a level between 2 and 100."),
+    sensitivity: z.coerce
+      .number({ error: "Enter a sensitivity between 25 and 300 percent." })
+      .int("Enter a sensitivity between 25 and 300 percent.")
+      .min(25, "Enter a sensitivity between 25 and 300 percent.")
+      .max(300, "Enter a sensitivity between 25 and 300 percent."),
+    showAfterSeconds: z.coerce
+      .number({ error: "Enter between 0.1 and 10 seconds." })
+      .min(0.1, "Enter between 0.1 and 10 seconds.")
+      .max(10, "Enter between 0.1 and 10 seconds."),
+    hideAfterSeconds: z.coerce
+      .number({ error: "Enter between 0.5 and 30 seconds." })
+      .min(0.5, "Enter between 0.5 and 30 seconds.")
+      .max(30, "Enter between 0.5 and 30 seconds."),
+    displayMode: z.enum(["overlay", "push"]),
+    heightPx: z.coerce
+      .number({ error: "Enter a height between 40 and 320 pixels." })
+      .int("Enter a height between 40 and 320 pixels.")
+      .min(40, "Enter a height between 40 and 320 pixels.")
+      .max(320, "Enter a height between 40 and 320 pixels."),
+    historyEnabled: z.boolean(),
+    // A closed set, because the Player prunes its own queue with the same
+    // window and a free number would let the two disagree.
+    historyRetentionDays: z.coerce
+      .number()
+      .refine(
+        (value) => [1, 3, 7, 14, 30].includes(value),
+        "Choose 1, 3, 7, 14, or 30 days.",
+      ),
+    historyActiveHoursOnly: z.boolean(),
+    enabled: z.boolean(),
+    targetScope: z.enum(["all", "screens", "sync_groups", "locations"]),
+    targetIds: z.array(z.string()),
+  })
+  .superRefine((value, context) => {
+    if (value.warningLevel >= value.loudLevel) {
+      context.addIssue({
+        code: "custom",
+        path: ["warningLevel"],
+        message: "The warning level must be below the too loud level.",
+      });
+    }
+    if (value.targetScope !== "all" && value.targetIds.length === 0) {
+      context.addIssue({
+        code: "custom",
+        path: ["targetIds"],
+        message: "Choose at least one target.",
+      });
+    }
+  });
+
+type NoiseMeterFormValues = z.infer<typeof noiseMeterSchema>;
+type NoiseMeterFormInput = z.input<typeof noiseMeterSchema>;
+
+const noiseMeterDefaults: NoiseMeterFormValues = {
+  name: "Noise Meter",
+  message: "Please lower the volume",
+  warningLevel: 60,
+  loudLevel: 80,
+  sensitivity: 100,
+  showAfterSeconds: 1,
+  hideAfterSeconds: 3,
+  displayMode: "overlay",
+  heightPx: 96,
+  historyEnabled: true,
+  historyRetentionDays: 7,
+  historyActiveHoursOnly: true,
+  enabled: true,
+  targetScope: "all",
+  targetIds: [],
+};
+
+const noiseMeterScaleHint =
+  "Noise levels are relative to this player's microphone and are not calibrated decibel measurements.";
+
+/** One line describing what a configured meter actually does. */
+function noiseMeterSummary(instance: NoiseMeter) {
+  return [
+    `Shows above ${instance.loudLevel}`,
+    `hides below ${instance.warningLevel}`,
+    `after ${instance.clearHoldMs / 1000}s`,
+    instance.displayMode === "push" ? "push" : "overlay",
+  ].join(" · ");
+}
+
+/** Linux Player measures the room; other platforms ignore the plugin. */
+function NoiseMeterPlatformNotice() {
+  return (
+    <Notice>
+      Noise Meter runs on Linux Player only, using that player's default
+      microphone. Audio is measured on the device and never sent to Tilecast,
+      and nothing is recorded. Android Players ignore it.
+    </Notice>
+  );
+}
+
+export function NoiseMetersPage() {
+  const auth = useAuth();
+  const queryClient = useQueryClient();
+  const instances = useQuery({
+    queryKey: ["noise-meters"],
+    queryFn: api.noiseMeters,
+  });
+  const remove = useMutation({
+    mutationFn: (id: string) =>
+      api.deleteNoiseMeter(id, auth.status?.csrfToken ?? ""),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["noise-meters"] });
+      void queryClient.invalidateQueries({ queryKey: ["plugins"] });
+    },
+  });
+  const manageable = canManage(auth.status?.user?.role);
+  // Only a successful, empty list is "nothing configured" — a failed load must
+  // not read as an empty fleet.
+  const showEmptyState =
+    !instances.isError &&
+    !instances.isLoading &&
+    (instances.data?.items.length ?? 0) === 0;
+  return (
+    <main className="page plugins-page">
+      <PageHeader
+        eyebrow={
+          <Link className="back-link" to="/plugins">
+            <ArrowLeft size={15} /> Plugins
+          </Link>
+        }
+        title="Noise Meter"
+        description="A bottom bar that appears only while the room stays too loud, and hides itself when it settles."
+        actions={
+          manageable ? (
+            <Link
+              className="button button--primary"
+              to="/plugins/noise-meter/new"
+            >
+              <Plus size={16} /> New instance
+            </Link>
+          ) : undefined
+        }
+      />
+      <NoiseMeterPlatformNotice />
+      {!manageable && (
+        <Notice>
+          Owner or Administrator access is required to make changes.
+        </Notice>
+      )}
+      {instances.isError && (
+        <Notice variant="danger">Noise meters could not be loaded.</Notice>
+      )}
+      {remove.isError && (
+        <Notice variant="danger">{remove.error.message}</Notice>
+      )}
+      {showEmptyState ? (
+        <EmptyState
+          icon={<AudioLines />}
+          title="No noise meters configured"
+          message="Create an instance to watch room noise on selected Linux players."
+          action={
+            manageable ? (
+              <Link
+                className="button button--primary"
+                to="/plugins/noise-meter/new"
+              >
+                Create instance
+              </Link>
+            ) : undefined
+          }
+        />
+      ) : (
+        <div className="plugin-instance-list">
+          {(instances.data?.items ?? []).map((instance) => (
+            <article className="plugin-instance" key={instance.id}>
+              <div>
+                <div className="plugin-instance__heading">
+                  <h2>{instance.name}</h2>
+                  <StatusBadge
+                    label={instance.enabled ? "Enabled" : "Disabled"}
+                    tone={instance.enabled ? "success" : "neutral"}
+                  />
+                </div>
+                <p>{noiseMeterSummary(instance)}</p>
+              </div>
+              <div className="plugin-instance__actions">
+                <Link
+                  className="button button--secondary"
+                  to={`/plugins/noise-meter/${instance.id}/history`}
+                >
+                  History
+                </Link>
+                <Link
+                  className="button button--secondary"
+                  to={`/plugins/noise-meter/${instance.id}`}
+                >
+                  Manage
+                </Link>
+                {manageable && (
+                  <Button
+                    compact
+                    variant="danger"
+                    aria-label={`Delete ${instance.name}`}
+                    onClick={() => {
+                      if (
+                        window.confirm(
+                          `Delete “${instance.name}”? Targeted players will stop measuring room noise.`,
+                        )
+                      )
+                        remove.mutate(instance.id);
+                    }}
+                  >
+                    <Trash2 size={16} />
+                  </Button>
+                )}
+              </div>
+            </article>
+          ))}
+        </div>
+      )}
+    </main>
+  );
+}
+
+export function NoiseMeterEditorPage() {
+  const { id } = useParams();
+  const editing = Boolean(id);
+  const auth = useAuth();
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const instance = useQuery({
+    queryKey: ["noise-meter", id],
+    queryFn: () => api.noiseMeter(id ?? ""),
+    enabled: editing,
+  });
+  const {
+    register,
+    handleSubmit,
+    reset,
+    setValue,
+    watch,
+    formState: { errors },
+  } = useForm<NoiseMeterFormInput, unknown, NoiseMeterFormValues>({
+    resolver: zodResolver(noiseMeterSchema),
+    defaultValues: noiseMeterDefaults,
+  });
+  useEffect(() => {
+    if (!instance.data) return;
+    const value = instance.data;
+    reset({
+      name: value.name,
+      message: value.message,
+      warningLevel: value.warningLevel,
+      loudLevel: value.loudLevel,
+      sensitivity: value.sensitivity,
+      showAfterSeconds: value.triggerHoldMs / 1000,
+      hideAfterSeconds: value.clearHoldMs / 1000,
+      displayMode: value.displayMode,
+      heightPx: value.heightPx,
+      historyEnabled: value.historyEnabled,
+      historyRetentionDays: value.historyRetentionDays,
+      historyActiveHoursOnly: value.historyActiveHoursOnly,
+      enabled: value.enabled,
+      targetScope: value.targetScope,
+      targetIds: value.targetIds,
+    });
+  }, [instance.data, reset]);
+  const save = useMutation({
+    mutationFn: (input: NoiseMeterInput) =>
+      editing
+        ? api.updateNoiseMeter(id ?? "", input, auth.status?.csrfToken ?? "")
+        : api.createNoiseMeter(input, auth.status?.csrfToken ?? ""),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["noise-meters"] });
+      void queryClient.invalidateQueries({ queryKey: ["plugins"] });
+      void navigate("/plugins/noise-meter");
+    },
+  });
+  // Signal Select owns the ref on its hidden native select, so register()'s ref
+  // never lands and react-hook-form drops the field on the next render. Every
+  // select here is held with watch/setValue instead.
+  const displayMode = watch("displayMode");
+  const historyRetentionDays = watch("historyRetentionDays");
+  const targetScope = watch("targetScope");
+  const targetSource = useTargetSource(targetScope);
+  const chosenTargets = watch("targetIds") ?? [];
+  const submit = (values: NoiseMeterFormValues) => {
+    save.mutate({
+      name: values.name,
+      message: values.message,
+      warningLevel: values.warningLevel,
+      loudLevel: values.loudLevel,
+      sensitivity: values.sensitivity,
+      triggerHoldMs: Math.round(values.showAfterSeconds * 1000),
+      clearHoldMs: Math.round(values.hideAfterSeconds * 1000),
+      displayMode: values.displayMode,
+      heightPx: values.heightPx,
+      historyEnabled: values.historyEnabled,
+      historyRetentionDays: values.historyRetentionDays,
+      historyActiveHoursOnly: values.historyActiveHoursOnly,
+      enabled: values.enabled,
+      targetScope: values.targetScope,
+      targetIds: values.targetScope === "all" ? [] : values.targetIds,
+    });
+  };
+  return (
+    <main className="page plugins-page">
+      <PageHeader
+        eyebrow={
+          <Link className="back-link" to="/plugins/noise-meter">
+            <ArrowLeft size={15} /> Noise Meter
+          </Link>
+        }
+        title={editing ? "Manage noise meter" : "New noise meter"}
+        description="The bar appears only after the room stays loud, and an emergency alert always replaces it."
+      />
+      {editing && (
+        <ViewTabs
+          label="Noise Meter"
+          value="settings"
+          items={[
+            { value: "settings", label: "Settings" },
+            { value: "history", label: "History" },
+          ]}
+          onValueChange={(value) => {
+            if (value === "history")
+              void navigate(`/plugins/noise-meter/${id}/history`);
+          }}
+        />
+      )}
+      <NoiseMeterPlatformNotice />
+      <form
+        className="plugin-form"
+        onSubmit={(event) => void handleSubmit(submit)(event)}
+      >
+        <Panel className="plugin-form__section">
+          <SectionHeader title="Meter" />
+          <FormField
+            id="noise-meter-name"
+            label="Name"
+            aria-required="true"
+            error={errors.name?.message}
+            {...register("name")}
+          />
+          <FormField
+            id="noise-meter-message"
+            label="Message"
+            placeholder="Please lower the volume"
+            hint="Shown on the right of the bar. Leave blank to show “Too loud”."
+            error={errors.message?.message}
+            {...register("message")}
+          />
+        </Panel>
+
+        <Panel className="plugin-form__section">
+          <SectionHeader title="Levels" description={noiseMeterScaleHint} />
+          <div className="plugin-form__row">
+            <FormField
+              id="noise-meter-warning"
+              label="Warning level"
+              type="number"
+              min={1}
+              max={99}
+              hint="Where the yellow zone begins. The bar also hides below this level."
+              error={errors.warningLevel?.message}
+              {...register("warningLevel", { valueAsNumber: true })}
+            />
+            <FormField
+              id="noise-meter-loud"
+              label="Too loud level"
+              type="number"
+              min={2}
+              max={100}
+              hint="Where the red zone begins and the bar can appear."
+              error={errors.loudLevel?.message}
+              {...register("loudLevel", { valueAsNumber: true })}
+            />
+            <FormField
+              id="noise-meter-sensitivity"
+              label="Sensitivity (%)"
+              type="number"
+              min={25}
+              max={300}
+              hint="Raise it for a quiet microphone, lower it for a hot one."
+              error={errors.sensitivity?.message}
+              {...register("sensitivity", { valueAsNumber: true })}
+            />
+          </div>
+        </Panel>
+
+        <Panel className="plugin-form__section">
+          <SectionHeader
+            title="Timing"
+            description="Separate delays keep a single shout from raising the bar and a brief pause from dropping it."
+          />
+          <div className="plugin-form__row">
+            <FormField
+              id="noise-meter-show-after"
+              label="Show after (seconds)"
+              type="number"
+              min={0.1}
+              max={10}
+              step={0.1}
+              hint="How long the room must stay too loud before the bar appears."
+              error={errors.showAfterSeconds?.message}
+              {...register("showAfterSeconds", { valueAsNumber: true })}
+            />
+            <FormField
+              id="noise-meter-hide-after"
+              label="Hide after normal for (seconds)"
+              type="number"
+              min={0.5}
+              max={30}
+              step={0.5}
+              hint="How long the room must stay below the warning level before the bar hides."
+              error={errors.hideAfterSeconds?.message}
+              {...register("hideAfterSeconds", { valueAsNumber: true })}
+            />
+          </div>
+        </Panel>
+
+        <Panel className="plugin-form__section">
+          <SectionHeader title="Appearance" />
+          <div className="plugin-form__row">
+            <Field label="Display mode">
+              <Select
+                name="displayMode"
+                value={displayMode}
+                onChange={(event) =>
+                  setValue(
+                    "displayMode",
+                    event.target.value as NoiseMeterFormValues["displayMode"],
+                    { shouldDirty: true },
+                  )
+                }
+              >
+                <option value="overlay">Overlay the content</option>
+                <option value="push">Push the content up</option>
+              </Select>
+            </Field>
+            <FormField
+              id="noise-meter-height"
+              label="Bar height (px)"
+              type="number"
+              min={40}
+              max={320}
+              error={errors.heightPx?.message}
+              {...register("heightPx", { valueAsNumber: true })}
+            />
+          </div>
+          <Checkbox label="Enabled" {...register("enabled")} />
+        </Panel>
+
+        <Panel className="plugin-form__section">
+          <SectionHeader
+            title="History"
+            description="Saves only relative noise-level measurements. Microphone audio is never recorded or uploaded."
+          />
+          <Checkbox
+            label="Save noise history"
+            {...register("historyEnabled")}
+          />
+          <div className="plugin-form__row">
+            <Field
+              label="Retention"
+              description="How long measurements are kept before they are removed automatically."
+            >
+              <Select
+                name="historyRetentionDays"
+                value={String(historyRetentionDays)}
+                onChange={(event) =>
+                  setValue("historyRetentionDays", Number(event.target.value), {
+                    shouldDirty: true,
+                  })
+                }
+              >
+                <option value="1">1 day</option>
+                <option value="3">3 days</option>
+                <option value="7">7 days</option>
+                <option value="14">14 days</option>
+                <option value="30">30 days</option>
+              </Select>
+            </Field>
+          </div>
+          <Checkbox
+            label="Collect only during active hours"
+            {...register("historyActiveHoursOnly")}
+          />
+          <p className="plugin-form__note">
+            Outside active hours the player stops listening entirely rather than
+            measuring and discarding: the microphone is released until the next
+            active window.
+          </p>
+        </Panel>
+
+        <Panel className="plugin-form__section">
+          <SectionHeader title="Targets" />
+          <TargetFields
+            idPrefix="noise-meter"
+            scope={targetScope}
+            source={targetSource}
+            chosenCount={chosenTargets.length}
+            error={errors.targetIds?.message}
+            registerTargetIds={register("targetIds")}
+            onScopeChange={(value) => {
+              setValue("targetIds", []);
+              setValue("targetScope", value, { shouldDirty: true });
+            }}
+          />
+        </Panel>
+
+        {save.isError && <Notice variant="danger">{save.error.message}</Notice>}
+        <div className="plugin-form__actions">
+          <Link className="button button--secondary" to="/plugins/noise-meter">
             Cancel
           </Link>
           <Button type="submit" variant="primary" loading={save.isPending}>

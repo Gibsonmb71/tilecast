@@ -175,9 +175,10 @@ func TestCountdownBarLifecycleAndManifestTargeting(t *testing.T) {
 	for _, item := range catalog.Items {
 		byID[item.ID] = item
 	}
-	if len(catalog.Items) != 5 || byID["countdown_bar"].Name == "" || byID["emergency_alerts"].Name == "" ||
-		byID["forms"].Name == "" || byID["brand_bug"].Name == "" || byID["dependency_graph"].Name == "" {
-		t.Fatalf("catalog = %+v, want Countdown Bar, Emergency Alerts, Forms, Brand Bug, and Dependency Graph", catalog.Items)
+	if len(catalog.Items) != 6 || byID["countdown_bar"].Name == "" || byID["emergency_alerts"].Name == "" ||
+		byID["forms"].Name == "" || byID["brand_bug"].Name == "" || byID["noise_meter"].Name == "" ||
+		byID["dependency_graph"].Name == "" {
+		t.Fatalf("catalog = %+v, want Countdown Bar, Emergency Alerts, Forms, Brand Bug, Noise Meter, and Dependency Graph", catalog.Items)
 	}
 	if alerts := byID["emergency_alerts"]; alerts.Enabled || alerts.InstanceCount != 0 {
 		t.Fatalf("unconfigured Emergency Alerts = %+v, want disabled with no rules", alerts)

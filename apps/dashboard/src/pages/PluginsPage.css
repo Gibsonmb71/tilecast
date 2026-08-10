@@ -191,6 +191,12 @@
   color: var(--tc-text-secondary);
 }
 
+.plugin-form__note {
+  margin: 0;
+  font: var(--tc-text-supporting);
+  color: var(--tc-text-secondary);
+}
+
 .plugin-form__actions {
   justify-content: flex-end;
 }
