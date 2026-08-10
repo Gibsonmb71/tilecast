@@ -1203,6 +1203,103 @@ export type BrandBug = BrandBugInput & {
   createdAt: string;
   updatedAt: string;
 };
+
+export type NoiseMeterInput = {
+  name: string;
+  /** Replaces the bar's own TOO LOUD label when set. */
+  message: string;
+  /**
+   * Points on the relative 0-100 noise scale. They are measured against the
+   * Player's own microphone and are not calibrated decibels of any kind.
+   */
+  warningLevel: number;
+  loudLevel: number;
+  /** Percentage applied to the captured signal before it is normalized. */
+  sensitivity: number;
+  triggerHoldMs: number;
+  clearHoldMs: number;
+  displayMode: "overlay" | "push";
+  heightPx: number;
+  /**
+   * History keeps derived ten-second measurements for graphs and reports.
+   * Microphone audio is never recorded or uploaded, so nothing here can turn
+   * it on.
+   */
+  historyEnabled: boolean;
+  historyRetentionDays: number;
+  historyActiveHoursOnly: boolean;
+  /**
+   * The optional window during which the bar may appear. It governs the bar
+   * alone — measurement and history keep their own rules — and an end at or
+   * before the start is an overnight window.
+   */
+  scheduleEnabled: boolean;
+  /** Sunday 0 through Saturday 6. */
+  scheduleDaysOfWeek: number[];
+  scheduleStartTime?: string | null;
+  scheduleEndTime?: string | null;
+  scheduleTimezone: string;
+  enabled: boolean;
+} & PluginTargeting;
+
+export type NoiseMeter = NoiseMeterInput & {
+  id: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type NoiseHistoryRange = "today" | "yesterday" | "7d" | "30d";
+
+export type NoiseHistoryScreen = {
+  screenId: string;
+  name: string;
+  buckets: number;
+  firstAt?: string;
+  lastAt?: string;
+};
+
+export type NoiseHistoryPoint = {
+  at: string;
+  averageLevel: number;
+  peakLevel: number;
+  monitoredMs: number;
+  warningMs: number;
+  loudMs: number;
+  triggerCount: number;
+};
+
+export type NoiseHistoryDay = {
+  date: string;
+  averageLevel: number;
+  peakLevel: number;
+  monitoredMs: number;
+  warningMs: number;
+  loudMs: number;
+  triggerCount: number;
+};
+
+/** Descriptive statistics only: no score, grade, or ranking. */
+export type NoiseHistorySummary = {
+  buckets: number;
+  averageLevel: number | null;
+  peakLevel: number | null;
+  monitoredMs: number;
+  normalMs: number;
+  warningMs: number;
+  loudMs: number;
+  warningEvents: number;
+  longestLoudMs: number;
+  loudestWindowAt?: string;
+  loudestWindowLevel?: number;
+  firstAt?: string;
+  lastAt?: string;
+};
+
+export type NoiseHistoryWindow = {
+  key: NoiseHistoryRange;
+  from: string;
+  to: string;
+};
 export type ScheduleTarget = {
   type: "screen" | "group";
   id: string;

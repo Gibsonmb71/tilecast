@@ -17,6 +17,8 @@ import {
   BrandBugEditorPage,
   BrandBugsPage,
   CountdownBarEditorPage,
+  NoiseMeterEditorPage,
+  NoiseMetersPage,
   PluginsPage,
 } from "./PluginsPage";
 
@@ -46,6 +48,8 @@ function renderRoute(element: ReactNode, path = "/plugins") {
           <Route path="/plugins/countdown-bar/:id" element={element} />
           <Route path="/plugins/brand-bug/new" element={element} />
           <Route path="/plugins/brand-bug/:id" element={element} />
+          <Route path="/plugins/noise-meter/new" element={element} />
+          <Route path="/plugins/noise-meter/:id" element={element} />
           <Route path="*" element={element} />
         </Routes>
       </MemoryRouter>
@@ -127,6 +131,32 @@ const storedBrandBug = {
   updatedAt: "2026-07-01T00:00:00Z",
 };
 
+const storedNoiseMeter = {
+  id: "meter-1",
+  name: "Cafeteria noise",
+  message: "Please lower the volume",
+  warningLevel: 55,
+  loudLevel: 78,
+  sensitivity: 130,
+  triggerHoldMs: 1500,
+  clearHoldMs: 4500,
+  displayMode: "push",
+  heightPx: 110,
+  historyEnabled: true,
+  historyRetentionDays: 14,
+  historyActiveHoursOnly: false,
+  scheduleEnabled: true,
+  scheduleDaysOfWeek: [1, 3, 5],
+  scheduleStartTime: "08:30",
+  scheduleEndTime: "14:45",
+  scheduleTimezone: "America/Chicago",
+  enabled: true,
+  targetScope: "all",
+  targetIds: [],
+  createdAt: "2026-07-01T00:00:00Z",
+  updatedAt: "2026-07-01T00:00:00Z",
+};
+
 const submitted: Record<string, unknown>[] = [];
 
 beforeEach(() => {
@@ -156,6 +186,18 @@ beforeEach(() => {
       if (path.includes("/brand-bug/instances/bug-1")) {
         return Promise.resolve(
           new Response(JSON.stringify({ data: storedBrandBug })),
+        );
+      }
+      if (path.includes("/noise-meter/instances/meter-1")) {
+        return Promise.resolve(
+          new Response(JSON.stringify({ data: storedNoiseMeter })),
+        );
+      }
+      if (path.includes("/noise-meter/instances")) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({ data: { items: [storedNoiseMeter], total: 1 } }),
+          ),
         );
       }
       if (path.includes("/brand-bug/instances")) {
@@ -210,6 +252,13 @@ beforeEach(() => {
                     description: "A corner mark.",
                     enabled: false,
                     instanceCount: 1,
+                  },
+                  {
+                    id: "noise_meter",
+                    name: "Noise Meter",
+                    description: "Watch room noise on Linux players.",
+                    enabled: true,
+                    instanceCount: 2,
                   },
                 ],
               },
@@ -568,6 +617,188 @@ describe("Brand Bug", () => {
       targetScope: "all",
       opacityPercent: 55,
       priority: 10,
+    });
+  }, 10_000);
+});
+
+describe("Noise Meter", () => {
+  it("lists the plugin with its own instance noun and surface", async () => {
+    renderRoute(<PluginsPage />);
+    const card = (
+      await screen.findByRole("heading", { name: "Noise Meter" })
+    ).closest("article")!;
+    expect(within(card).getByText("2 configured meters")).toBeVisible();
+    expect(
+      within(card).getByRole("link", { name: "Manage plugin" }),
+    ).toHaveAttribute("href", "/plugins/noise-meter");
+  });
+
+  it("says where the plugin runs and what leaves the player", async () => {
+    renderRoute(<NoiseMetersPage />, "/plugins/noise-meter");
+    // Operators have to be able to see that this is Linux-only and that no
+    // audio is sent anywhere without reading the docs.
+    expect(
+      await screen.findByText(/Linux Player only/, { exact: false }),
+    ).toBeVisible();
+    expect(
+      screen.getByText(/never sent to Tilecast/, { exact: false }),
+    ).toBeVisible();
+    expect(await screen.findByText(/Shows above 78/)).toBeVisible();
+  });
+
+  it("states that the level is relative rather than a decibel measurement", async () => {
+    renderRoute(<NoiseMeterEditorPage />, "/plugins/noise-meter/new");
+    expect(
+      await screen.findByText(
+        "Noise levels are relative to this player's microphone and are not calibrated decibel measurements.",
+      ),
+    ).toBeVisible();
+  }, 10_000);
+
+  it("shows the stored holds in seconds and submits them as milliseconds", async () => {
+    renderRoute(<NoiseMeterEditorPage />, "/plugins/noise-meter/meter-1");
+    await waitFor(() =>
+      expect(screen.getByLabelText("Name")).toHaveValue("Cafeteria noise"),
+    );
+    expect(screen.getByLabelText(/Show after \(seconds\)/)).toHaveValue(1.5);
+    expect(
+      screen.getByLabelText(/Hide after normal for \(seconds\)/),
+    ).toHaveValue(4.5);
+    fireEvent.change(
+      screen.getByLabelText(/Hide after normal for \(seconds\)/),
+      { target: { value: "6" } },
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    await waitFor(() => expect(submitted).toHaveLength(1));
+    expect(submitted[0]).toMatchObject({
+      warningLevel: 55,
+      loudLevel: 78,
+      sensitivity: 130,
+      triggerHoldMs: 1500,
+      clearHoldMs: 6000,
+      // A select react-hook-form dropped would silently revert to "overlay".
+      displayMode: "push",
+      heightPx: 110,
+      // History settings round-trip with the rest of the instance.
+      historyEnabled: true,
+      historyRetentionDays: 14,
+      historyActiveHoursOnly: false,
+      // The display window round-trips, including its days and timezone.
+      scheduleEnabled: true,
+      scheduleDaysOfWeek: [1, 3, 5],
+      scheduleStartTime: "08:30",
+      scheduleEndTime: "14:45",
+      scheduleTimezone: "America/Chicago",
+      targetScope: "all",
+    });
+  }, 10_000);
+
+  it("states the privacy position on the History settings", async () => {
+    renderRoute(<NoiseMeterEditorPage />, "/plugins/noise-meter/new");
+    expect(
+      await screen.findByText(
+        "Saves only relative noise-level measurements. Microphone audio is never recorded or uploaded.",
+      ),
+    ).toBeVisible();
+    expect(screen.getByLabelText("Save noise history")).toBeChecked();
+    expect(
+      screen.getByLabelText("Collect only during active hours"),
+    ).toBeChecked();
+  }, 10_000);
+
+  it("hides the window controls until a window is asked for", async () => {
+    renderRoute(<NoiseMeterEditorPage />, "/plugins/noise-meter/new");
+    await waitFor(() => expect(screen.getByLabelText("Name")).toBeEnabled());
+    expect(screen.queryByLabelText("From")).not.toBeInTheDocument();
+    fireEvent.click(
+      screen.getByLabelText("Only show during a set time window"),
+    );
+    expect(await screen.findByLabelText("From")).toBeVisible();
+    expect(screen.getByLabelText(/^Until/)).toHaveValue("15:30");
+  }, 10_000);
+
+  it("submits the configured display window", async () => {
+    renderRoute(<NoiseMeterEditorPage />, "/plugins/noise-meter/new");
+    await waitFor(() => expect(screen.getByLabelText("Name")).toBeEnabled());
+    fireEvent.click(
+      screen.getByLabelText("Only show during a set time window"),
+    );
+    fireEvent.change(await screen.findByLabelText("From"), {
+      target: { value: "09:15" },
+    });
+    fireEvent.change(screen.getByLabelText(/^Until/), {
+      target: { value: "12:45" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Wed" }));
+    fireEvent.click(screen.getByRole("button", { name: "Create instance" }));
+    await waitFor(() => expect(submitted).toHaveLength(1));
+    expect(submitted[0]).toMatchObject({
+      scheduleEnabled: true,
+      scheduleStartTime: "09:15",
+      scheduleEndTime: "12:45",
+      scheduleDaysOfWeek: [1, 2, 4, 5],
+    });
+  }, 10_000);
+
+  it("refuses a window that could never open", async () => {
+    renderRoute(<NoiseMeterEditorPage />, "/plugins/noise-meter/new");
+    await waitFor(() => expect(screen.getByLabelText("Name")).toBeEnabled());
+    fireEvent.click(
+      screen.getByLabelText("Only show during a set time window"),
+    );
+    // Every day switched off: the bar would never appear again.
+    for (const day of ["Mon", "Tue", "Wed", "Thu", "Fri"]) {
+      fireEvent.click(await screen.findByRole("button", { name: day }));
+    }
+    fireEvent.click(screen.getByRole("button", { name: "Create instance" }));
+    expect(await screen.findByText("Choose at least one day.")).toBeVisible();
+    expect(submitted).toHaveLength(0);
+  }, 10_000);
+
+  it("refuses a warning level at or above the too loud level", async () => {
+    renderRoute(<NoiseMeterEditorPage />, "/plugins/noise-meter/new");
+    await waitFor(() => expect(screen.getByLabelText("Name")).toBeEnabled());
+    fireEvent.change(screen.getByLabelText(/Warning level/), {
+      target: { value: "85" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Create instance" }));
+    // One threshold for both directions is what makes a bar flap.
+    expect(
+      await screen.findByText(
+        "The warning level must be below the too loud level.",
+      ),
+    ).toBeVisible();
+    expect(submitted).toHaveLength(0);
+  }, 10_000);
+
+  it("submits the documented defaults for a new instance", async () => {
+    renderRoute(<NoiseMeterEditorPage />, "/plugins/noise-meter/new");
+    await waitFor(() => expect(screen.getByLabelText("Name")).toBeEnabled());
+    fireEvent.click(screen.getByRole("button", { name: "Create instance" }));
+    await waitFor(() => expect(submitted).toHaveLength(1));
+    expect(submitted[0]).toMatchObject({
+      name: "Noise Meter",
+      message: "Please lower the volume",
+      warningLevel: 60,
+      loudLevel: 80,
+      sensitivity: 100,
+      triggerHoldMs: 1000,
+      clearHoldMs: 3000,
+      displayMode: "overlay",
+      heightPx: 96,
+      // History is on by default, kept for a week, and confined to active hours.
+      historyEnabled: true,
+      historyRetentionDays: 7,
+      historyActiveHoursOnly: true,
+      // No window by default: a too-loud room may raise the bar at any time,
+      // and no half-configured bounds are sent.
+      scheduleEnabled: false,
+      scheduleDaysOfWeek: [],
+      scheduleStartTime: null,
+      scheduleEndTime: null,
+      enabled: true,
+      targetScope: "all",
+      targetIds: [],
     });
   }, 10_000);
 });

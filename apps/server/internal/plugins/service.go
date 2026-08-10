@@ -181,6 +181,13 @@ func (s *Service) Catalog(ctx context.Context) (Catalog, error) {
 		Scan(&brandBugEnabled, &brandBugCount); err != nil {
 		return Catalog{}, err
 	}
+	var noiseMeterEnabled bool
+	var noiseMeterCount int
+	if err := s.db.QueryRow(ctx,
+		`SELECT COALESCE(bool_or(enabled),FALSE),count(*) FROM noise_meter_instances`).
+		Scan(&noiseMeterEnabled, &noiseMeterCount); err != nil {
+		return Catalog{}, err
+	}
 	return Catalog{Items: []CatalogPlugin{
 		{
 			ID: "countdown_bar", Name: "Countdown Bar",
@@ -205,6 +212,12 @@ func (s *Service) Catalog(ctx context.Context) (Catalog, error) {
 			Description:   "Keep a logo, sponsor mark, legal notice, campaign badge, or location label in a corner over all normal content.",
 			Enabled:       brandBugEnabled,
 			InstanceCount: brandBugCount,
+		},
+		{
+			ID: "noise_meter", Name: "Noise Meter",
+			Description:   "Watch room noise with a microphone on the Linux Player and show a bottom bar only while the room stays too loud.",
+			Enabled:       noiseMeterEnabled,
+			InstanceCount: noiseMeterCount,
 		},
 		{
 			ID: "dependency_graph", Name: "Dependency Graph",
@@ -633,7 +646,12 @@ func (s *Service) ManifestForScreen(ctx context.Context, screenID uuid.UUID) ([]
 	if err != nil {
 		return nil, err
 	}
-	return append(out, bugs...), nil
+	out = append(out, bugs...)
+	meters, err := s.noiseMetersForScreen(ctx, screenID)
+	if err != nil {
+		return nil, err
+	}
+	return append(out, meters...), nil
 }
 
 // alertTickersForScreen projects live Emergency Alerts activations whose rule

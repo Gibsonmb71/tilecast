@@ -175,6 +175,75 @@ func (s *server) deleteBrandBug(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+func (s *server) listNoiseMeters(w http.ResponseWriter, r *http.Request) {
+	items, err := s.plugins.ListNoiseMeters(r.Context())
+	if err != nil {
+		s.internalError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"items": items, "total": len(items)}})
+}
+
+func (s *server) getNoiseMeter(w http.ResponseWriter, r *http.Request) {
+	id, ok := urlUUID(w, r, "id")
+	if !ok {
+		return
+	}
+	item, err := s.plugins.GetNoiseMeter(r.Context(), id)
+	if err != nil {
+		s.writePluginError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": item})
+}
+
+func (s *server) createNoiseMeter(w http.ResponseWriter, r *http.Request) {
+	var input plugins.NoiseMeterInput
+	if err := decodeJSON(w, r, &input); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		return
+	}
+	user := r.Context().Value(sessionContextKey).(auth.Session).User
+	item, err := s.plugins.CreateNoiseMeter(r.Context(), user.ID, input)
+	if err != nil {
+		s.writePluginError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, map[string]any{"data": item})
+}
+
+func (s *server) updateNoiseMeter(w http.ResponseWriter, r *http.Request) {
+	id, ok := urlUUID(w, r, "id")
+	if !ok {
+		return
+	}
+	var input plugins.NoiseMeterInput
+	if err := decodeJSON(w, r, &input); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		return
+	}
+	user := r.Context().Value(sessionContextKey).(auth.Session).User
+	item, err := s.plugins.UpdateNoiseMeter(r.Context(), id, user.ID, input)
+	if err != nil {
+		s.writePluginError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": item})
+}
+
+func (s *server) deleteNoiseMeter(w http.ResponseWriter, r *http.Request) {
+	id, ok := urlUUID(w, r, "id")
+	if !ok {
+		return
+	}
+	user := r.Context().Value(sessionContextKey).(auth.Session).User
+	if err := s.plugins.DeleteNoiseMeter(r.Context(), id, user.ID); err != nil {
+		s.writePluginError(w, r, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 func (s *server) writePluginError(w http.ResponseWriter, r *http.Request, err error) {
 	switch {
 	case errors.Is(err, plugins.ErrNotFound):

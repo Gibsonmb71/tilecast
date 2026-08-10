@@ -148,6 +148,13 @@ import type {
   DependencyGraph,
   CountdownBar,
   CountdownBarInput,
+  NoiseMeter,
+  NoiseMeterInput,
+  NoiseHistoryDay,
+  NoiseHistoryPoint,
+  NoiseHistoryScreen,
+  NoiseHistorySummary,
+  NoiseHistoryWindow,
 } from "./types";
 
 type DataResponse<T> = { data: T };
@@ -1311,6 +1318,50 @@ export const api = {
       method: "DELETE",
       headers: { "X-CSRF-Token": csrfToken },
     }),
+  noiseMeters: () =>
+    request<{ items: NoiseMeter[]; total: number }>(
+      "/plugins/noise-meter/instances",
+    ),
+  noiseMeter: (id: string) =>
+    request<NoiseMeter>(`/plugins/noise-meter/instances/${id}`),
+  createNoiseMeter: (input: NoiseMeterInput, csrfToken: string) =>
+    request<NoiseMeter>("/plugins/noise-meter/instances", {
+      method: "POST",
+      headers: { "X-CSRF-Token": csrfToken },
+      body: JSON.stringify(input),
+    }),
+  updateNoiseMeter: (id: string, input: NoiseMeterInput, csrfToken: string) =>
+    request<NoiseMeter>(`/plugins/noise-meter/instances/${id}`, {
+      method: "PUT",
+      headers: { "X-CSRF-Token": csrfToken },
+      body: JSON.stringify(input),
+    }),
+  deleteNoiseMeter: (id: string, csrfToken: string) =>
+    request<void>(`/plugins/noise-meter/instances/${id}`, {
+      method: "DELETE",
+      headers: { "X-CSRF-Token": csrfToken },
+    }),
+  // History reads. The Player writes history only on its ordinary heartbeat;
+  // these are the separate Studio queries, and the server does the aggregating
+  // so a month never arrives as a quarter of a million points.
+  noiseHistoryScreens: (id: string, params: URLSearchParams) =>
+    request<{ items: NoiseHistoryScreen[]; total: number }>(
+      `/plugins/noise-meter/instances/${id}/history/screens?${params}`,
+    ),
+  noiseHistorySummary: (id: string, params: URLSearchParams) =>
+    request<{ range: NoiseHistoryWindow; summary: NoiseHistorySummary }>(
+      `/plugins/noise-meter/instances/${id}/history/summary?${params}`,
+    ),
+  noiseHistorySeries: (id: string, params: URLSearchParams) =>
+    request<{
+      range: NoiseHistoryWindow;
+      resolution: string;
+      points: NoiseHistoryPoint[];
+    }>(`/plugins/noise-meter/instances/${id}/history/series?${params}`),
+  noiseHistoryDaily: (id: string, params: URLSearchParams) =>
+    request<{ range: NoiseHistoryWindow; days: NoiseHistoryDay[] }>(
+      `/plugins/noise-meter/instances/${id}/history/daily?${params}`,
+    ),
   createLocation: (input: LocationInput, csrfToken: string) =>
     request<Location>("/locations", {
       method: "POST",

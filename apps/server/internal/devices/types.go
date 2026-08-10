@@ -338,6 +338,38 @@ type Heartbeat struct {
 	// "where do I send this room's video".
 	WiredInterfaceAvailable *bool  `json:"wiredInterfaceAvailable,omitempty"`
 	WiredIPv4               string `json:"wiredIpv4,omitempty"`
+
+	// The Noise Meter plugin's optional section. It rides the ordinary
+	// heartbeat rather than a channel of its own: microphone analysis happens
+	// fifteen to twenty times a second on the Player, and none of that rate may
+	// reach the network. What travels here is the current state and completed
+	// ten-second aggregates — numbers only. There is no audio, no waveform, and
+	// no sample in this contract, and no field here could carry one.
+	NoiseMeter *NoiseMeterReport `json:"noiseMeter,omitempty"`
+}
+
+type NoiseMeterReport struct {
+	// active, normal, loud, unavailable, or inactive.
+	Status string `json:"status,omitempty"`
+	// The live relative 0-100 level at the moment the heartbeat was built.
+	CurrentLevel *float64 `json:"currentLevel,omitempty"`
+	// The oldest unacknowledged buckets, bounded by the Player. The server
+	// answers with how many it has taken responsibility for; only then does the
+	// Player drop them.
+	PendingHistory []NoiseHistoryBucket `json:"pendingHistory,omitempty"`
+}
+
+// NoiseHistoryBucket is one completed ten-second aggregate. Durations are
+// milliseconds inside that bucket, and monitoredMs is how much of it the
+// microphone actually covered.
+type NoiseHistoryBucket struct {
+	StartedAt    time.Time `json:"startedAt"`
+	AverageLevel float64   `json:"averageLevel"`
+	PeakLevel    float64   `json:"peakLevel"`
+	MonitoredMS  int       `json:"monitoredMs"`
+	WarningMS    int       `json:"warningMs"`
+	LoudMS       int       `json:"loudMs"`
+	TriggerCount int       `json:"triggerCount"`
 }
 
 func addressString(address netip.Addr) *string {

@@ -12,6 +12,7 @@ import type {
   CommandResultReport,
   EnrollmentResult,
   Heartbeat,
+  HeartbeatAck,
   Identity,
   Manifest,
   PairingCreated,
@@ -319,8 +320,22 @@ export class ApiClient {
     };
   }
 
-  async heartbeat(body: Heartbeat): Promise<void> {
-    await this.request("POST", "/api/v1/player/heartbeat", { body });
+  /**
+   * Returns what the server acknowledged. Noise Meter history is only dropped
+   * from the Player's queue once this response has been seen, so the result is
+   * the acknowledgement rather than a fire-and-forget send.
+   */
+  async heartbeat(body: Heartbeat): Promise<HeartbeatAck> {
+    const res = await this.request("POST", "/api/v1/player/heartbeat", {
+      body,
+    });
+    try {
+      return ApiClient.data<HeartbeatAck>(res.json);
+    } catch {
+      // An older server answers without the envelope this expects. The
+      // heartbeat still succeeded; nothing was acknowledged.
+      return { accepted: true };
+    }
   }
 
   async fetchCommands(): Promise<PlayerCommand[]> {

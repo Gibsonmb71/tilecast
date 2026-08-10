@@ -240,6 +240,27 @@ contextBridge.exposeInMainWorld("tilecast", {
   reportPlaybackError(itemId: string | null, message: string): void {
     ipcRenderer.send("playback-error", { itemId, message });
   },
+  // The Noise Meter's whole outbound surface: a diagnostic string so a field
+  // failure is findable in the player log. Levels stay in the renderer and
+  // audio never leaves the capture graph.
+  reportNoiseMeterDiagnostic(
+    message: string,
+    detail?: Record<string, unknown>,
+  ): void {
+    ipcRenderer.send("noise-meter-diagnostic", { message, detail });
+  },
+  /**
+   * The Noise Meter's report: its current state and, every ten seconds, one
+   * completed aggregate. Numbers only — the microphone stream, the analyser,
+   * and every sample stay inside the renderer and are never serialized.
+   */
+  reportNoiseMeter(report: {
+    status: string;
+    level?: number | null;
+    bucket?: unknown;
+  }): void {
+    ipcRenderer.send("noise-meter-report", report);
+  },
   reportWebsiteRecovered(): void {
     ipcRenderer.send("website-recovered");
   },
