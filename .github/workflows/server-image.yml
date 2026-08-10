@@ -24,7 +24,7 @@ concurrency:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: gibsonmb71/tilecast-server
+  IMAGE_NAME: gbyo/tilecast-server
 
 jobs:
   build:
