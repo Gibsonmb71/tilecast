@@ -131,7 +131,7 @@ History travels on the standard authenticated Player heartbeat. There is no uplo
 
 Each heartbeat carries at most 120 buckets, twenty minutes of history. A longer backlog stays queued and drains over subsequent ordinary heartbeats; the cadence is never shortened to catch up. A batch leaves the local queue only after the server's heartbeat response says how many records it has taken responsibility for, so a timeout, a 5xx, or a lost response retains the exact batch for the next attempt. Storage is keyed on screen plus bucket start, so a retry after the server had already stored the records is harmless.
 
-The screen a record belongs to comes from the authenticated device credential. A player cannot submit history for another screen, and records stay attributed to the right screen when one Noise Meter instance targets many. A malformed history section is dropped and named in `data.ignoredFields` rather than costing the heartbeat's liveness and playback state; the player simply retries that batch.
+The screen a record belongs to comes from the authenticated device credential. A player cannot submit history for another screen, and records stay attributed to the right screen when one Noise Meter instance targets many. A malformed history section is dropped and named in `data.ignoredFields` rather than costing the heartbeat's liveness and playback state; the player retries that batch on the next heartbeat.
 
 Records that cannot be believed — a NaN level, a timestamp from next year, durations longer than the bucket that holds them — are refused by the player before they are stored and again by the server on arrival. The server counts them as consumed so a player cannot loop forever on a bucket it can never get accepted.
 
