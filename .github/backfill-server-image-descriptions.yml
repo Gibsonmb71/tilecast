@@ -25,13 +25,13 @@ jobs:
       - name: Add descriptions to existing tagged versions
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          IMAGE: ghcr.io/gibsonmb71/tilecast-server
+          IMAGE: ghcr.io/gbyo/tilecast-server
         shell: bash
         run: |
           set -euo pipefail
 
           gh api --paginate \
-            /users/Gibsonmb71/packages/container/tilecast-server/versions \
+            /users/gbyo/packages/container/tilecast-server/versions \
             --jq '.[].metadata.container.tags[]' \
             | sort -u > tags.txt
 
@@ -61,7 +61,7 @@ jobs:
             docker buildx imagetools create \
               --annotation "index:org.opencontainers.image.title=Tilecast Server" \
               --annotation "index:org.opencontainers.image.description=Self-hosted Tilecast server and Studio dashboard" \
-              --annotation "index:org.opencontainers.image.source=https://github.com/Gibsonmb71/tilecast" \
+              --annotation "index:org.opencontainers.image.source=https://github.com/gbyo/tilecast" \
               --tag "$ref" \
               "${IMAGE}@${digest}"
           done < tags.txt
