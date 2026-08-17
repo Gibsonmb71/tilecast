@@ -88,7 +88,7 @@ func (m Manifest) AssetName() string {
 	return m.APKAssetName
 }
 
-// ArtifactSize returns the artifact byte size for the manifest's platform.
+// ArtifactSize returns the release artifact byte size for the manifest's platform.
 func (m Manifest) ArtifactSize() int64 {
 	if m.NormalizedPlatform() == PlatformLinux {
 		return m.ArtifactSizeBytes
@@ -319,7 +319,11 @@ func (s *Service) ImportUpload(ctx context.Context, artifactPath string, raw, si
 
 func (s *Service) Check(ctx context.Context) error {
 	var etag string
-	_ = s.db.QueryRow(ctx, `SELECT COALESCE(etag,'') FROM update_provider_state WHERE provider='github'`).Scan(&etag)
+	var previousFailed bool
+	_ = s.db.QueryRow(ctx, `SELECT COALESCE(etag,''),safe_error IS NOT NULL FROM update_provider_state WHERE provider='github'`).Scan(&etag, &previousFailed)
+	if previousFailed {
+		etag = ""
+	}
 	result, err := s.provider.Releases(ctx, etag)
 	if err != nil {
 		_, _ = s.db.Exec(ctx, `INSERT INTO update_provider_state(provider,last_checked_at,safe_error,updated_at)VALUES('github',now(),$1,now()) ON CONFLICT(provider) DO UPDATE SET last_checked_at=now(),safe_error=$1,updated_at=now()`, safeError(err))
