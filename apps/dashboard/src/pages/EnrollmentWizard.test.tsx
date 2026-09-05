@@ -177,6 +177,45 @@ describe("the guided first sign-in", () => {
     await waitFor(() => expect(onFinish).toHaveBeenCalled());
   });
 
+  it("does not report recovery codes as copied when the clipboard write fails", async () => {
+    stubServer({
+      totpEnrolled: true,
+      passkeysAvailable: false,
+      passkeysUnavailableReason: "Passkeys require HTTPS.",
+    });
+    const writeText = vi.fn().mockRejectedValue(new Error("Clipboard denied"));
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText },
+    });
+    renderWizard();
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Get started" }),
+    );
+    await userEvent.type(
+      await screen.findByLabelText(/Confirm your password/),
+      "a long password",
+    );
+    await userEvent.click(
+      screen.getByRole("button", { name: "Generate codes" }),
+    );
+    expect(await screen.findByText("aaaa-bbbb")).toBeTruthy();
+
+    await userEvent.click(screen.getByRole("button", { name: "Copy all" }));
+
+    expect(writeText).toHaveBeenCalledWith("aaaa-bbbb\ncccc-dddd");
+    expect(
+      await screen.findByRole("alert", {
+        name: "",
+      }),
+    ).toHaveTextContent(
+      "Couldn’t copy the codes. Select them above and copy them manually.",
+    );
+    expect(screen.getByRole("button", { name: "Copy all" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Copied" })).toBeNull();
+  });
+
   it("plans no passkey step when the installation cannot run a ceremony", async () => {
     stubServer({
       passkeysAvailable: false,
