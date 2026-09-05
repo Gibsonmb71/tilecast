@@ -36,6 +36,9 @@ export function HoldButton({
   const [holding, setHolding] = useState(false);
   const frame = useRef<number | null>(null);
   const hintId = useId();
+  const describedBy = [props["aria-describedby"], hint ? hintId : undefined]
+    .filter(Boolean)
+    .join(" ") || undefined;
 
   const stop = useCallback(() => {
     if (frame.current !== null) cancelAnimationFrame(frame.current);
@@ -75,7 +78,7 @@ export function HoldButton({
         type="button"
         className={`button hold-button ${className}`.trim()}
         disabled={disabled}
-        aria-describedby={hint ? hintId : props["aria-describedby"]}
+        aria-describedby={describedBy}
         onPointerDown={(event) => {
           // Only a primary press counts; a right-click should not start
           // counting toward a fleet-wide action.
