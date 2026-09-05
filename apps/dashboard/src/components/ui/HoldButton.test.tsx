@@ -149,4 +149,23 @@ describe("hold to confirm", () => {
     await act(() => vi.advanceTimersByTime(5000));
     expect(onHoldComplete).toHaveBeenCalledTimes(1);
   });
+
+  it("keeps caller-provided descriptions when a hold hint is present", () => {
+    render(
+      <>
+        <p id="takeover-context">Affects every screen in this location.</p>
+        <HoldButton
+          aria-describedby="takeover-context"
+          hint="Hold for 3 seconds to confirm."
+          onHoldComplete={vi.fn()}
+        >
+          Hold to activate takeover
+        </HoldButton>
+      </>,
+    );
+
+    expect(screen.getByRole("button")).toHaveAccessibleDescription(
+      "Affects every screen in this location. Hold for 3 seconds to confirm.",
+    );
+  });
 });
