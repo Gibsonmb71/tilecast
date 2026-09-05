@@ -76,4 +76,46 @@ describe("LiveStreamDialog", () => {
       expect.objectContaining({ method: "DELETE", keepalive: true }),
     );
   });
+
+  it("leaves the live state when an established stream errors", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          data: {
+            id: "session-1",
+            screenId: "screen-1",
+            active: true,
+            expiresAt: "2026-07-30T12:00:15Z",
+            frameIntervalMillis: 125,
+            maxWidth: 640,
+            maxHeight: 360,
+            maxFrameBytes: 102400,
+          },
+        }),
+        { status: 201 },
+      ),
+    );
+
+    render(
+      <LiveStreamDialog
+        open
+        screenId="screen-1"
+        screenName="Lobby"
+        csrfToken="csrf"
+        onClose={vi.fn()}
+      />,
+    );
+
+    const image = await screen.findByAltText("Live Tilecast output from Lobby");
+    fireEvent.load(image);
+    expect(screen.getByText("Live")).toBeTruthy();
+
+    fireEvent.error(image);
+
+    expect(screen.queryByText("Live")).toBeNull();
+    expect(screen.getByText("Stream unavailable")).toBeTruthy();
+    expect(
+      screen.getByText("The live stream connection ended unexpectedly."),
+    ).toBeTruthy();
+  });
 });
