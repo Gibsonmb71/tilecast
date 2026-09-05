@@ -13,8 +13,12 @@ export function PreviewTimeControl({
 }) {
   const fixed = value.mode === "fixed";
   return (
-    <div className="preview-time" aria-label="Preview time">
-      <div className="preview-time__modes" role="group">
+    <div className="preview-time">
+      <div
+        className="preview-time__modes"
+        role="group"
+        aria-label="Preview time"
+      >
         <button
           type="button"
           className={`preview-time__mode${fixed ? "" : " preview-time__mode--active"}`}
