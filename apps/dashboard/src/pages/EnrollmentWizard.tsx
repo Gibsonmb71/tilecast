@@ -312,6 +312,7 @@ function RecoveryStep({
   const [password, setPassword] = useState("");
   const [codes, setCodes] = useState<string[]>();
   const [copied, setCopied] = useState(false);
+  const [copyError, setCopyError] = useState(false);
 
   const generate = useMutation({
     mutationFn: () => api.regenerateRecoveryCodes(password, csrfToken),
@@ -321,6 +322,22 @@ function RecoveryStep({
       refresh();
     },
   });
+
+  async function copyCodes() {
+    if (!codes || !navigator.clipboard?.writeText) {
+      setCopied(false);
+      setCopyError(true);
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(codes.join("\n"));
+      setCopied(true);
+      setCopyError(false);
+    } catch {
+      setCopied(false);
+      setCopyError(true);
+    }
+  }
 
   return (
     <>
@@ -380,13 +397,13 @@ function RecoveryStep({
               </li>
             ))}
           </ul>
+          {copyError && (
+            <div className="notice notice--error" role="alert">
+              Couldn’t copy the codes. Select them above and copy them manually.
+            </div>
+          )}
           <div className="enrollment__actions">
-            <Button
-              onClick={() => {
-                void navigator.clipboard?.writeText(codes.join("\n"));
-                setCopied(true);
-              }}
-            >
+            <Button onClick={() => void copyCodes()}>
               {copied ? "Copied" : "Copy all"}
             </Button>
             <Button variant="primary" onClick={onDone}>
