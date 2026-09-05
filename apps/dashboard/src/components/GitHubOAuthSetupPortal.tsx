@@ -175,9 +175,17 @@ export function GitHubOAuthSetupPortal() {
   }, [csrfToken, flow, queryClient]);
 
   const copy = async (label: string, value: string) => {
-    await navigator.clipboard.writeText(value);
-    setCopied(label);
-    window.setTimeout(() => setCopied(""), 1500);
+    try {
+      await navigator.clipboard.writeText(value);
+      setMessage("");
+      setCopied(label);
+      window.setTimeout(() => setCopied(""), 1500);
+    } catch {
+      setCopied("");
+      setMessage(
+        `Tilecast could not copy ${label}. Select the value and copy it manually.`,
+      );
+    }
   };
 
   return (
