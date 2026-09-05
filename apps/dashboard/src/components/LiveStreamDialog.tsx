@@ -94,9 +94,10 @@ export function LiveStreamDialog({
             src={liveStreamApi.mjpegUrl(screenId, session.id)}
             alt={`Live Tilecast output from ${screenName}`}
             onLoad={() => setPlaying(true)}
-            onError={() =>
-              setError("The live stream connection ended unexpectedly.")
-            }
+            onError={() => {
+              setPlaying(false);
+              setError("The live stream connection ended unexpectedly.");
+            }}
           />
         ) : null}
         {!playing && (
