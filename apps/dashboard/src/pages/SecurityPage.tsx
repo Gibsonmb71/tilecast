@@ -340,6 +340,19 @@ function PasskeyPanel({ status }: { status: SecurityStatus }) {
   );
 }
 
+export async function copyRecoveryCodesToClipboard(
+  codes: string[],
+  clipboard: Pick<Clipboard, "writeText"> | undefined = navigator.clipboard,
+) {
+  if (!clipboard) return false;
+  try {
+    await clipboard.writeText(codes.join("\n"));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function RecoveryCodePanel({ status }: { status: SecurityStatus }) {
   const { status: auth } = useAuth();
   const csrfToken = auth?.csrfToken ?? "";
@@ -347,6 +360,9 @@ function RecoveryCodePanel({ status }: { status: SecurityStatus }) {
   const [password, setPassword] = useState("");
   const [confirming, setConfirming] = useState(false);
   const [codes, setCodes] = useState<string[]>();
+  const [copyStatus, setCopyStatus] = useState<"idle" | "copied" | "error">(
+    "idle",
+  );
 
   const generate = useMutation({
     mutationFn: () => api.regenerateRecoveryCodes(password, csrfToken),
@@ -354,9 +370,16 @@ function RecoveryCodePanel({ status }: { status: SecurityStatus }) {
       setConfirming(false);
       setPassword("");
       setCodes(result.codes);
+      setCopyStatus("idle");
       refresh();
     },
   });
+
+  const copyCodes = async () => {
+    if (!codes) return;
+    const copied = await copyRecoveryCodesToClipboard(codes);
+    setCopyStatus(copied ? "copied" : "error");
+  };
 
   return (
     <Panel>
@@ -406,15 +429,23 @@ function RecoveryCodePanel({ status }: { status: SecurityStatus }) {
               </li>
             ))}
           </ul>
+          {copyStatus === "error" && (
+            <div className="notice notice--error" role="alert">
+              Tilecast could not copy the codes. Select and copy the visible
+              codes manually.
+            </div>
+          )}
           <div className="security-actions">
-            <Button
-              onClick={() =>
-                void navigator.clipboard?.writeText(codes.join("\n"))
-              }
-            >
-              Copy all
+            <Button onClick={() => void copyCodes()}>
+              {copyStatus === "copied" ? "Copied" : "Copy all"}
             </Button>
-            <Button variant="quiet" onClick={() => setCodes(undefined)}>
+            <Button
+              variant="quiet"
+              onClick={() => {
+                setCodes(undefined);
+                setCopyStatus("idle");
+              }}
+            >
               I have saved them
             </Button>
           </div>
