@@ -114,7 +114,7 @@ func boolSetting(values map[string]any, key string, fallback bool) bool {
 	return fallback
 }
 
-func stringSetting(values map[string]any, key, fallback string) string {
+func stringSetting(values map[string]any, key string, fallback string) string {
 	if value, ok := values[key].(string); ok && value != "" {
 		return value
 	}
